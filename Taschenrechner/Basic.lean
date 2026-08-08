@@ -8,6 +8,7 @@ import Taschenrechner.Poly
 import Taschenrechner.RatInt
 import Taschenrechner.Trig
 import Taschenrechner.Complex
+import Taschenrechner.Matrix
 import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Parse

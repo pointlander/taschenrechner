@@ -2,6 +2,7 @@
   Algebraic simplification toward a usable normal form.
 -/
 import Taschenrechner.Expr
+import Taschenrechner.Matrix
 
 namespace Taschenrechner.Expr
 
@@ -56,6 +57,9 @@ partial def cmpExpr : Expr → Expr → Ordering
   | conj a, conj b => cmpExpr a b
   | conj _, _ => .lt
   | _, conj _ => .gt
+  | mat _, mat _ => .eq  -- order among matrices not refined
+  | mat _, _ => .lt
+  | _, mat _ => .gt
   | pow a1 b1, pow a2 b2 =>
     match cmpExpr a1 a2 with
     | .eq => cmpExpr b1 b2
@@ -160,6 +164,10 @@ partial def simplify1 : Expr → Expr
     let a := simplify1 a
     let b := simplify1 b
     match a, b with
+    | mat A, mat B =>
+      match Mat.add A B with
+      | some C => mat (C.map (fun row => row.map simplify1))
+      | none => add a b
     | const ra, const rb => const (ra + rb)
     | const r, e => if r.isZero then e else rebuildAdd (add (const r) e)
     | e, const r => if r.isZero then e else rebuildAdd (add e (const r))
@@ -169,6 +177,20 @@ partial def simplify1 : Expr → Expr
     let b := simplify1 b
     match a, b with
     | const ra, const rb => const (ra * rb)
+    | mat A, mat B =>
+      match Mat.mul A B with
+      | some C => mat (C.map (fun row => row.map simplify1))
+      | none => mul a b
+    | const r, mat B =>
+      if r.isZero then
+        mat (Mat.zeros (Mat.nrows B) (Mat.ncols B))
+      else if r.isOne then mat B
+      else mat ((Mat.scale (const r) B).map (fun row => row.map simplify1))
+    | mat A, const r =>
+      if r.isZero then
+        mat (Mat.zeros (Mat.nrows A) (Mat.ncols A))
+      else if r.isOne then mat A
+      else mat ((Mat.scale (const r) A).map (fun row => row.map simplify1))
     | const r, _ =>
       if r.isZero then zero
       else if r.isOne then b
@@ -182,6 +204,12 @@ partial def simplify1 : Expr → Expr
     let a := simplify1 a
     let b := simplify1 b
     match a, b with
+    | mat A, const r =>
+      if r.isReal && r.re.den == 1 && r.re.num ≥ 0 then
+        match Mat.powNat A r.re.num.toNat with
+        | some C => mat (C.map (fun row => row.map simplify1))
+        | none => pow a b
+      else pow a b
     | _, const r =>
       if r.isZero then one
       else if r.isOne then a
@@ -267,6 +295,7 @@ partial def simplify1 : Expr → Expr
     | add a b => simplify1 (add (conj a) (conj b))
     | mul a b => simplify1 (mul (conj a) (conj b))
     | _ => conj e
+  | mat rows => mat (rows.map (fun row => row.map simplify1))
 where
   /-- Heuristic: expression is real-valued (real vars, real constants, real elementary ops). -/
   isRealValued : Expr → Bool
@@ -276,6 +305,7 @@ where
     | sin e | cos e | tan e | exp e | ln e | atan e => isRealValued e
     | re _ | im _ => true
     | conj e => isRealValued e
+    | mat _ => false
   rebuildAdd (e : Expr) : Expr :=
     let terms := flattenAdd e
     let terms := combineSummands terms
@@ -343,6 +373,7 @@ partial def expand1 : Expr → Expr
   | re e => re (expand1 e)
   | im e => im (expand1 e)
   | conj e => conj (expand1 e)
+  | mat rows => mat (Mat.map rows expand1)
   | e => e
 
 def expand (e : Expr) : Expr := simplify (expand1 e)

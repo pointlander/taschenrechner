@@ -28,6 +28,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 |--------|------|
 | `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
+| `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
@@ -47,6 +48,10 @@ sin(x^2)
 -x^2 + 1             # unary minus; ^ binds tighter → -(x^2)
 2+3*i                # complex rationals ℚ(i)
 euler(exp(i*x))      # → cos(x) + i·sin(x)
+[1, 2; 3, 4]         # 2×2 matrix
+det([1, 2; 3, 4])    # −2
+inv([1, 2; 0, 1])    # inverse
+[1, 2; 3, 4]*eye(2)  # matrix product
 diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```

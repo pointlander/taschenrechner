@@ -461,6 +461,7 @@ where
     | re a => re (go a)
     | im a => im (go a)
     | conj a => conj (go a)
+    | mat rows => mat (rows.map (fun row => row.map go))
 
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with

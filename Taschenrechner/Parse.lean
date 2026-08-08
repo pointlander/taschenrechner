@@ -24,6 +24,7 @@ import Taschenrechner.Simplify
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Complex
+import Taschenrechner.Matrix
 
 namespace Taschenrechner.Parse
 
@@ -37,6 +38,7 @@ inductive Token where
   | ident : String → Token
   | plus | minus | star | slash | caret | middot
   | lparen | rparen | comma
+  | lbracket | rbracket | semicolon
   | eof
   deriving Repr, DecidableEq, Inhabited
 
@@ -52,6 +54,9 @@ def Token.toString : Token → String
   | .lparen => "("
   | .rparen => ")"
   | .comma => ","
+  | .lbracket => "["
+  | .rbracket => "]"
+  | .semicolon => ";"
   | .eof => "<eof>"
 
 instance : ToString Token where
@@ -121,6 +126,9 @@ def tokenize (input : String) : Except String (Array Token) := do
       | '(' => out := out.push .lparen; i := i + 1
       | ')' => out := out.push .rparen; i := i + 1
       | ',' => out := out.push .comma; i := i + 1
+      | '[' => out := out.push .lbracket; i := i + 1
+      | ']' => out := out.push .rbracket; i := i + 1
+      | ';' => out := out.push .semicolon; i := i + 1
       | _ => throw s!"unexpected character '{c}' at position {i}"
   pure (out.push .eof)
 
@@ -143,7 +151,7 @@ def Parser.expect (p : Parser) (t : Token) : Except String Parser := do
 
 /-- Does this token begin an atom (for juxtaposition)? -/
 def Token.startsAtom : Token → Bool
-  | .num _ | .ident _ | .lparen => true
+  | .num _ | .ident _ | .lparen | .lbracket => true
   | _ => false
 
 /-! ### Built-in calls (desugared during parse) -/
@@ -183,6 +191,51 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "simplify", [e] => pure (simplify e)
   | "expand", [e] => pure (expand e)
   | "euler", [e] => pure (eulerExpand e)
+  | "det", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.det rows with
+      | some d => pure (simplify d)
+      | none => throw "det: expected square matrix"
+    | none => throw "det: expected a matrix"
+  | "trace", [e] | "tr", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.trace rows with
+      | some t => pure (simplify t)
+      | none => throw "trace: expected square matrix"
+    | none => throw "trace: expected a matrix"
+  | "transpose", [e] | "tp", [e] =>
+    match asMat? e with
+    | some rows => pure (Expr.mat (Mat.transpose rows))
+    | none => throw "transpose: expected a matrix"
+  | "inv", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.inv rows with
+      | some inv => pure (simplify (Expr.mat inv))
+      | none => throw "inv: singular or non-square matrix"
+    | none => throw "inv: expected a matrix"
+  | "eye", [e] =>
+    match asNatDim e with
+    | some n => pure (Expr.mat (Mat.eye n))
+    | none => throw "eye: expected non-negative integer dimension"
+  | "zeros", [e] =>
+    match asNatDim e with
+    | some n => pure (Expr.mat (Mat.zeros n n))
+    | none => throw "zeros: expected integer size"
+  | "zeros", [e, f] =>
+    match asNatDim e, asNatDim f with
+    | some m, some n => pure (Expr.mat (Mat.zeros m n))
+    | _, _ => throw "zeros: expected integer dimensions"
+  | "ones", [e] =>
+    match asNatDim e with
+    | some n => pure (Expr.mat (Mat.ones n n))
+    | none => throw "ones: expected integer size"
+  | "ones", [e, f] =>
+    match asNatDim e, asNatDim f with
+    | some m, some n => pure (Expr.mat (Mat.ones m n))
+    | _, _ => throw "ones: expected integer dimensions"
   | "diff", [e] => pure (diff e "x")
   | "diff", [e, v] => do
       let v ← asVarName v
@@ -201,12 +254,23 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       integrateCall e v
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
-  | "simplify", _ | "expand", _ | "euler", _ =>
+  | "simplify", _ | "expand", _ | "euler", _
+  | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
+  | "zeros", _ | "ones", _ =>
+      throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | _, _ =>
       throw s!"unknown function '{name}'"
+where
+  asNatDim : Expr → Option Nat
+    | .const c =>
+      match CplxConst.toRat? c with
+      | some q =>
+        if q.den == 1 && q.num ≥ 0 then some q.num.toNat else none
+      | none => none
+    | _ => none
 
 /-- Known callables that consume `(...)`; bare vars juxtapose: `x(x+1)` = `x*(x+1)`. -/
 def isBuiltinName (name : String) : Bool :=
@@ -215,6 +279,8 @@ def isBuiltinName (name : String) : Bool :=
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "simplify" || n == "expand"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
+    || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
+    || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
 /-! ### Recursive-descent parsing -/
 
@@ -282,10 +348,53 @@ partial def parseAtom (p : Parser) : Except String (Expr × Parser) := do
     let (e, p) ← parseExpr p.advance
     let p ← p.expect .rparen
     pure (e, p)
-  | t => throw s!"expected number, identifier, or '(', got '{t}'"
+  | .lbracket =>
+    -- [a, b; c, d] matrix literal
+    parseMatrixBody p.advance .rbracket
+  | t => throw s!"expected number, identifier, '(', or '[', got '{t}'"
+
+/--
+  Parse matrix body until `closer` (`)` or `]`).
+  Rows separated by `;`, entries by `,`.
+-/
+partial def parseMatrixBody (p : Parser) (closer : Token) : Except String (Expr × Parser) := do
+  if p.peek == closer then
+    throw "empty matrix"
+  let (rows, p) ← parseMatrixRows p closer
+  let p ← p.expect closer
+  match Mat.ofLists rows with
+  | .error err => throw err
+  | .ok data => pure (Expr.mat data, p)
+
+partial def parseMatrixRows (p : Parser) (closer : Token) : Except String (List (List Expr) × Parser) := do
+  let (row, p) ← parseMatrixRow p closer
+  match p.peek with
+  | .semicolon =>
+    let (rest, p) ← parseMatrixRows p.advance closer
+    pure (row :: rest, p)
+  | t =>
+    if t == closer then pure ([row], p)
+    else throw s!"expected ';' or '{closer}' in matrix, got '{t}'"
+
+partial def parseMatrixRow (p : Parser) (closer : Token) : Except String (List Expr × Parser) := do
+  let (e, p) ← parseExpr p
+  go [e] p
+where
+  go (acc : List Expr) (p : Parser) : Except String (List Expr × Parser) := do
+    match p.peek with
+    | .comma =>
+      let (e, p) ← parseExpr p.advance
+      go (acc ++ [e]) p
+    | .semicolon => pure (acc, p)
+    | t =>
+      if t == closer then pure (acc, p)
+      else throw s!"expected ',', ';', or '{closer}' in matrix row, got '{t}'"
 
 partial def parseIdent (name : String) (p : Parser) : Except String (Expr × Parser) := do
-  if p.peek == .lparen && isBuiltinName name then
+  let lower := name.toLower
+  if p.peek == .lparen && (lower == "matrix" || lower == "mat") then
+    parseMatrixBody p.advance .rparen
+  else if p.peek == .lparen && isBuiltinName name then
     let (args, p) ← parseArgList p.advance
     let e ← applyCall name args
     pure (e, p)
@@ -476,6 +585,9 @@ def helpText : String :=
     ops         +  -  *  /  ^  ·   and juxtaposition (2x, sin(x)cos(x))\n\
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
+    matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
+                det inv transpose/tp trace/tr eye zeros ones\n\
+                A*B matrix product, c*A scalar, A^n (n≥0 integer)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 simplify(e)  expand(e)  euler(e)\n\
   \n\

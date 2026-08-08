@@ -95,6 +95,28 @@ def runDemo : IO Unit := do
     | .error err => IO.println s!"  '{s}'  ✗ {err}"
   IO.println ""
 
+  IO.println "── Matrices ─────────────────────────────────"
+  let matSamples := [
+    "[1, 2; 3, 4]",
+    "det([1, 2; 3, 4])",
+    "inv([1, 2; 0, 1])",
+    "[1, 2; 3, 4] * eye(2)",
+    "trace([1, 2; 3, 4])",
+    "transpose([1, 2; 3, 4])",
+    "2 * [1, 0; 0, 1]"
+  ]
+  for s in matSamples do
+    match parse s with
+    | .ok e =>
+      match asMat? e with
+      | some rows =>
+        IO.println s!"  '{s}'  →"
+        for line in (Mat.pretty rows).splitOn "\n" do
+          IO.println s!"    {line}"
+      | none => IO.println s!"  '{s}'  →  {e}"
+    | .error err => IO.println s!"  '{s}'  ✗ {err}"
+  IO.println ""
+
   IO.println "── Risch algorithm ──────────────────────────"
   let rischSamples := [
     "1/(x^2+1)",

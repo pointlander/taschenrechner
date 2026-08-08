@@ -139,6 +139,7 @@ partial def trigRewrite1 (e : Expr) : Expr :=
   | re a => re (trigRewrite1 a)
   | im a => im (trigRewrite1 a)
   | conj a => conj (trigRewrite1 a)
+  | mat rows => mat (rows.map (fun row => row.map trigRewrite1))
 
 /-- Iterate trig rewrites to a fixed point (bounded). -/
 def trigPreprocess (e : Expr) (maxIters : Nat := 8) : Expr :=

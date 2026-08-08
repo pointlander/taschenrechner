@@ -51,6 +51,8 @@ where
     | re a, v => re (diffRaw a v)
     | im a, v => im (diffRaw a v)
     | conj a, v => conj (diffRaw a v)
+    | mat rows, v =>
+      mat (rows.map (fun row => row.map (fun e => diffRaw e v)))
 
 /-- n-th derivative. -/
 def diffN (e : Expr) (n : Nat) (v : String := "x") : Expr :=

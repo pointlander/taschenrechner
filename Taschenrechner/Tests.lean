@@ -183,4 +183,41 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard simplify (re (I * x)) == (0 : Expr)
 #guard simplify (im (I * x)) == x
 
+-- Matrices
+#guard
+  match parse "[1, 2; 3, 4]" with
+  | .ok (.mat rows) =>
+      Mat.nrows rows == 2 && Mat.ncols rows == 2
+        && rows[0]![0]! == (1 : Expr) && rows[1]![1]! == (4 : Expr)
+  | _ => false
+#guard
+  match parse "det([1, 2; 3, 4])" with
+  | .ok e => simplify e == ofInt (-2)
+  | _ => false
+#guard
+  match parse "eye(2)" with
+  | .ok (.mat rows) =>
+      rows[0]![0]! == (1 : Expr) && rows[0]![1]! == (0 : Expr)
+        && rows[1]![0]! == (0 : Expr) && rows[1]![1]! == (1 : Expr)
+  | _ => false
+#guard
+  match parse "[1, 2; 3, 4] * [0, 1; 1, 0]" with
+  | .ok e =>
+      match simplify e with
+      | .mat rows =>
+          rows[0]![0]! == (2 : Expr) && rows[0]![1]! == (1 : Expr)
+            && rows[1]![0]! == (4 : Expr) && rows[1]![1]! == (3 : Expr)
+      | _ => false
+  | _ => false
+#guard
+  match parse "trace([1, 2; 3, 4])" with
+  | .ok e => simplify e == (5 : Expr)
+  | _ => false
+#guard
+  match parse "transpose([1, 2; 3, 4])" with
+  | .ok (.mat rows) =>
+      rows[0]![0]! == (1 : Expr) && rows[0]![1]! == (3 : Expr)
+        && rows[1]![0]! == (2 : Expr) && rows[1]![1]! == (4 : Expr)
+  | _ => false
+
 end Taschenrechner.Tests

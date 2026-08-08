@@ -229,6 +229,8 @@ inductive Expr where
   | re    : Expr → Expr
   | im    : Expr → Expr
   | conj  : Expr → Expr
+  /-- Rectangular matrix; rows are arrays of equal length. -/
+  | mat   : Array (Array Expr) → Expr
   deriving Repr, Inhabited
 
 namespace Expr
@@ -272,6 +274,9 @@ partial def freeVars : Expr → List String
   | var v => [v]
   | add a b | mul a b | pow a b => (freeVars a ++ freeVars b).eraseDups
   | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => freeVars e
+  | mat rows =>
+    rows.toList.foldl (fun acc row =>
+      row.toList.foldl (fun acc e => (acc ++ freeVars e).eraseDups) acc) []
 
 /-- Whether `v` occurs free in the expression. -/
 partial def dependsOn (e : Expr) (v : String) : Bool :=
@@ -280,6 +285,7 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   | var name => name == v
   | add a b | mul a b | pow a b => dependsOn a v || dependsOn b v
   | sin a | cos a | tan a | exp a | ln a | atan a | re a | im a | conj a => dependsOn a v
+  | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
 /-- Structural equality (not algebraic). -/
 partial def beq : Expr → Expr → Bool
@@ -297,6 +303,15 @@ partial def beq : Expr → Expr → Bool
   | re a, re b => beq a b
   | im a, im b => beq a b
   | conj a, conj b => beq a b
+  | mat a, mat b =>
+    a.size == b.size &&
+      Id.run do
+        for i in [:a.size] do
+          let ra := a[i]!; let rb := b[i]!
+          if ra.size != rb.size then return false
+          for j in [:ra.size] do
+            if !(beq ra[j]! rb[j]!) then return false
+        pure true
   | _, _ => false
 
 instance : BEq Expr where beq := beq
@@ -338,12 +353,17 @@ partial def toString : Expr → String
   | re e => s!"re({toString e})"
   | im e => s!"im({toString e})"
   | conj e => s!"conj({toString e})"
+  | mat rows =>
+    let rowStrs := rows.toList.map fun row =>
+      String.intercalate ", " (row.toList.map toString)
+    s!"[{String.intercalate "; " rowStrs}]"
 where
   parenMul : Expr → String
     | e@(add _ _) => s!"({toString e})"
+    | e@(mat _) => s!"({toString e})"
     | e => toString e
   parenPow : Expr → String
-    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) => s!"({toString e})"
+    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(mat _) => s!"({toString e})"
     | e => toString e
 
 instance : ToString Expr where
