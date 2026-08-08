@@ -13,10 +13,12 @@ def showDiff (label : String) (e : Expr) : IO Unit := do
 def showInt (label : String) (e : Expr) : IO Unit := do
   IO.println s!"  ∫ [{label}]  {e}  dx"
   match integrate e "x" with
-  | .success F =>
+  | .success F src =>
     let check := diff F "x"
-    IO.println s!"            =  {F}  + C"
+    IO.println s!"            =  {F}  + C  [{src}, verified]"
     IO.println s!"  verify d/dx =  {check}"
+  | .notElementary r =>
+    IO.println s!"            not elementary: {r}"
   | .failure r =>
     IO.println s!"            failed: {r}"
   IO.println ""
@@ -53,8 +55,10 @@ def runDemo : IO Unit := do
   IO.println "── Definite integral ────────────────────────"
   let e := x ^ (2 : Expr)
   match integrateDefinite e "x" (0 : Expr) (1 : Expr) with
-  | .success r =>
-    IO.println s!"  ∫₀¹ x² dx  =  {r}"
+  | .success r src =>
+    IO.println s!"  ∫₀¹ x² dx  =  {r}  [{src}]"
+  | .notElementary r =>
+    IO.println s!"  not elementary: {r}"
   | .failure r =>
     IO.println s!"  failed: {r}"
   IO.println ""
@@ -111,8 +115,12 @@ def runDemo : IO Unit := do
     let ok := checkAntiderivative e "x"
     IO.println s!"  {if ok then "✓" else "✗"}  ∫ {label}  →  F' = f  is {ok}"
   IO.println ""
+
+  IO.println "── Regression suite ─────────────────────────"
+  IO.println (Regression.formatReport (Regression.runSuite))
+  IO.println ""
   IO.println "Done.  Try:  lake exe taschenrechner 'diff sin(x^2)'"
-  IO.println "       or:  lake exe taschenrechner   (no args for demo)"
+  IO.println "       or:  lake exe taschenrechner --regression"
 
 def runCommand (cmd : Command) : IO UInt32 := do
   match cmd with
@@ -134,10 +142,14 @@ def runCommand (cmd : Command) : IO UInt32 := do
     pure 0
   | .integrate e v =>
     match integrate e v with
-    | .success F =>
+    | .success F src =>
       IO.println s!"∫ ({e}) d{v}  =  {F}  + C"
+      IO.println s!"source: {src}  verified: {verifyDerivative F e v}"
       IO.println s!"check: d/d{v} = {diff F v}"
       pure 0
+    | .notElementary r =>
+      IO.eprintln s!"not elementary: {r}"
+      pure 1
     | .failure r =>
       IO.eprintln s!"integration failed: {r}"
       pure 1
@@ -172,6 +184,7 @@ def usage : String :=
   "  taschenrechner <expr-or-cmd>    evaluate one expression/command\n" ++
   "  taschenrechner -c <cmd>         same as above\n" ++
   "  taschenrechner -i               interactive REPL\n" ++
+  "  taschenrechner --regression     run 20-case integration suite\n" ++
   "  taschenrechner --help           language help\n" ++
   "\n" ++
   "Examples:\n" ++
@@ -191,6 +204,8 @@ def main (args : List String) : IO UInt32 := do
   | ["--usage"] =>
     IO.println usage
     pure 0
+  | ["--regression"] | ["-r"] =>
+    Regression.runSuiteIO
   | ["-i"] | ["--repl"] =>
     IO.println "Taschenrechner REPL  (help | quit)"
     repl
@@ -203,7 +218,7 @@ def main (args : List String) : IO UInt32 := do
   | cmd :: rest =>
     -- Only known flags are options; leading `-` may be unary minus (`-x^2`).
     if cmd == "-i" || cmd == "--repl" || cmd == "-h" || cmd == "--help"
-        || cmd == "--usage" || cmd == "-c" then
+        || cmd == "--usage" || cmd == "-c" || cmd == "--regression" || cmd == "-r" then
       IO.eprintln s!"unknown option usage: {cmd}"
       IO.eprintln usage
       pure 2

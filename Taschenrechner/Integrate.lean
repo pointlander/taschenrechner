@@ -15,27 +15,113 @@ import Taschenrechner.Risch
 
 namespace Taschenrechner.Expr
 
-/-- Result of attempted indefinite integration. -/
+/-- Which integrator produced an antiderivative. -/
+inductive IntegrateSource where
+  | risch
+  | heuristic
+  deriving Repr, BEq, DecidableEq, Inhabited
+
+namespace IntegrateSource
+
+def toString : IntegrateSource → String
+  | risch => "risch"
+  | heuristic => "heuristic"
+
+instance : ToString IntegrateSource where
+  toString := toString
+
+end IntegrateSource
+
+/--
+  Structured result of indefinite integration.
+
+  * `success` — elementary antiderivative; `source` records the engine;
+    only returned when automatic derivative verification passes (`F' = f`).
+  * `notElementary` — Risch (or another decision procedure) proved no
+    elementary antiderivative exists.
+  * `failure` — could not integrate, or a candidate `F` failed verification.
+-/
 inductive IntegrateResult where
-  | success (antideriv : Expr)
+  | success (antideriv : Expr) (source : IntegrateSource)
+  | notElementary (reason : String)
   | failure (reason : String)
   deriving Repr, Inhabited
 
 namespace IntegrateResult
 
 def map (f : Expr → Expr) : IntegrateResult → IntegrateResult
-  | success e => success (f e)
+  | success e src => success (f e) src
+  | notElementary r => notElementary r
   | failure r => failure r
 
 def isSuccess : IntegrateResult → Bool
-  | success _ => true
-  | failure _ => false
+  | success _ _ => true
+  | _ => false
+
+def isNotElementary : IntegrateResult → Bool
+  | notElementary _ => true
+  | _ => false
 
 def get? : IntegrateResult → Option Expr
-  | success e => some e
-  | failure _ => none
+  | success e _ => some e
+  | _ => none
+
+def getSource? : IntegrateResult → Option IntegrateSource
+  | success _ s => some s
+  | _ => none
+
+def reason? : IntegrateResult → Option String
+  | notElementary r => some r
+  | failure r => some r
+  | success _ _ => none
+
+def toString : IntegrateResult → String
+  | success F src => s!"success ({src}): {F}"
+  | notElementary r => s!"not elementary: {r}"
+  | failure r => s!"failure: {r}"
+
+instance : ToString IntegrateResult where
+  toString := toString
 
 end IntegrateResult
+
+/-- Algebraic equivalence heuristic for verifying `F' = f`. -/
+def exprsEquivalent (a b : Expr) (v : String := "x") : Bool :=
+  let a0 := simplify a
+  let b0 := simplify b
+  if a0 == b0 then true
+  else
+    let a1 := simplify (expand a0)
+    let b1 := simplify (expand b0)
+    if a1 == b1 || simplify (Expr.sub a1 b1) == zero then true
+    else
+      -- Compare as rational functions in `v` when possible
+      match RatFn.ofExpr? a1 v, RatFn.ofExpr? b1 v with
+      | some ra, some rb =>
+        let ra := RatFn.simplify ra
+        let rb := RatFn.simplify rb
+        ra.num == rb.num && ra.den == rb.den
+      | _, _ =>
+        match RatFn.ofExpr? (Expr.sub a1 b1) v with
+        | some r => (RatFn.simplify r).num.isZero
+        | none => false
+
+/-- Check that `diff F v` matches integrand `f`. -/
+def verifyDerivative (F f : Expr) (v : String := "x") : Bool :=
+  exprsEquivalent (diff F v) f v
+
+/--
+  Accept candidate `F` only if `F' = f`.
+  On mismatch, return a structured verification failure (not a silent wrong answer).
+-/
+def acceptAntideriv (F f : Expr) (v : String) (source : IntegrateSource) : IntegrateResult :=
+  let F := simplify F
+  let f := simplify f
+  let F' := diff F v
+  if exprsEquivalent F' f v then
+    .success F source
+  else
+    .failure s!"verification failed ({source}): d/d{v}({F}) = {simplify F'}, expected {f}"
 
 /-- Recognise integer constant. -/
 def asIntConst : Expr → Option Int
@@ -175,14 +261,14 @@ partial def tryByParts (e : Expr) (v : String) (fuel : Nat)
       let dv := foldMul rest
       -- V = ∫ dv  (must succeed without by-parts again if possible)
       match integrateRec dv v fuel' with
-      | .failure _ => none
-      | .success V =>
+      | .success V _ =>
         let V := simplify V
         let integrand2 := simplify (mul V du)
         match integrateRec integrand2 v fuel' with
-        | .failure _ => none
-        | .success int2 =>
+        | .success int2 _ =>
           some (simplify (sub (mul u V) int2))
+        | _ => none
+      | _ => none
 where
   /-- LIATE-ish priority: ln > algebraic (var/pow) > trig > exp. -/
   priority : Expr → Nat
@@ -203,7 +289,7 @@ where
         else some (u, fs.eraseIdx i)
       | [] => none
 
-/-- Core recursive integrator with fuel. -/
+/-- Heuristic integrator (no derivative check; caller verifies). -/
 partial def integrateRaw (e : Expr) (v : String) (fuel : Nat) : IntegrateResult :=
   match fuel with
   | 0 => .failure "out of fuel"
@@ -211,13 +297,15 @@ partial def integrateRaw (e : Expr) (v : String) (fuel : Nat) : IntegrateResult 
     let e := simplify e
     -- Constant (no dependence on v)
     if !dependsOn e v then
-      .success (mul e (var v))
+      .success (mul e (var v)) .heuristic
     else
       -- Linearity over addition
       match e with
       | add a b =>
         match integrateRaw a v fuel', integrateRaw b v fuel' with
-        | .success A, .success B => .success (simplify (add A B))
+        | .success A _, .success B _ => .success (simplify (add A B)) .heuristic
+        | .notElementary r, _ => .notElementary r
+        | _, .notElementary r => .notElementary r
         | .failure r, _ => .failure r
         | _, .failure r => .failure r
       | _ =>
@@ -225,18 +313,19 @@ partial def integrateRaw (e : Expr) (v : String) (fuel : Nat) : IntegrateResult 
         let (c, f) := peelConstFactor e
         if !c.isOne && f != e then
           match integrateRaw f v fuel' with
-          | .success F => .success (simplify (mul (const c) F))
+          | .success F _ => .success (simplify (mul (const c) F)) .heuristic
+          | .notElementary r => .notElementary r
           | .failure r => .failure r
         else
           -- Table for pure elementary of the variable
           match tableIntegral e v with
-          | some F => .success (simplify F)
+          | some F => .success (simplify F) .heuristic
           | none =>
             -- Power of the variable: x^n
             match e with
             | pow base expn =>
               match integratePower base expn v with
-              | some F => .success (simplify F)
+              | some F => .success (simplify F) .heuristic
               | none => tryAdvanced e v fuel'
             | _ => tryAdvanced e v fuel'
 where
@@ -245,20 +334,20 @@ where
     match e with
     | pow (var name) (const r) =>
       if name == v && r == RatConst.negOne then
-        .success (ln (var v))
+        .success (ln (var v)) .heuristic
       else .failure s!"cannot integrate power {e}"
     | _ =>
       -- Reverse chain rule
       match tryChainRule e v fuel' with
-      | some F => .success (simplify F)
+      | some F => .success (simplify F) .heuristic
       | none =>
         -- Common composite forms: sin(ax+b), exp(ax), etc.
         match tryLinearComposite e v with
-        | some F => .success (simplify F)
+        | some F => .success (simplify F) .heuristic
         | none =>
           -- Integration by parts
           match tryByParts e v fuel' integrateRaw with
-          | some F => .success (simplify F)
+          | some F => .success (simplify F) .heuristic
           | none => .failure s!"cannot integrate: {e}"
 
   /-- ∫ f(ax+b) dx for elementary f. -/
@@ -306,23 +395,27 @@ where
     | const _ => none
     | _ => none
 
-/-- Indefinite integral ∫ e dv. Returns simplified antiderivative or failure.
+/-- Indefinite integral ∫ e dv with structured result and automatic verification.
 
   Order:
   1. **Risch** (rational + transcendental exp/log decisions, including non-existence)
   2. Heuristic table / chain rule / by-parts (trig and remaining patterns)
+
+  Every successful antiderivative is checked: `diff F v ≈ e`. Mismatches become
+  `.failure` with a verification message (never a silent wrong answer).
 -/
 def integrate (e : Expr) (v : String := "x") : IntegrateResult :=
   let e := simplify e
   match risch e v with
-  | .elementary F => .success (simplify F)
-  | .notElementary reason =>
-    .failure s!"not elementary (Risch): {reason}"
+  | .elementary F => acceptAntideriv F e v .risch
+  | .notElementary reason => .notElementary reason
   | .undecided _ =>
-    -- Fall back to heuristic integrator (sin/cos, by-parts, …)
-    integrateRaw e v 64
+    match integrateRaw e v 64 with
+    | .success F _ => acceptAntideriv F e v .heuristic
+    | .notElementary r => .notElementary r
+    | .failure r => .failure r
 
-/-- Convenience: optional antiderivative. -/
+/-- Convenience: optional antiderivative (verified only). -/
 def integrate? (e : Expr) (v : String := "x") : Option Expr :=
   (integrate e v).get?
 
@@ -348,17 +441,16 @@ where
 
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with
+  | .success F src =>
+    -- Definite value inherits source; verification already done on F.
+    .success (simplify (sub (subst F v hi) (subst F v lo))) src
+  | .notElementary r => .notElementary r
   | .failure r => .failure r
-  | .success F =>
-    .success (simplify (sub (subst F v hi) (subst F v lo)))
 
-/-- Verify antiderivative by differentiation: d/dv (∫ e) ≈ e. -/
+/-- True iff `integrate` returns a verified elementary antiderivative. -/
 def checkAntiderivative (e : Expr) (v : String := "x") : Bool :=
   match integrate e v with
-  | .failure _ => false
-  | .success F =>
-    let dF := diff F v
-    simplify (expand dF) == simplify (expand e)
-      || simplify dF == simplify e
+  | .success F _ => verifyDerivative F e v
+  | _ => false
 
 end Taschenrechner.Expr

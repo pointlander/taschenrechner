@@ -17,6 +17,7 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
+lake exe taschenrechner --regression    # 20-case integration suite
 ```
 
 Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the library).
@@ -28,8 +29,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Expr` | AST (`Expr`), rationals (`RatConst`), pretty-printing |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
-| `Taschenrechner.Integrate` | `integrate`, `integrateDefinite`, self-check |
-| `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
+| `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
+| `Taschenrechner.Regression` | 20-case integration regression suite || `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
 | `Taschenrechner.RatInt` | Rational function integration (Hermite + Rothstein–Trager) |
 | `Taschenrechner.Risch` | Transcendental Risch (exp/log, non-existence certificates) |

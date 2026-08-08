@@ -9,3 +9,4 @@ import Taschenrechner.RatInt
 import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Parse
+import Taschenrechner.Regression

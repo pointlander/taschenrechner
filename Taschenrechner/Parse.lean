@@ -154,7 +154,8 @@ def asVarName (e : Expr) : Except String String :=
 
 def integrateCall (e : Expr) (v : String) : Except String Expr :=
   match integrate e v with
-  | .success F => pure F
+  | .success F _ => pure F
+  | .notElementary r => throw s!"not elementary: {r}"
   | .failure r => throw s!"integration failed: {r}"
 
 /-- Desugar built-in function / CAS forms. -/

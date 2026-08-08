@@ -62,8 +62,18 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 -- Definite integral ∫₀¹ x² dx = 1/3
 #guard
   match integrateDefinite (x ^ (2 : Expr)) "x" (0 : Expr) (1 : Expr) with
-  | .success r => r == const ⟨1, 3⟩
-  | .failure _ => false
+  | .success r _ => r == const ⟨1, 3⟩
+  | _ => false
+
+-- Structured integrate results
+#guard
+  match integrate (exp x) "x" with
+  | .success _ .risch => true
+  | _ => false
+#guard
+  match integrate (sin x) "x" with
+  | .success _ .heuristic => true
+  | _ => false
 
 -- Parser
 #guard parseEq "0" (0 : Expr)
@@ -129,7 +139,11 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard rischNotElementary (exp (x ^ (2 : Expr))) "x"
 #guard
   match integrate (exp (x ^ (2 : Expr))) "x" with
-  | .failure msg => msg.startsWith "not elementary"
-  | .success _ => false
+  | .notElementary _ => true
+  | _ => false
+
+-- Automatic verification helpers
+#guard verifyDerivative (atan x) (Expr.div (1 : Expr) (x ^ (2 : Expr) + 1)) "x"
+#guard verifyDerivative (exp x) (exp x) "x"
 
 end Taschenrechner.Tests
