@@ -11,6 +11,7 @@
 -/
 import Taschenrechner.Diff
 import Taschenrechner.Simplify
+import Taschenrechner.Trig
 import Taschenrechner.Risch
 
 namespace Taschenrechner.Expr
@@ -91,20 +92,27 @@ def exprsEquivalent (a b : Expr) (v : String := "x") : Bool :=
   let b0 := simplify b
   if a0 == b0 then true
   else
-    let a1 := simplify (expand a0)
-    let b1 := simplify (expand b0)
-    if a1 == b1 || simplify (Expr.sub a1 b1) == zero then true
+    -- Trig normal form (tan→sin/cos, sin², product-to-sum, …)
+    let aTrig := simplify (trigPreprocess a0)
+    let bTrig := simplify (trigPreprocess b0)
+    if aTrig == bTrig then true
     else
-      -- Compare as rational functions in `v` when possible
-      match RatFn.ofExpr? a1 v, RatFn.ofExpr? b1 v with
-      | some ra, some rb =>
-        let ra := RatFn.simplify ra
-        let rb := RatFn.simplify rb
-        ra.num == rb.num && ra.den == rb.den
-      | _, _ =>
-        match RatFn.ofExpr? (Expr.sub a1 b1) v with
-        | some r => (RatFn.simplify r).num.isZero
-        | none => false
+      let a1 := simplify (expand aTrig)
+      let b1 := simplify (expand bTrig)
+      if a1 == b1 || simplify (Expr.sub a1 b1) == zero then true
+      else
+        -- Compare as rational functions in `v` when possible
+        match RatFn.ofExpr? a1 v, RatFn.ofExpr? b1 v with
+        | some ra, some rb =>
+          let ra := RatFn.simplify ra
+          let rb := RatFn.simplify rb
+          ra.num == rb.num && ra.den == rb.den
+        | _, _ =>
+          match RatFn.ofExpr? (Expr.sub a1 b1) v with
+          | some r => (RatFn.simplify r).num.isZero
+          | none =>
+            -- One more trig pass on expanded forms
+            simplify (trigPreprocess a1) == simplify (trigPreprocess b1)
 
 /-- Check that `diff F v` matches integrand `f`. -/
 def verifyDerivative (F f : Expr) (v : String := "x") : Bool :=

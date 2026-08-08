@@ -15,6 +15,7 @@
 -/
 import Taschenrechner.RatInt
 import Taschenrechner.Diff
+import Taschenrechner.Trig
 
 namespace Taschenrechner
 
@@ -322,71 +323,91 @@ partial def matchLnPowOverX (e : Expr) (v : String) : Option (RatConst × Nat) :
 
 /--
   Attempt full transcendental Risch on `e` w.r.t. `v`.
+
+  Front-end: trigonometric preprocessing (product-to-sum, power-reduction,
+  linear sin/cos/tan) so classical elementary trig integrals are decided here
+  rather than only by the heuristic fallback.
 -/
 partial def risch (e : Expr) (v : String := "x") : RischResult :=
-  let e := Expr.simplify e
-  if !Expr.dependsOn e v then
-    .elementary (Expr.mul e (Expr.var v))
-  else
-    -- 1. Pure rational in v
-    match integrateRationalExpr e v with
-    | some F => .elementary F
-    | none =>
-      -- 2. Linearity
-      match e with
-      | .add a b =>
-        match risch a v, risch b v with
-        | .elementary A, .elementary B => .elementary (Expr.simplify (Expr.add A B))
-        | .notElementary r, _ => .notElementary r
-        | _, .notElementary r => .notElementary r
-        | .undecided r, _ => .undecided r
-        | _, .undecided r => .undecided r
-      | .mul (.const c) a =>
-        match risch a v with
-        | .elementary F => .elementary (Expr.simplify (Expr.mul (.const c) F))
-        | .notElementary r => .notElementary r
-        | .undecided r => .undecided r
-      | .mul a (.const c) =>
-        match risch a v with
-        | .elementary F => .elementary (Expr.simplify (Expr.mul (.const c) F))
-        | .notElementary r => .notElementary r
-        | .undecided r => .undecided r
-      | _ =>
-        -- 3. r(x) exp(p(x))
-        match matchExpRational e v with
-        | some (r, p) => integrateExpPoly r p v
+  let e0 := Expr.simplify e
+  -- Linear sin/cos/tan *before* rewriting tan → sin/cos
+  match integrateLinearTrig e0 v with
+  | some F => .elementary F
+  | none =>
+    -- Trig rewrite (tan→sin/cos, sin²/cos², product-to-sum), then core
+    let e := Expr.simplify (trigPreprocess e0)
+    rischCore e v
+where
+  rischCore (e : Expr) (v : String) : RischResult :=
+    if !Expr.dependsOn e v then
+      .elementary (Expr.mul e (Expr.var v))
+    else
+      -- 0. Linear trig extension (and sums after product-to-sum)
+      match rischTrig e v with
+      | some F => .elementary F
+      | none =>
+        -- 1. Pure rational in v
+        match integrateRationalExpr e v with
+        | some F => .elementary F
         | none =>
-          -- 4. ln powers / x
-          match matchLnPowOverX e v with
-          | some (c, n) =>
-            -- ∫ c ln^n / x dx = c ln^{n+1} / (n+1)
-            let L := Expr.ln (Expr.var v)
-            let F :=
-              match n with
-              | 0 => L  -- ∫ 1/x
-              | _ =>
-                let np1 := n + 1
-                match RatConst.div c (RatConst.ofInt np1) with
-                | some ck =>
-                  Expr.mul (Expr.const ck) (Expr.pow L (Expr.ofInt np1))
-                | none => Expr.div (Expr.mul (Expr.const c) (Expr.pow L (Expr.ofInt np1))) (Expr.ofInt np1)
-            .elementary (Expr.simplify F)
-          | none =>
-            -- 5. pure ln(v)^n
-            match e with
-            | .pow (.ln (.var name)) (.const r) =>
-              if name == v && r.den == 1 && r.num ≥ 0 then
-                .elementary (integrateLnPow r.num.toNat v)
-              else .undecided s!"unsupported power of log: {e}"
-            | .ln (.var name) =>
-              if name == v then .elementary (integrateLnPow 1 v)
-              else .undecided s!"ln of non-variable"
-            | .exp arg =>
-              match asPoly? arg v with
-              | some p => integrateExpPoly (RatFn.ofPoly Poly.one) p v
-              | none => .undecided s!"exp of non-polynomial: {arg}"
-            | _ =>
-              .undecided s!"no Risch method for: {e}"
+          -- 2. Linearity
+          match e with
+          | .add a b =>
+            match rischCore a v, rischCore b v with
+            | .elementary A, .elementary B => .elementary (Expr.simplify (Expr.add A B))
+            | .notElementary r, _ => .notElementary r
+            | _, .notElementary r => .notElementary r
+            | .undecided r, _ => .undecided r
+            | _, .undecided r => .undecided r
+          | .mul (.const c) a =>
+            match rischCore a v with
+            | .elementary F => .elementary (Expr.simplify (Expr.mul (.const c) F))
+            | .notElementary r => .notElementary r
+            | .undecided r => .undecided r
+          | .mul a (.const c) =>
+            match rischCore a v with
+            | .elementary F => .elementary (Expr.simplify (Expr.mul (.const c) F))
+            | .notElementary r => .notElementary r
+            | .undecided r => .undecided r
+          | _ =>
+            -- 3. r(x) exp(p(x))
+            match matchExpRational e v with
+            | some (r, p) => integrateExpPoly r p v
+            | none =>
+              -- 4. ln powers / x
+              match matchLnPowOverX e v with
+              | some (c, n) =>
+                let L := Expr.ln (Expr.var v)
+                let F :=
+                  match n with
+                  | 0 => L
+                  | _ =>
+                    let np1 := n + 1
+                    match RatConst.div c (RatConst.ofInt np1) with
+                    | some ck =>
+                      Expr.mul (Expr.const ck) (Expr.pow L (Expr.ofInt np1))
+                    | none =>
+                      Expr.div (Expr.mul (Expr.const c) (Expr.pow L (Expr.ofInt np1)))
+                        (Expr.ofInt np1)
+                .elementary (Expr.simplify F)
+              | none =>
+                -- 5. pure ln(v)^n / exp / leftover trig of non-linear args
+                match e with
+                | .pow (.ln (.var name)) (.const r) =>
+                  if name == v && r.den == 1 && r.num ≥ 0 then
+                    .elementary (integrateLnPow r.num.toNat v)
+                  else .undecided s!"unsupported power of log: {e}"
+                | .ln (.var name) =>
+                  if name == v then .elementary (integrateLnPow 1 v)
+                  else .undecided s!"ln of non-variable"
+                | .exp arg =>
+                  match asPoly? arg v with
+                  | some p => integrateExpPoly (RatFn.ofPoly Poly.one) p v
+                  | none => .undecided s!"exp of non-polynomial: {arg}"
+                | .sin _ | .cos _ | .tan _ =>
+                  .undecided s!"trig of non-linear argument: {e}"
+                | _ =>
+                  .undecided s!"no Risch method for: {e}"
 
 /-- Convenience: Option elementary antiderivative. -/
 def risch? (e : Expr) (v : String := "x") : Option Expr :=

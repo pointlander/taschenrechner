@@ -17,7 +17,7 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
-lake exe taschenrechner --regression    # 20-case integration suite
+lake exe taschenrechner --regression    # 40-case integration suite
 ```
 
 Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the library).
@@ -29,11 +29,13 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Expr` | AST (`Expr`), rationals (`RatConst`), pretty-printing |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
-| `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
-| `Taschenrechner.Regression` | 20-case integration regression suite || `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
+| `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
 | `Taschenrechner.RatInt` | Rational function integration (Hermite + Rothstein–Trager) |
-| `Taschenrechner.Risch` | Transcendental Risch (exp/log, non-existence certificates) |
+| `Taschenrechner.Risch` | Transcendental Risch (exp/log/trig, non-existence) |
+| `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
+| `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
+| `Taschenrechner.Regression` | 40-case integration regression suite |
 
 ## Expression language
 
@@ -74,10 +76,11 @@ open Taschenrechner.Parse
 
 1. **Risch** (`risch` / first stage of `integrate`)
    - Complete **rational** case over ℚ(x): division, Hermite reduction, partial fractions, Rothstein–Trager residues, `atan` for irreducible quadratics
+   - **Trig preprocessing**: `tan→sin/cos`, `sin²`/`cos²` power-reduction, product-to-sum; linear `sin`/`cos`/`tan(ax+b)`
    - **Exponential** monomials `r(x)·exp(p(x))` via the Risch differential equation `v' + p'v = r`
    - **Non-existence certificates**, e.g. `∫ exp(x²) dx` is not elementary; `∫ x·exp(x²) dx = ½ exp(x²)` is
    - Simple log patterns (`ln(x)^n / x`, `ln(x)^n`)
-2. **Heuristics** (if Risch returns undecided): trig table, reverse chain rule, by-parts
+2. **Heuristics** (if Risch returns undecided): reverse chain rule for non-linear args, by-parts
 
 **Not fully covered:** algebraic extensions (general radicals / algebraic curves), arbitrary nested towers, special functions beyond elementary.
 

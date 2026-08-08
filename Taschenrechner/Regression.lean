@@ -1,5 +1,5 @@
 /-
-  Twenty-case integration regression suite.
+  Integration regression suite (40 cases).
 
   Each case records an integrand string (parsed) and an expected outcome.
   Run at compile time via `#guard` and from the CLI with `--regression`.
@@ -35,33 +35,55 @@ structure Case where
   expect    : Expect
   deriving Repr
 
-/-- The canonical 20-case suite. -/
+/-- The canonical 40-case suite. -/
 def suite : List Case := [
   -- 1–5: polynomials / rationals (Risch)
-  { name := "poly x^2",          integrand := "x^2",                    expect := .risch },
-  { name := "poly 3x+1",         integrand := "3*x + 1",                expect := .risch },
-  { name := "1/x",               integrand := "1/x",                    expect := .risch },
-  { name := "1/(x^2+1)",         integrand := "1/(x^2+1)",              expect := .risch },
-  { name := "d/dx log quadratic", integrand := "(2*x+1)/(x^2+x+1)",     expect := .risch },
+  { name := "poly x^2",           integrand := "x^2",                 expect := .risch },
+  { name := "poly 3x+1",          integrand := "3*x + 1",             expect := .risch },
+  { name := "1/x",                integrand := "1/x",                 expect := .risch },
+  { name := "1/(x^2+1)",          integrand := "1/(x^2+1)",           expect := .risch },
+  { name := "d/dx log quadratic", integrand := "(2*x+1)/(x^2+x+1)",  expect := .risch },
   -- 6–10: exp (Risch DE)
-  { name := "exp(x)",            integrand := "exp(x)",                 expect := .risch },
-  { name := "exp(2x)",           integrand := "exp(2*x)",               expect := .risch },
-  { name := "exp(3x)",           integrand := "exp(3*x)",               expect := .risch },
-  { name := "x*exp(x)",          integrand := "x*exp(x)",               expect := .risch },
-  { name := "x*exp(x^2)",        integrand := "x*exp(x^2)",             expect := .risch },
+  { name := "exp(x)",             integrand := "exp(x)",              expect := .risch },
+  { name := "exp(2x)",            integrand := "exp(2*x)",            expect := .risch },
+  { name := "exp(3x)",            integrand := "exp(3*x)",            expect := .risch },
+  { name := "x*exp(x)",           integrand := "x*exp(x)",            expect := .risch },
+  { name := "x*exp(x^2)",         integrand := "x*exp(x^2)",          expect := .risch },
   -- 11–12: non-elementary certificates
-  { name := "exp(x^2) NE",       integrand := "exp(x^2)",               expect := .notElementary },
-  { name := "exp(x^3) NE",       integrand := "exp(x^3)",               expect := .notElementary },
+  { name := "exp(x^2) NE",        integrand := "exp(x^2)",            expect := .notElementary },
+  { name := "exp(x^3) NE",        integrand := "exp(x^3)",            expect := .notElementary },
   -- 13–16: rational more
-  { name := "1/(x-1)",           integrand := "1/(x-1)",                expect := .risch },
-  { name := "x^3/(x+1)",         integrand := "x^3/(x+1)",              expect := .risch },
-  { name := "x/(x^2+1)",         integrand := "x/(x^2+1)",              expect := .elementary },
-  { name := "2/x",               integrand := "2/x",                    expect := .risch },
-  -- 17–20: heuristic trig / chain / by-parts-ish
-  { name := "sin(x)",            integrand := "sin(x)",                 expect := .heuristic },
-  { name := "cos(2x)",           integrand := "cos(2*x)",               expect := .heuristic },
-  { name := "2x cos(x^2)",       integrand := "2*x*cos(x^2)",           expect := .heuristic },
-  { name := "ln(x)",             integrand := "ln(x)",                  expect := .elementary }
+  { name := "1/(x-1)",            integrand := "1/(x-1)",             expect := .risch },
+  { name := "x^3/(x+1)",          integrand := "x^3/(x+1)",           expect := .risch },
+  { name := "x/(x^2+1)",          integrand := "x/(x^2+1)",           expect := .elementary },
+  { name := "2/x",                integrand := "2/x",                 expect := .risch },
+  -- 17–20: trig via Risch preprocessing (linear args)
+  { name := "sin(x)",             integrand := "sin(x)",              expect := .risch },
+  { name := "cos(2x)",            integrand := "cos(2*x)",            expect := .risch },
+  { name := "2x cos(x^2)",        integrand := "2*x*cos(x^2)",        expect := .heuristic },
+  { name := "ln(x)",              integrand := "ln(x)",               expect := .elementary },
+  -- 21–30: more trig / product-to-sum (Risch)
+  { name := "cos(x)",             integrand := "cos(x)",              expect := .risch },
+  { name := "sin(3x)",            integrand := "sin(3*x)",            expect := .risch },
+  { name := "tan(x)",             integrand := "tan(x)",              expect := .risch },
+  { name := "tan(2x)",            integrand := "tan(2*x)",            expect := .risch },
+  { name := "3*sin(x)",           integrand := "3*sin(x)",            expect := .risch },
+  { name := "sin(x)+cos(x)",      integrand := "sin(x)+cos(x)",       expect := .risch },
+  { name := "sin(x)*cos(x)",      integrand := "sin(x)*cos(x)",       expect := .risch },
+  { name := "sin(x)^2",           integrand := "sin(x)^2",            expect := .risch },
+  { name := "cos(x)^2",           integrand := "cos(x)^2",            expect := .risch },
+  { name := "sin(2x)+1",          integrand := "sin(2*x)+1",          expect := .risch },
+  -- 31–40: mix of rational, exp, heuristic, NE
+  { name := "cos(x/2)",           integrand := "cos(x/2)",            expect := .risch },
+  { name := "(x+1)^2",            integrand := "(x+1)^2",             expect := .elementary },
+  { name := "exp(-x)",            integrand := "exp(-x)",             expect := .risch },
+  { name := "4*exp(x)",           integrand := "4*exp(x)",            expect := .risch },
+  { name := "1/(x^2+2*x+1)",      integrand := "1/(x^2+2*x+1)",       expect := .elementary },
+  { name := "sin(x^2) chain",     integrand := "2*x*sin(x^2)",        expect := .heuristic },
+  { name := "x*ln(x)",            integrand := "x*ln(x)",             expect := .elementary },
+  { name := "exp(x)+sin(x)",      integrand := "exp(x)+sin(x)",       expect := .risch },
+  { name := "cos(x)-sin(x)",      integrand := "cos(x)-sin(x)",       expect := .risch },
+  { name := "x^2*exp(x^3)",       integrand := "x^2*exp(x^3)",        expect := .risch }
 ]
 
 /-- Does a result match the expectation? -/
@@ -135,6 +157,6 @@ def runSuiteIO : IO UInt32 := do
 
 -- Compile-time guard: full suite green
 #guard allPassed (runSuite suite)
-#guard suite.length == 20
+#guard suite.length == 40
 
 end Taschenrechner.Regression

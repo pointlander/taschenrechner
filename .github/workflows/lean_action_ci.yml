@@ -8,7 +8,9 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-
     steps:
-      - uses: actions/checkout@v5
-      - uses: leanprover/lean-action@v1
+      - uses: actions/checkout@v4
+      - name: Install elan / build
+        uses: leanprover/lean-action@v1
+      - name: Integration regression suite
+        run: lake exe taschenrechner --regression

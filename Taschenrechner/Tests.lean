@@ -72,7 +72,7 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | _ => false
 #guard
   match integrate (sin x) "x" with
-  | .success _ .heuristic => true
+  | .success _ .risch => true
   | _ => false
 
 -- Parser

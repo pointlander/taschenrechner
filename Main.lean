@@ -184,7 +184,7 @@ def usage : String :=
   "  taschenrechner <expr-or-cmd>    evaluate one expression/command\n" ++
   "  taschenrechner -c <cmd>         same as above\n" ++
   "  taschenrechner -i               interactive REPL\n" ++
-  "  taschenrechner --regression     run 20-case integration suite\n" ++
+  "  taschenrechner --regression     run 40-case integration suite\n" ++
   "  taschenrechner --help           language help\n" ++
   "\n" ++
   "Examples:\n" ++

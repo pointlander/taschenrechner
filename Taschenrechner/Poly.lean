@@ -329,46 +329,37 @@ partial def resultant2 (p q : Poly) : RatConst :=
 /-- Prefer resultant2. -/
 def res (a b : Poly) : RatConst := resultant2 a b
 
-/-- Yun square-free factorization: `p = c * ∏ s_i^i` with monic square-free coprime `s_i`. -/
+/--
+  Square-free factorization: `p = c * ∏ s_i^{m_i}` with monic square-free `s_i`.
+
+  Uses `gcd(p, p')`: `h = p/gcd` is square-free (product of distinct irreducibles),
+  and `gcd` carries multiplicities reduced by one — recurse and bump exponents.
+-/
 partial def squareFreeFactor (p : Poly) : RatConst × List (Poly × Nat) :=
   let p := strip p
   if p.isZero then (RatConst.zero, [])
   else
     let c := content p
-    let p := primitivePart p |> monic
-    let dp := differentiate p
-    let g := gcd p dp
+    let p := monic (primitivePart p)
+    let g := gcd p (differentiate p)
     if g.isOne || g.deg == 0 then
       (c, [(p, 1)])
     else
       match exactDiv p g with
       | none => (c, [(p, 1)])
-      | some p1 =>
-        -- Yun:
-        -- p0 = p, d0 = p', g0 = gcd(p0,d0), p1 = p0/g0, d1 = d0/g0 - p1'
-        -- then for i=1,2,... : gi = gcd(pi, di), si = pi/gi, pi+1 = gi, ...
-        let d1 := sub (divPoly dp g) (differentiate p1)
-        let factors := yun p1 d1 1 []
-        (c, factors.reverse)
-where
-  yun (pi di : Poly) (i : Nat) (acc : List (Poly × Nat)) : List (Poly × Nat) :=
-    if pi.isOne || pi.deg == 0 then acc
-    else if i > 64 then acc
-    else
-      let gi := gcd pi di
-      let si :=
-        match exactDiv pi gi with
-        | some s => monic s
-        | none => monic pi
-      let acc :=
-        if si.isOne || si.deg == 0 then acc else (si, i) :: acc
-      if gi.isOne || gi.deg == 0 then acc
-      else
-        let diNext :=
-          match exactDiv di gi with
-          | some d' => sub d' (differentiate gi)
-          | none => zero
-        yun gi diNext (i + 1) acc
+      | some h =>
+        -- g = ∏ p_i^{e_i - 1}, h = ∏ p_i (square-free)
+        let (_cg, gFacs) := squareFreeFactor g
+        let bumped := gFacs.map fun (s, m) => (s, m + 1)
+        let hRest :=
+          gFacs.foldl (fun acc (s, _) =>
+            match exactDiv acc s with
+            | some q => q
+            | none => acc) (monic h)
+        let extras :=
+          if hRest.isOne || hRest.deg ≤ 0 then []
+          else [(monic hRest, (1 : Nat))]
+        (c, bumped ++ extras)
 
 /-- Rational root candidates ± factors(const)/factors(lc). -/
 def rationalRootCandidates (p : Poly) : List RatConst :=
