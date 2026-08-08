@@ -45,6 +45,9 @@ where
       mul (add one (pow (tan a) (ofInt 2))) (diffRaw a v)
     | exp a, v => mul (exp a) (diffRaw a v)
     | ln a, v => div (diffRaw a v) a
+    | atan a, v =>
+      -- (atan u)' = u' / (1 + u²)
+      div (diffRaw a v) (add one (pow a (ofInt 2)))
 
 /-- n-th derivative. -/
 def diffN (e : Expr) (n : Nat) (v : String := "x") : Expr :=

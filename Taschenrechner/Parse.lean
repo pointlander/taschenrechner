@@ -168,6 +168,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "ln",  [e] => pure (Expr.ln e)
   | "log", [e] => pure (Expr.ln e)
   | "sqrt", [e] => pure (Taschenrechner.sqrt e)
+  | "atan", [e] => pure (Expr.atan e)
+  | "arctan", [e] => pure (Expr.atan e)
   | "simplify", [e] => pure (simplify e)
   | "expand", [e] => pure (expand e)
   | "diff", [e] => pure (diff e "x")
@@ -187,6 +189,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       let v ← asVarName v
       integrateCall e v
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
+  | "atan", _ | "arctan", _
   | "simplify", _ | "expand", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
@@ -198,7 +201,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
 def isBuiltinName (name : String) : Bool :=
   let n := name.toLower
   n == "sin" || n == "cos" || n == "tan" || n == "exp" || n == "ln" || n == "log"
-    || n == "sqrt" || n == "simplify" || n == "expand"
+    || n == "sqrt" || n == "atan" || n == "arctan" || n == "simplify" || n == "expand"
     || n == "diff" || n == "d" || n == "int" || n == "integrate"
 
 /-! ### Recursive-descent parsing -/

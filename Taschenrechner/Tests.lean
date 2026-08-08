@@ -7,11 +7,13 @@ import Taschenrechner.Simplify
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Parse
+import Taschenrechner.Risch
 
 namespace Taschenrechner.Tests
 
 open Expr
 open Parse
+open Taschenrechner
 
 /-- Parse must succeed and equal `expected` (after simplify). -/
 def parseEq (s : String) (expected : Expr) : Bool :=
@@ -96,5 +98,38 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parseCommand "int x^2 x" with
   | .ok (.integrate e "x") => e == x ^ (2 : Expr)
   | _ => false
+
+-- Risch: rational
+#guard
+  match risch (Expr.div (1 : Expr) x) "x" with
+  | .elementary F => simplify (diff F "x") == simplify (Expr.div (1 : Expr) x)
+  | _ => false
+#guard
+  match risch (Expr.div (1 : Expr) (x ^ (2 : Expr) + 1)) "x" with
+  | .elementary F => F == atan x || simplify (diff F "x") == simplify (Expr.div (1 : Expr) (x ^ (2 : Expr) + 1))
+  | _ => false
+
+-- Risch: exp DE
+#guard
+  match risch (exp x) "x" with
+  | .elementary F => simplify (diff F "x") == exp x
+  | _ => false
+#guard
+  match risch (exp ((2 : Expr) * x)) "x" with
+  | .elementary F => simplify (diff F "x") == exp ((2 : Expr) * x)
+  | _ => false
+#guard
+  match risch (x * exp (x ^ (2 : Expr))) "x" with
+  | .elementary F =>
+      let d := simplify (diff F "x")
+      d == simplify (x * exp (x ^ (2 : Expr)))
+  | _ => false
+
+-- Risch: non-existence certificate for ∫ e^{x²} dx
+#guard rischNotElementary (exp (x ^ (2 : Expr))) "x"
+#guard
+  match integrate (exp (x ^ (2 : Expr))) "x" with
+  | .failure msg => msg.startsWith "not elementary"
+  | .success _ => false
 
 end Taschenrechner.Tests

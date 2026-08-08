@@ -11,6 +11,7 @@
 -/
 import Taschenrechner.Diff
 import Taschenrechner.Simplify
+import Taschenrechner.Risch
 
 namespace Taschenrechner.Expr
 
@@ -305,9 +306,21 @@ where
     | const _ => none
     | _ => none
 
-/-- Indefinite integral ∫ e dv. Returns simplified antiderivative or failure. -/
+/-- Indefinite integral ∫ e dv. Returns simplified antiderivative or failure.
+
+  Order:
+  1. **Risch** (rational + transcendental exp/log decisions, including non-existence)
+  2. Heuristic table / chain rule / by-parts (trig and remaining patterns)
+-/
 def integrate (e : Expr) (v : String := "x") : IntegrateResult :=
-  integrateRaw (simplify e) v 64
+  let e := simplify e
+  match risch e v with
+  | .elementary F => .success (simplify F)
+  | .notElementary reason =>
+    .failure s!"not elementary (Risch): {reason}"
+  | .undecided _ =>
+    -- Fall back to heuristic integrator (sin/cos, by-parts, …)
+    integrateRaw e v 64
 
 /-- Convenience: optional antiderivative. -/
 def integrate? (e : Expr) (v : String := "x") : Option Expr :=
@@ -331,6 +344,7 @@ where
     | tan a => tan (go a)
     | exp a => exp (go a)
     | ln a => ln (go a)
+    | atan a => atan (go a)
 
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with

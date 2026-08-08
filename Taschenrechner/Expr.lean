@@ -103,6 +103,7 @@ inductive Expr where
   | tan   : Expr → Expr
   | exp   : Expr → Expr
   | ln    : Expr → Expr
+  | atan  : Expr → Expr
   deriving Repr, Inhabited
 
 namespace Expr
@@ -141,7 +142,7 @@ partial def freeVars : Expr → List String
   | const _ => []
   | var v => [v]
   | add a b | mul a b | pow a b => (freeVars a ++ freeVars b).eraseDups
-  | sin e | cos e | tan e | exp e | ln e => freeVars e
+  | sin e | cos e | tan e | exp e | ln e | atan e => freeVars e
 
 /-- Whether `v` occurs free in the expression. -/
 partial def dependsOn (e : Expr) (v : String) : Bool :=
@@ -149,7 +150,7 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   | const _ => false
   | var name => name == v
   | add a b | mul a b | pow a b => dependsOn a v || dependsOn b v
-  | sin a | cos a | tan a | exp a | ln a => dependsOn a v
+  | sin a | cos a | tan a | exp a | ln a | atan a => dependsOn a v
 
 /-- Structural equality (not algebraic). -/
 partial def beq : Expr → Expr → Bool
@@ -163,6 +164,7 @@ partial def beq : Expr → Expr → Bool
   | tan a, tan b => beq a b
   | exp a, exp b => beq a b
   | ln a, ln b => beq a b
+  | atan a, atan b => beq a b
   | _, _ => false
 
 instance : BEq Expr where beq := beq
@@ -196,6 +198,7 @@ partial def toString : Expr → String
   | tan e => s!"tan({toString e})"
   | exp e => s!"exp({toString e})"
   | ln e => s!"ln({toString e})"
+  | atan e => s!"atan({toString e})"
 where
   parenMul : Expr → String
     | e@(add _ _) => s!"({toString e})"

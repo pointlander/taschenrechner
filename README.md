@@ -30,6 +30,9 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Integrate` | `integrate`, `integrateDefinite`, self-check |
 | `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
+| `Taschenrechner.Poly` | Univariate polynomials over ℚ |
+| `Taschenrechner.RatInt` | Rational function integration (Hermite + Rothstein–Trager) |
+| `Taschenrechner.Risch` | Transcendental Risch (exp/log, non-existence certificates) |
 
 ## Expression language
 
@@ -64,8 +67,21 @@ open Taschenrechner.Parse
 
 ## Supported calculus (representative)
 
-**Differentiation:** constants, polynomials, `sin`/`cos`/`tan`, `exp`, `ln`, products, quotients (as `a·b⁻¹`), general powers.
+**Differentiation:** constants, polynomials, `sin`/`cos`/`tan`/`atan`, `exp`, `ln`, products, quotients (as `a·b⁻¹`), general powers.
 
-**Integration:** polynomials & `xⁿ` (including `1/x → ln x`), linear combinations, `sin`/`cos`/`tan`/`exp`/`ln` of linear arguments, reverse chain-rule patterns (`f'(g)·g'`), simple integration by parts (`x·exp(x)`, `x·ln(x)`, …).
+**Integration** — two layers:
 
-Not a full Risch implementation: many special functions and algebraic integrals will return `.failure`.
+1. **Risch** (`risch` / first stage of `integrate`)
+   - Complete **rational** case over ℚ(x): division, Hermite reduction, partial fractions, Rothstein–Trager residues, `atan` for irreducible quadratics
+   - **Exponential** monomials `r(x)·exp(p(x))` via the Risch differential equation `v' + p'v = r`
+   - **Non-existence certificates**, e.g. `∫ exp(x²) dx` is not elementary; `∫ x·exp(x²) dx = ½ exp(x²)` is
+   - Simple log patterns (`ln(x)^n / x`, `ln(x)^n`)
+2. **Heuristics** (if Risch returns undecided): trig table, reverse chain rule, by-parts
+
+**Not fully covered:** algebraic extensions (general radicals / algebraic curves), arbitrary nested towers, special functions beyond elementary.
+
+```bash
+lake exe taschenrechner 'int 1/(x^2+1)'   # atan(x)
+lake exe taschenrechner 'int exp(x^2)'     # not elementary (Risch)
+lake exe taschenrechner 'int x*exp(x^2)'   # 1/2·exp(x^2)
+```

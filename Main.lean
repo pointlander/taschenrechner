@@ -74,6 +74,30 @@ def runDemo : IO Unit := do
     | .error err => IO.println s!"  '{s}'  ✗ {err}"
   IO.println ""
 
+  IO.println "── Risch algorithm ──────────────────────────"
+  let rischSamples := [
+    "1/(x^2+1)",
+    "(2*x+1)/(x^2+x+1)",
+    "x^3/(x+1)",
+    "exp(2*x)",
+    "x*exp(x)",
+    "x*exp(x^2)",
+    "exp(x^2)"
+  ]
+  for s in rischSamples do
+    match parse s with
+    | .error err => IO.println s!"  '{s}'  ✗ parse: {err}"
+    | .ok e =>
+      match risch e "x" with
+      | .elementary F =>
+        IO.println s!"  ∫ {s} dx  =  {F}  + C"
+      | .notElementary r =>
+        IO.println s!"  ∫ {s} dx  — not elementary"
+        IO.println s!"      ({r})"
+      | .undecided r =>
+        IO.println s!"  ∫ {s} dx  — undecided: {r}"
+  IO.println ""
+
   IO.println "── Antiderivative self-checks ───────────────"
   let checks : List (String × Expr) := [
     ("x^2", x ^ (2 : Expr)),

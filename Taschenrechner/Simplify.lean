@@ -44,6 +44,9 @@ partial def cmpExpr : Expr → Expr → Ordering
   | ln a, ln b => cmpExpr a b
   | ln _, _ => .lt
   | _, ln _ => .gt
+  | atan a, atan b => cmpExpr a b
+  | atan _, _ => .lt
+  | _, atan _ => .gt
   | pow a1 b1, pow a2 b2 =>
     match cmpExpr a1 a2 with
     | .eq => cmpExpr b1 b2
@@ -213,6 +216,11 @@ partial def simplify1 : Expr → Expr
     | const r => if r.isOne then zero else ln e
     | exp u => u
     | _ => ln e
+  | atan e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then zero else atan e
+    | _ => atan e
 where
   rebuildAdd (e : Expr) : Expr :=
     let terms := flattenAdd e
@@ -277,6 +285,7 @@ partial def expand1 : Expr → Expr
   | tan e => tan (expand1 e)
   | exp e => exp (expand1 e)
   | ln e => ln (expand1 e)
+  | atan e => atan (expand1 e)
   | e => e
 
 def expand (e : Expr) : Expr := simplify (expand1 e)
