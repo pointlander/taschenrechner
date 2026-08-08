@@ -1,0 +1,10 @@
+name = "Taschenrechner"
+version = "0.1.0"
+defaultTargets = ["Taschenrechner", "taschenrechner"]
+
+[[lean_lib]]
+name = "Taschenrechner"
+
+[[lean_exe]]
+name = "taschenrechner"
+root = "Main"
