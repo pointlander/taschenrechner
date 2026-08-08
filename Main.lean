@@ -78,6 +78,23 @@ def runDemo : IO Unit := do
     | .error err => IO.println s!"  '{s}'  ✗ {err}"
   IO.println ""
 
+  IO.println "── Complex numbers ──────────────────────────"
+  let cplxSamples := [
+    "i^2",
+    "2+3*i",
+    "(1+i)*(1-i)",
+    "1/i",
+    "re(2+3*i)",
+    "im(2+3*i)",
+    "conj(2+3*i)",
+    "euler(exp(i*x))"
+  ]
+  for s in cplxSamples do
+    match parse s with
+    | .ok e => IO.println s!"  '{s}'  →  {e}"
+    | .error err => IO.println s!"  '{s}'  ✗ {err}"
+  IO.println ""
+
   IO.println "── Risch algorithm ──────────────────────────"
   let rischSamples := [
     "1/(x^2+1)",

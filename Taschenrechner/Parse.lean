@@ -23,6 +23,7 @@ import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
+import Taschenrechner.Complex
 
 namespace Taschenrechner.Parse
 
@@ -171,8 +172,17 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "sqrt", [e] => pure (Taschenrechner.sqrt e)
   | "atan", [e] => pure (Expr.atan e)
   | "arctan", [e] => pure (Expr.atan e)
+  | "re", [e] => pure (Expr.re e)
+  | "im", [e] => pure (Expr.im e)
+  | "conj", [e] => pure (Expr.conj e)
+  | "abs", [e] =>
+    -- |z| = sqrt(re(z)² + im(z)²)
+    pure (Taschenrechner.sqrt (Expr.add
+      (Expr.pow (Expr.re e) (2 : Expr))
+      (Expr.pow (Expr.im e) (2 : Expr))))
   | "simplify", [e] => pure (simplify e)
   | "expand", [e] => pure (expand e)
+  | "euler", [e] => pure (eulerExpand e)
   | "diff", [e] => pure (diff e "x")
   | "diff", [e, v] => do
       let v ← asVarName v
@@ -190,8 +200,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       let v ← asVarName v
       integrateCall e v
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
-  | "atan", _ | "arctan", _
-  | "simplify", _ | "expand", _ =>
+  | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
+  | "simplify", _ | "expand", _ | "euler", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
@@ -202,8 +212,9 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
 def isBuiltinName (name : String) : Bool :=
   let n := name.toLower
   n == "sin" || n == "cos" || n == "tan" || n == "exp" || n == "ln" || n == "log"
-    || n == "sqrt" || n == "atan" || n == "arctan" || n == "simplify" || n == "expand"
-    || n == "diff" || n == "d" || n == "int" || n == "integrate"
+    || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
+    || n == "abs" || n == "simplify" || n == "expand"
+    || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
 
 /-! ### Recursive-descent parsing -/
 
@@ -278,6 +289,8 @@ partial def parseIdent (name : String) (p : Parser) : Except String (Expr × Par
     let (args, p) ← parseArgList p.advance
     let e ← applyCall name args
     pure (e, p)
+  else if name == "i" || name == "I" then
+    pure (Expr.I, p)
   else
     pure (Expr.var name, p)
 
@@ -461,9 +474,10 @@ def helpText : String :=
     numbers     0, 42, -3\n\
     variables   x, y, theta\n\
     ops         +  -  *  /  ^  ·   and juxtaposition (2x, sin(x)cos(x))\n\
-    functions   sin cos tan exp ln log sqrt\n\
+    functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
+    complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
-                simplify(e)  expand(e)\n\
+                simplify(e)  expand(e)  euler(e)\n\
   \n\
   Commands:\n\
     <expr>\n\

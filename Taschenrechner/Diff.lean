@@ -23,7 +23,7 @@ where
       | const r =>
         -- (u^n)' = n * u^(n-1) * u'
         let n := const r
-        let nMinus1 := const (r + RatConst.negOne)
+        let nMinus1 := const (r - CplxConst.one)
         mul (mul n (pow a nMinus1)) (diffRaw a v)
       | _ =>
         if !dependsOn b v then
@@ -48,6 +48,9 @@ where
     | atan a, v =>
       -- (atan u)' = u' / (1 + u²)
       div (diffRaw a v) (add one (pow a (ofInt 2)))
+    | re a, v => re (diffRaw a v)
+    | im a, v => im (diffRaw a v)
+    | conj a, v => conj (diffRaw a v)
 
 /-- n-th derivative. -/
 def diffN (e : Expr) (n : Nat) (v : String := "x") : Expr :=

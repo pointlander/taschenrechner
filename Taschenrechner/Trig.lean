@@ -23,9 +23,13 @@ partial def linearForm (e : Expr) (v : String) : Option (RatConst × RatConst) :
   match e with
   | var name => if name == v then some (RatConst.one, RatConst.zero) else none
   | mul (const a) (var name) =>
-    if name == v then some (a, RatConst.zero) else none
+    match CplxConst.toRat? a with
+    | some q => if name == v then some (q, RatConst.zero) else none
+    | none => none
   | mul (var name) (const a) =>
-    if name == v then some (a, RatConst.zero) else none
+    match CplxConst.toRat? a with
+    | some q => if name == v then some (q, RatConst.zero) else none
+    | none => none
   | add a b =>
     match linearForm a v, asRatConst? b with
     | some (ca, cb), some rb => some (ca, cb + rb)
@@ -40,7 +44,7 @@ partial def linearForm (e : Expr) (v : String) : Option (RatConst × RatConst) :
   | _ => none
 where
   asRatConst? : Expr → Option RatConst
-    | const r => some r
+    | const r => CplxConst.toRat? r
     | _ => none
 
 /-- True if `e` is linear in `v` (or constant). -/
@@ -115,11 +119,11 @@ partial def trigRewrite1 (e : Expr) : Expr :=
     let b := trigRewrite1 b
     match a, b with
     | sin u, const r =>
-      if r == RatConst.ofInt 2 then sinSq u
+      if r == CplxConst.ofInt 2 then sinSq u
       else if r.isOne then sin u
       else pow a b
     | cos u, const r =>
-      if r == RatConst.ofInt 2 then cosSq u
+      if r == CplxConst.ofInt 2 then cosSq u
       else if r.isOne then cos u
       else pow a b
     | _, _ => pow a b
@@ -132,6 +136,9 @@ partial def trigRewrite1 (e : Expr) : Expr :=
   | exp a => exp (trigRewrite1 a)
   | ln a => ln (trigRewrite1 a)
   | atan a => atan (trigRewrite1 a)
+  | re a => re (trigRewrite1 a)
+  | im a => im (trigRewrite1 a)
+  | conj a => conj (trigRewrite1 a)
 
 /-- Iterate trig rewrites to a fixed point (bounded). -/
 def trigPreprocess (e : Expr) (maxIters : Nat := 8) : Expr :=
@@ -157,7 +164,7 @@ partial def integrateLinearTrig (e : Expr) (v : String) : Option Expr :=
       if a.isZero then none
       else
         match RatConst.inv a with
-        | some invA => some (simplify (mul (const invA) (antiAt inner)))
+        | some invA => some (simplify (mul (ofRat invA) (antiAt inner)))
         | none => none
     | none =>
       if inner == var v then some (simplify (antiAt (var v)))

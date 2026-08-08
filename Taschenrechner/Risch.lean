@@ -16,6 +16,7 @@
 import Taschenrechner.RatInt
 import Taschenrechner.Diff
 import Taschenrechner.Trig
+import Taschenrechner.Complex
 
 namespace Taschenrechner
 
@@ -233,20 +234,20 @@ where
       let f := RatFn.ofPoly (Poly.ofConst a)
       match solveRischDE f r with
       | some y =>
-        let pexpr := Expr.add (Expr.mul (Expr.const a) (Expr.var v)) (Expr.const b)
+        let pexpr := Expr.add (Expr.mul (Expr.ofRat a) (Expr.var v)) (Expr.ofRat b)
         some (Expr.simplify (Expr.mul (RatFn.toExpr y v) (Expr.exp pexpr)))
       | none =>
         -- r poly: always solvable for constant a ≠ 0
         if r.den.isOne then
           match solveRischDEPoly (Poly.ofConst a) r.num with
           | some y =>
-            let pexpr := Expr.add (Expr.mul (Expr.const a) (Expr.var v)) (Expr.const b)
+            let pexpr := Expr.add (Expr.mul (Expr.ofRat a) (Expr.var v)) (Expr.ofRat b)
             some (Expr.simplify (Expr.mul (Poly.toExpr y v) (Expr.exp pexpr)))
           | none =>
             -- undetermined coeffs with higher degree bound
             match solveLinearConstDE a r.num with
             | some y =>
-              let pexpr := Expr.add (Expr.mul (Expr.const a) (Expr.var v)) (Expr.const b)
+              let pexpr := Expr.add (Expr.mul (Expr.ofRat a) (Expr.var v)) (Expr.ofRat b)
               some (Expr.simplify (Expr.mul (Poly.toExpr y v) (Expr.exp pexpr)))
             | none => none
         else none
@@ -301,18 +302,27 @@ partial def matchLnPowOverX (e : Expr) (v : String) : Option (RatConst × Nat) :
     let mut other := false
     for f in factors do
       match f with
-      | .const r => c := c * r
+      | .const r =>
+        match CplxConst.toRat? r with
+        | some q => c := c * q
+        | none => other := true
       | .ln (.var name) =>
         if name == v then
           lnPow := some (match lnPow with | some n => n + 1 | none => 1)
         else other := true
       | .pow (.ln (.var name)) (.const r) =>
-        if name == v && r.den == 1 && r.num ≥ 0 then
-          lnPow := some (match lnPow with | some n => n + r.num.toNat | none => r.num.toNat)
-        else other := true
+        match CplxConst.toRat? r with
+        | some q =>
+          if name == v && q.den == 1 && q.num ≥ 0 then
+            lnPow := some (match lnPow with | some n => n + q.num.toNat | none => q.num.toNat)
+          else other := true
+        | none => other := true
       | .pow (.var name) (.const r) =>
-        if name == v && r == RatConst.negOne then hasInv := true
-        else other := true
+        match CplxConst.toRat? r with
+        | some q =>
+          if name == v && q == RatConst.negOne then hasInv := true
+          else other := true
+        | none => other := true
       | .var _ => other := true
       | _ => other := true
     if other then pure none
@@ -370,44 +380,74 @@ where
             | .notElementary r => .notElementary r
             | .undecided r => .undecided r
           | _ =>
-            -- 3. r(x) exp(p(x))
-            match matchExpRational e v with
-            | some (r, p) => integrateExpPoly r p v
+            -- 3a. Complex-linear exp: r·exp(α+βv) with α,β ∈ ℚ(i)
+            match matchExpCplxLinear e v with
+            | some (r, α, β) =>
+              match integrateExpCplxLinear r α β v with
+              | some F => .elementary F
+              | none => .undecided s!"complex exp integral failed: {e}"
             | none =>
-              -- 4. ln powers / x
-              match matchLnPowOverX e v with
-              | some (c, n) =>
-                let L := Expr.ln (Expr.var v)
-                let F :=
-                  match n with
-                  | 0 => L
-                  | _ =>
-                    let np1 := n + 1
-                    match RatConst.div c (RatConst.ofInt np1) with
-                    | some ck =>
-                      Expr.mul (Expr.const ck) (Expr.pow L (Expr.ofInt np1))
-                    | none =>
-                      Expr.div (Expr.mul (Expr.const c) (Expr.pow L (Expr.ofInt np1)))
-                        (Expr.ofInt np1)
-                .elementary (Expr.simplify F)
+              -- 3b. Real poly exp: r(x)·exp(p(x))
+              match matchExpRational e v with
+              | some (r, p) => integrateExpPoly r p v
               | none =>
-                -- 5. pure ln(v)^n / exp / leftover trig of non-linear args
-                match e with
-                | .pow (.ln (.var name)) (.const r) =>
-                  if name == v && r.den == 1 && r.num ≥ 0 then
-                    .elementary (integrateLnPow r.num.toNat v)
-                  else .undecided s!"unsupported power of log: {e}"
-                | .ln (.var name) =>
-                  if name == v then .elementary (integrateLnPow 1 v)
-                  else .undecided s!"ln of non-variable"
-                | .exp arg =>
-                  match asPoly? arg v with
-                  | some p => integrateExpPoly (RatFn.ofPoly Poly.one) p v
-                  | none => .undecided s!"exp of non-polynomial: {arg}"
-                | .sin _ | .cos _ | .tan _ =>
-                  .undecided s!"trig of non-linear argument: {e}"
-                | _ =>
-                  .undecided s!"no Risch method for: {e}"
+                -- 4. ln powers / x
+                match matchLnPowOverX e v with
+                | some (c, n) =>
+                  let L := Expr.ln (Expr.var v)
+                  let F :=
+                    match n with
+                    | 0 => L
+                    | _ =>
+                      let np1 := n + 1
+                      match RatConst.div c (RatConst.ofInt np1) with
+                      | some ck =>
+                        Expr.mul (Expr.ofRat ck) (Expr.pow L (Expr.ofInt np1))
+                      | none =>
+                        Expr.div (Expr.mul (Expr.ofRat c) (Expr.pow L (Expr.ofInt np1)))
+                          (Expr.ofInt np1)
+                  .elementary (Expr.simplify F)
+                | none =>
+                  -- 5. pure ln(v)^n / exp / leftover trig of non-linear args
+                  match e with
+                  | .pow (.ln (.var name)) (.const r) =>
+                    match CplxConst.toRat? r with
+                    | some q =>
+                      if name == v && q.den == 1 && q.num ≥ 0 then
+                        .elementary (integrateLnPow q.num.toNat v)
+                      else .undecided s!"unsupported power of log: {e}"
+                    | none => .undecided s!"unsupported power of log: {e}"
+                  | .ln (.var name) =>
+                    if name == v then .elementary (integrateLnPow 1 v)
+                    else .undecided s!"ln of non-variable"
+                  | .exp arg =>
+                    match asCplxLinearIn arg v with
+                    | some (α, β) =>
+                      if β.isZero then
+                        .elementary (Expr.mul (Expr.exp arg) (Expr.var v))
+                      else
+                        match integrateExpCplxLinear CplxConst.one α β v with
+                        | some F => .elementary F
+                        | none => .undecided s!"complex exp failed: {e}"
+                    | none =>
+                      match asPoly? arg v with
+                      | some p => integrateExpPoly (RatFn.ofPoly Poly.one) p v
+                      | none => .undecided s!"exp of non-polynomial: {arg}"
+                  | .sin _ | .cos _ | .tan _ =>
+                    .undecided s!"trig of non-linear argument: {e}"
+                  | .re a | .im a | .conj a =>
+                    -- Integrate componentwise when the argument is real-linear complex
+                    match rischCore a v with
+                    | .elementary F =>
+                      match e with
+                      | .re _ => .elementary (Expr.simplify (Expr.re F))
+                      | .im _ => .elementary (Expr.simplify (Expr.im F))
+                      | .conj _ => .elementary (Expr.simplify (Expr.conj F))
+                      | _ => .undecided s!"re/im/conj: {e}"
+                    | .notElementary r => .notElementary r
+                    | .undecided r => .undecided r
+                  | _ =>
+                    .undecided s!"no Risch method for: {e}"
 
 /-- Convenience: Option elementary antiderivative. -/
 def risch? (e : Expr) (v : String := "x") : Option Expr :=

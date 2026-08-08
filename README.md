@@ -26,7 +26,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 
 | Module | Role |
 |--------|------|
-| `Taschenrechner.Expr` | AST (`Expr`), rationals (`RatConst`), pretty-printing |
+| `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
+| `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
@@ -44,6 +45,8 @@ x^2 + 3*x + 1
 2x(x+1)              # juxtaposition = multiply
 sin(x^2)
 -x^2 + 1             # unary minus; ^ binds tighter → -(x^2)
+2+3*i                # complex rationals ℚ(i)
+euler(exp(i*x))      # → cos(x) + i·sin(x)
 diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```
@@ -78,6 +81,7 @@ open Taschenrechner.Parse
    - Complete **rational** case over ℚ(x): division, Hermite reduction, partial fractions, Rothstein–Trager residues, `atan` for irreducible quadratics
    - **Trig preprocessing**: `tan→sin/cos`, `sin²`/`cos²` power-reduction, product-to-sum; linear `sin`/`cos`/`tan(ax+b)`
    - **Exponential** monomials `r(x)·exp(p(x))` via the Risch differential equation `v' + p'v = r`
+   - **Complex scalars / exp**: `(a+bi)·f`, `exp((α+βi)x)` e.g. `∫ exp(i x) = -i exp(i x)`; `re`/`im`/`conj` of real-linear complex expressions
    - **Non-existence certificates**, e.g. `∫ exp(x²) dx` is not elementary; `∫ x·exp(x²) dx = ½ exp(x²)` is
    - Simple log patterns (`ln(x)^n / x`, `ln(x)^n`)
 2. **Heuristics** (if Risch returns undecided): reverse chain rule for non-linear args, by-parts

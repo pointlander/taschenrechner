@@ -62,8 +62,20 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 -- Definite integral ∫₀¹ x² dx = 1/3
 #guard
   match integrateDefinite (x ^ (2 : Expr)) "x" (0 : Expr) (1 : Expr) with
-  | .success r _ => r == const ⟨1, 3⟩
+  | .success r _ => r == ofRat ⟨1, 3⟩
   | _ => false
+
+-- Complex arithmetic
+#guard simplify (I * I) == negOne
+#guard simplify (I ^ (2 : Expr)) == negOne
+#guard simplify ((2 : Expr) + (3 : Expr) * I) == const ⟨⟨2, 1⟩, ⟨3, 1⟩⟩
+#guard simplify (re ((2 : Expr) + (3 : Expr) * I)) == (2 : Expr)
+#guard simplify (im ((2 : Expr) + (3 : Expr) * I)) == (3 : Expr)
+#guard simplify (conj ((2 : Expr) + (3 : Expr) * I)) == const ⟨⟨2, 1⟩, ⟨-3, 1⟩⟩
+#guard
+  match CplxConst.div ⟨⟨1, 1⟩, ⟨0, 1⟩⟩ ⟨⟨0, 1⟩, ⟨1, 1⟩⟩ with
+  | some z => z == ⟨⟨0, 1⟩, ⟨-1, 1⟩⟩  -- 1/i = -i
+  | none => false
 
 -- Structured integrate results
 #guard
@@ -98,6 +110,12 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard parseEq "diff(sin(x^2), x)" ((2 : Expr) * x * cos (x ^ (2 : Expr)))
 #guard parseEq "int(x^2)" ((1 : Expr) / (3 : Expr) * (x ^ (3 : Expr)))
 #guard parseEq "simplify(x+x)" ((2 : Expr) * x)
+#guard parseEq "i" I
+#guard parseEq "I" I
+#guard parseEq "2+3*i" (const ⟨⟨2, 1⟩, ⟨3, 1⟩⟩)
+#guard parseEq "i^2" negOne
+#guard parseEq "re(2+3*i)" (2 : Expr)
+#guard parseEq "im(2+3*i)" (3 : Expr)
 
 -- Command parser
 #guard
@@ -145,5 +163,24 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 -- Automatic verification helpers
 #guard verifyDerivative (atan x) (Expr.div (1 : Expr) (x ^ (2 : Expr) + 1)) "x"
 #guard verifyDerivative (exp x) (exp x) "x"
+
+-- Complex differentiation / integration
+#guard simplify (diff (I * x) "x") == I
+#guard simplify (diff (I * sin x) "x") == I * cos x
+#guard simplify (diff (exp (I * x)) "x") == I * exp (I * x)
+#guard
+  match integrate (I * sin x) "x" with
+  | .success F _ => verifyDerivative F (I * sin x) "x"
+  | _ => false
+#guard
+  match integrate (exp (I * x)) "x" with
+  | .success F _ => verifyDerivative F (exp (I * x)) "x"
+  | _ => false
+#guard
+  match integrate (((2 : Expr) + (3 : Expr) * I) * x) "x" with
+  | .success F _ => verifyDerivative F (((2 : Expr) + (3 : Expr) * I) * x) "x"
+  | _ => false
+#guard simplify (re (I * x)) == (0 : Expr)
+#guard simplify (im (I * x)) == x
 
 end Taschenrechner.Tests

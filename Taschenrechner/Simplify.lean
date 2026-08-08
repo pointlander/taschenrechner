@@ -21,9 +21,9 @@ partial def flattenMul : Expr → List Expr
 /-- Ordering for canonical form (constants first, then vars, then compound). -/
 partial def cmpExpr : Expr → Expr → Ordering
   | const a, const b =>
-    if a.num < b.num then .lt
-    else if a.num > b.num then .gt
-    else compare a.den b.den
+    match RatConst.compare a.re b.re with
+    | .eq => RatConst.compare a.im b.im
+    | o => o
   | const _, _ => .lt
   | _, const _ => .gt
   | var a, var b => compare a b
@@ -47,6 +47,15 @@ partial def cmpExpr : Expr → Expr → Ordering
   | atan a, atan b => cmpExpr a b
   | atan _, _ => .lt
   | _, atan _ => .gt
+  | re a, re b => cmpExpr a b
+  | re _, _ => .lt
+  | _, re _ => .gt
+  | im a, im b => cmpExpr a b
+  | im _, _ => .lt
+  | _, im _ => .gt
+  | conj a, conj b => cmpExpr a b
+  | conj _, _ => .lt
+  | _, conj _ => .gt
   | pow a1 b1, pow a2 b2 =>
     match cmpExpr a1 a2 with
     | .eq => cmpExpr b1 b2
@@ -76,7 +85,7 @@ def foldMul : List Expr → Expr
   | x :: xs => xs.foldl mul x
 
 /-- Split `c * rest` from a product (or treat whole as coefficient 1). -/
-partial def splitCoeff : Expr → RatConst × Expr
+partial def splitCoeff : Expr → CplxConst × Expr
   | mul (const c) e =>
     let (c', e') := splitCoeff e
     (c * c', e')
@@ -84,7 +93,7 @@ partial def splitCoeff : Expr → RatConst × Expr
     let (c', e') := splitCoeff e
     (c * c', e')
   | const c => (c, one)
-  | e => (RatConst.one, e)
+  | e => (CplxConst.one, e)
 
 /-- Base^exponent factors in a product list, with rational coefficient. -/
 structure PowerFactor where
@@ -96,8 +105,8 @@ structure PowerFactor where
 partial def combineSummands (terms : List Expr) : List Expr :=
   let tagged := terms.map splitCoeff
   -- group by structural equality of the non-constant part
-  let rec insert (c : RatConst) (e : Expr) :
-      List (RatConst × Expr) → List (RatConst × Expr)
+  let rec insert (c : CplxConst) (e : Expr) :
+      List (CplxConst × Expr) → List (CplxConst × Expr)
     | [] => if c.isZero then [] else [(c, e)]
     | (c', e') :: rest =>
       if e == e' then
@@ -120,7 +129,7 @@ partial def combineFactors (factors : List Expr) : List Expr :=
     | pow b e => some (b, e)
     | const _ => none
     | e => some (e, one)
-  let mutConsts : List RatConst := factors.filterMap fun
+  let mutConsts : List CplxConst := factors.filterMap fun
     | const c => some c
     | _ => none
   let pows : List (Expr × Expr) := factors.filterMap toPow
@@ -130,7 +139,7 @@ partial def combineFactors (factors : List Expr) : List Expr :=
       if b == b' then (b', add e e') :: rest
       else (b', e') :: insert b e rest
   let grouped := pows.foldl (fun acc (b, e) => insert b e acc) []
-  let coeff := mutConsts.foldl (· * ·) RatConst.one
+  let coeff := mutConsts.foldl (· * ·) CplxConst.one
   let rebuilt := grouped.map fun (b, e) =>
     match e with
     | const r =>
@@ -145,7 +154,7 @@ partial def combineFactors (factors : List Expr) : List Expr :=
 
 /-- One bottom-up simplification pass. -/
 partial def simplify1 : Expr → Expr
-  | const r => const (RatConst.normalize r)
+  | const r => const (CplxConst.normalize r)
   | var v => var v
   | add a b =>
     let a := simplify1 a
@@ -178,11 +187,12 @@ partial def simplify1 : Expr → Expr
       else if r.isOne then a
       else match a with
         | const ra =>
-          match RatConst.powInt ra r.num with
-          -- only exact integer powers of rationals for now when den=1
-          | some rc =>
-            if r.den == 1 then const rc else pow a b
-          | none => pow a b
+          -- integer powers of complex constants
+          if r.isReal && r.re.den == 1 then
+            match CplxConst.powInt ra r.re.num with
+            | some rc => const rc
+            | none => pow a b
+          else pow a b
         | pow base e => pow base (mul e b)  -- (x^m)^n = x^(m*n)
         | _ => pow a b
     | const r, _ =>
@@ -221,7 +231,51 @@ partial def simplify1 : Expr → Expr
     match e with
     | const r => if r.isZero then zero else atan e
     | _ => atan e
+  | re e =>
+    let e := simplify1 e
+    match e with
+    | const c => const (CplxConst.ofRat c.re)
+    | re u => re u
+    | conj u => re u
+    | add a b => simplify1 (add (re a) (re b))
+    | mul (const c) f =>
+      if isRealValued f then simplify1 (mul (const (CplxConst.ofRat c.re)) f)
+      else re e
+    | mul f (const c) =>
+      if isRealValued f then simplify1 (mul (const (CplxConst.ofRat c.re)) f)
+      else re e
+    | _ => re e
+  | im e =>
+    let e := simplify1 e
+    match e with
+    | const c => const (CplxConst.ofRat c.im)
+    | im u => im u
+    | conj u => simplify1 (neg (im u))
+    | add a b => simplify1 (add (im a) (im b))
+    | mul (const c) f =>
+      if isRealValued f then simplify1 (mul (const (CplxConst.ofRat c.im)) f)
+      else im e
+    | mul f (const c) =>
+      if isRealValued f then simplify1 (mul (const (CplxConst.ofRat c.im)) f)
+      else im e
+    | _ => im e
+  | conj e =>
+    let e := simplify1 e
+    match e with
+    | const c => const (CplxConst.conj c)
+    | conj u => u
+    | add a b => simplify1 (add (conj a) (conj b))
+    | mul a b => simplify1 (mul (conj a) (conj b))
+    | _ => conj e
 where
+  /-- Heuristic: expression is real-valued (real vars, real constants, real elementary ops). -/
+  isRealValued : Expr → Bool
+    | const c => c.isReal
+    | var _ => true
+    | add a b | mul a b | pow a b => isRealValued a && isRealValued b
+    | sin e | cos e | tan e | exp e | ln e | atan e => isRealValued e
+    | re _ | im _ => true
+    | conj e => isRealValued e
   rebuildAdd (e : Expr) : Expr :=
     let terms := flattenAdd e
     let terms := combineSummands terms
@@ -271,13 +325,13 @@ partial def expand1 : Expr → Expr
     let a := expand1 a
     match b with
     | const r =>
-      if r.den == 1 && r.num > 1 && r.num ≤ 8 then
+      if r.isReal && r.re.den == 1 && r.re.num > 1 && r.re.num ≤ 8 then
         -- expand small positive integer powers
         let rec powMul (k : Nat) (acc : Expr) : Expr :=
           match k with
           | 0 => acc
           | k'+1 => powMul k' (mul acc a)
-        expand1 (powMul r.num.toNat one)
+        expand1 (powMul r.re.num.toNat one)
       else pow a b
     | _ => pow a b
   | sin e => sin (expand1 e)
@@ -286,6 +340,9 @@ partial def expand1 : Expr → Expr
   | exp e => exp (expand1 e)
   | ln e => ln (expand1 e)
   | atan e => atan (expand1 e)
+  | re e => re (expand1 e)
+  | im e => im (expand1 e)
+  | conj e => conj (expand1 e)
   | e => e
 
 def expand (e : Expr) : Expr := simplify (expand1 e)

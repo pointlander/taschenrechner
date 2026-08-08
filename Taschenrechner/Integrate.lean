@@ -131,13 +131,21 @@ def acceptAntideriv (F f : Expr) (v : String) (source : IntegrateSource) : Integ
   else
     .failure s!"verification failed ({source}): d/d{v}({F}) = {simplify F'}, expected {f}"
 
-/-- Recognise integer constant. -/
+/-- Recognise integer constant (real). -/
 def asIntConst : Expr → Option Int
-  | const r => if r.den == 1 then some r.num else none
+  | const r =>
+    match CplxConst.toRat? r with
+    | some q => if q.den == 1 then some q.num else none
+    | none => none
   | _ => none
 
-/-- Recognise rational constant. -/
+/-- Recognise real rational constant. -/
 def asRatConst : Expr → Option RatConst
+  | const r => CplxConst.toRat? r
+  | _ => none
+
+/-- Recognise any complex constant. -/
+def asCplxConst : Expr → Option CplxConst
   | const r => some r
   | _ => none
 
@@ -177,7 +185,7 @@ def integratePower (base expn : Expr) (v : String) : Option Expr :=
         let n1 := r + RatConst.one
         match RatConst.inv n1 with
         | some invN1 =>
-          some (mul (const invN1) (pow (var v) (const n1)))
+          some (mul (ofRat invN1) (pow (var v) (ofRat n1)))
         | none => none
     | none =>
       -- symbolic exponent independent of v: x^a → x^(a+1)/(a+1)
@@ -239,7 +247,7 @@ where
           else
             let n1 := r + RatConst.one
             match RatConst.inv n1 with
-            | some inv => some (mul (const inv) (pow g (const n1)))
+            | some inv => some (mul (ofRat inv) (pow g (ofRat n1)))
             | none => none
         | none =>
           if !dependsOn n v then
@@ -249,12 +257,12 @@ where
     | _ => none
 
 /-- Detect `c * f` with rational `c`. -/
-def peelConstFactor (e : Expr) : RatConst × Expr :=
+def peelConstFactor (e : Expr) : CplxConst × Expr :=
   match e with
   | mul (const c) f => (c, f)
   | mul f (const c) => (c, f)
   | const c => (c, one)
-  | e => (RatConst.one, e)
+  | e => (CplxConst.one, e)
 
 /-- Integration by parts: ∫ u dv = u v − ∫ v du, for simple polynomial × elementary. -/
 partial def tryByParts (e : Expr) (v : String) (fuel : Nat)
@@ -319,7 +327,7 @@ partial def integrateRaw (e : Expr) (v : String) (fuel : Nat) : IntegrateResult 
       | _ =>
         -- Peel constant factor
         let (c, f) := peelConstFactor e
-        if !c.isOne && f != e then
+        if !(c.isOne) && f != e then
           match integrateRaw f v fuel' with
           | .success F _ => .success (simplify (mul (const c) F)) .heuristic
           | .notElementary r => .notElementary r
@@ -341,7 +349,7 @@ where
     -- 1/x form: x^(-1) may appear as pow, or as div
     match e with
     | pow (var name) (const r) =>
-      if name == v && r == RatConst.negOne then
+      if name == v && r == CplxConst.negOne then
         .success (ln (var v)) .heuristic
       else .failure s!"cannot integrate power {e}"
     | _ =>
@@ -367,7 +375,7 @@ where
         if a.isZero then none
         else
           match RatConst.inv a with
-          | some invA => some (mul (const invA) (antiAt inner))
+          | some invA => some (mul (ofRat invA) (antiAt inner))
           | none => none
       | none =>
         if inner == var v then some (antiAt (var v))
@@ -390,9 +398,13 @@ where
     match e with
     | var name => if name == v then some (RatConst.one, RatConst.zero) else none
     | mul (const a) (var name) =>
-      if name == v then some (a, RatConst.zero) else none
+      match CplxConst.toRat? a with
+      | some q => if name == v then some (q, RatConst.zero) else none
+      | none => none
     | mul (var name) (const a) =>
-      if name == v then some (a, RatConst.zero) else none
+      match CplxConst.toRat? a with
+      | some q => if name == v then some (q, RatConst.zero) else none
+      | none => none
     | add a b =>
       match linearForm a v, asRatConst b with
       | some (ca, cb), some rb => some (ca, cb + rb)
@@ -446,6 +458,9 @@ where
     | exp a => exp (go a)
     | ln a => ln (go a)
     | atan a => atan (go a)
+    | re a => re (go a)
+    | im a => im (go a)
+    | conj a => conj (go a)
 
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with

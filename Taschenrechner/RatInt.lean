@@ -55,7 +55,10 @@ partial def ofExpr? (e : Expr) (v : String) : Option RatFn :=
   go (Expr.simplify e)
 where
   go : Expr → Option RatFn
-  | .const r => some (ofPoly (Poly.ofConst r))
+  | .const r =>
+    match CplxConst.toRat? r with
+    | some q => some (ofPoly (Poly.ofConst q))
+    | none => none  -- non-real constant: not in ℚ(x)
   | .var name => if name == v then some ⟨Poly.X, Poly.one⟩ else none
   | .add a b =>
     match go a, go b with
@@ -66,20 +69,23 @@ where
     | some ra, some rb => some (mul ra rb)
     | _, _ => none
   | .pow base (.const r) =>
-    if r.den != 1 then none
-    else
-      match go base with
-      | none => none
-      | some rb =>
-        if r.num ≥ 0 then
-          let k := r.num.toNat
-          some ⟨powNat rb.num k, powNat rb.den k⟩
-        else
-          let k := r.num.natAbs
-          if rb.num.isZero then none
-          else some (simplify ⟨powNat rb.den k, powNat rb.num k⟩)
+    match CplxConst.toRat? r with
+    | none => none
+    | some q =>
+      if q.den != 1 then none
+      else
+        match go base with
+        | none => none
+        | some rb =>
+          if q.num ≥ 0 then
+            let k := q.num.toNat
+            some ⟨powNat rb.num k, powNat rb.den k⟩
+          else
+            let k := q.num.natAbs
+            if rb.num.isZero then none
+            else some (simplify ⟨powNat rb.den k, powNat rb.num k⟩)
   | .pow _ _ => none
-  | .sin _ | .cos _ | .tan _ | .exp _ | .ln _ | .atan _ => none
+  | .sin _ | .cos _ | .tan _ | .exp _ | .ln _ | .atan _ | .re _ | .im _ | .conj _ => none
 
 end RatFn
 
@@ -125,7 +131,7 @@ def integratePoly (p : Poly) (v : String) : Expr :=
             let xp :=
               if k == 1 then Expr.var v
               else Expr.pow (Expr.var v) (Expr.ofInt k)
-            let term := if ck.isOne then xp else Expr.mul (Expr.const ck) xp
+            let term := if ck.isOne then xp else Expr.mul (Expr.ofRat ck) xp
             acc := Expr.add acc term
       pure (Expr.simplify acc)
 
@@ -212,7 +218,7 @@ def integrateQuadratic (a b p q : RatConst) (v : String) : Option Expr :=
   let F : Poly := ⟨#[q, p, RatConst.one]⟩
   let logPart : Expr :=
     if halfA.isZero then Expr.zero
-    else Expr.mul (Expr.const halfA) (Expr.ln (Poly.toExpr F v))
+    else Expr.mul (Expr.ofRat halfA) (Expr.ln (Poly.toExpr F v))
   let k := b - halfA * p
   if k.isZero then some (Expr.simplify logPart)
   else
@@ -235,12 +241,12 @@ def integrateQuadratic (a b p q : RatConst) (v : String) : Option Expr :=
         -- s = √r; if r is a perfect square of a rational, exact; else keep sqrt in expr
         let sExpr : Expr :=
           match perfectSqrt r with
-          | some s => Expr.const s
-          | none => Taschenrechner.sqrt (Expr.const r)
-        let u := Expr.add (Expr.var v) (Expr.const p2)  -- x + p/2
+          | some s => Expr.ofRat s
+          | none => Taschenrechner.sqrt (Expr.ofRat r)
+        let u := Expr.add (Expr.var v) (Expr.ofRat p2)  -- x + p/2
         let atanArg := Expr.div u sExpr
         let atanPart := Expr.div (Expr.atan atanArg) sExpr
-        let term := Expr.mul (Expr.const k) atanPart
+        let term := Expr.mul (Expr.ofRat k) atanPart
         some (Expr.simplify (Expr.add logPart term))
 where
   perfectSqrt (r : RatConst) : Option RatConst :=
@@ -269,7 +275,7 @@ def integrateSimpleFactor (A F : Poly) (v : String) : Option Expr :=
     if c.isZero then some Expr.zero
     else
       let L := Expr.ln (Poly.toExpr F v)
-      some (Expr.simplify (if c.isOne then L else Expr.mul (Expr.const c) L))
+      some (Expr.simplify (if c.isOne then L else Expr.mul (Expr.ofRat c) L))
   else if F.deg == 2 then
     integrateQuadratic (coeff A 1) (coeff A 0) (coeff F 1) (coeff F 0) v
   else
@@ -315,7 +321,7 @@ partial def rothsteinTrager (B C : Poly) (v : String) : Option Expr :=
           let vc := gcd C (sub B (scale c Cp))
           if vc.deg ≥ 1 then
             let L := Expr.ln (Poly.toExpr (monic vc) v)
-            let term := if c.isOne then L else Expr.mul (Expr.const c) L
+            let term := if c.isOne then L else Expr.mul (Expr.ofRat c) L
             acc := Expr.add acc term
           else ok := false
       if ok then pure (some (Expr.simplify acc)) else pure none

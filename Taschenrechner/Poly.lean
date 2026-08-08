@@ -13,13 +13,6 @@ namespace RatConst
 def abs (r : RatConst) : RatConst :=
   if r.num < 0 then neg r else r
 
-def compare (a b : RatConst) : Ordering :=
-  let a := normalize a; let b := normalize b
-  -- a.num/a.den ? b.num/b.den
-  let lhs := a.num * (b.den : Int)
-  let rhs := b.num * (a.den : Int)
-  if lhs < rhs then .lt else if lhs > rhs then .gt else .eq
-
 def lt (a b : RatConst) : Bool := compare a b == .lt
 def le (a b : RatConst) : Bool := compare a b != .gt
 
@@ -433,13 +426,13 @@ def toExpr (p : Poly) (v : String) : Expr :=
         let c := p.coeffs[i]!
         if !c.isZero then
           let term :=
-            if i == 0 then Expr.const c
+            if i == 0 then Expr.ofRat c
             else if i == 1 then
               if c.isOne then Expr.var v
-              else Expr.mul (Expr.const c) (Expr.var v)
+              else Expr.mul (Expr.ofRat c) (Expr.var v)
             else
               let xp := Expr.pow (Expr.var v) (Expr.ofInt i)
-              if c.isOne then xp else Expr.mul (Expr.const c) xp
+              if c.isOne then xp else Expr.mul (Expr.ofRat c) xp
           terms := term :: terms
       -- sum terms (high degree first for pretty print)
       match terms with
