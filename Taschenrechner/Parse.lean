@@ -25,6 +25,7 @@ import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
+import Taschenrechner.LinAlg
 
 namespace Taschenrechner.Parse
 
@@ -216,6 +217,24 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | some inv => pure (simplify (Expr.mat inv))
       | none => throw "inv: singular or non-square matrix"
     | none => throw "inv: expected a matrix"
+  | "rref", [e] =>
+    match asMat? e with
+    | some rows => pure (simplify (Expr.mat (Mat.rref rows)))
+    | none => throw "rref: expected a matrix"
+  | "rank", [e] =>
+    match asMat? e with
+    | some rows => pure (Expr.ofNat (Mat.rank rows))
+    | none => throw "rank: expected a matrix"
+  | "solve", [a, b] =>
+    match asMat? a, asMat? b with
+    | some A, some B =>
+      match Mat.solve A B with
+      | .unique x => pure (simplify (Expr.mat x))
+      | .infinite msg => throw s!"solve: {msg}"
+      | .inconsistent msg => throw s!"solve: {msg}"
+      | .error msg => throw s!"solve: {msg}"
+    | none, _ => throw "solve: first argument must be a matrix A"
+    | _, none => throw "solve: second argument must be a matrix/vector b"
   | "eye", [e] =>
     match asNatDim e with
     | some n => pure (Expr.mat (Mat.eye n))
@@ -255,9 +274,10 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _
-  | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _ | "eye", _ =>
+  | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _
+  | "rref", _ | "rank", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
-  | "zeros", _ | "ones", _ =>
+  | "zeros", _ | "ones", _ | "solve", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
@@ -280,6 +300,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "abs" || n == "simplify" || n == "expand"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
+    || n == "rref" || n == "rank" || n == "solve"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
 /-! ### Recursive-descent parsing -/
@@ -586,8 +607,8 @@ def helpText : String :=
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
-                det inv transpose/tp trace/tr eye zeros ones\n\
-                A*B matrix product, c*A scalar, A^n (n≥0 integer)\n\
+                det inv transpose/tp trace/tr rref rank solve(A,b)\n\
+                eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 simplify(e)  expand(e)  euler(e)\n\
   \n\

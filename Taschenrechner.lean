@@ -2,3 +2,4 @@
 import Taschenrechner.Basic
 import Taschenrechner.Tests
 import Taschenrechner.Regression
+import Taschenrechner.MatrixRegression

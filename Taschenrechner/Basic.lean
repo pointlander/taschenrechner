@@ -9,7 +9,9 @@ import Taschenrechner.RatInt
 import Taschenrechner.Trig
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
+import Taschenrechner.LinAlg
 import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Parse
 import Taschenrechner.Regression
+import Taschenrechner.MatrixRegression

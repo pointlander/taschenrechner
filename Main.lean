@@ -103,7 +103,10 @@ def runDemo : IO Unit := do
     "[1, 2; 3, 4] * eye(2)",
     "trace([1, 2; 3, 4])",
     "transpose([1, 2; 3, 4])",
-    "2 * [1, 0; 0, 1]"
+    "2 * [1, 0; 0, 1]",
+    "rref([1, 2; 2, 4])",
+    "rank([1, 2; 2, 4])",
+    "solve([1, 1; 0, 1], [3; 2])"
   ]
   for s in matSamples do
     match parse s with
@@ -224,6 +227,7 @@ def usage : String :=
   "  taschenrechner -c <cmd>         same as above\n" ++
   "  taschenrechner -i               interactive REPL\n" ++
   "  taschenrechner --regression     run 40-case integration suite\n" ++
+  "  taschenrechner --matrix-regression  run matrix RREF/solve suite\n" ++
   "  taschenrechner --help           language help\n" ++
   "\n" ++
   "Examples:\n" ++
@@ -245,6 +249,8 @@ def main (args : List String) : IO UInt32 := do
     pure 0
   | ["--regression"] | ["-r"] =>
     Regression.runSuiteIO
+  | ["--matrix-regression"] | ["--mat-regression"] | ["-mr"] =>
+    MatrixRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
     IO.println "Taschenrechner REPL  (help | quit)"
     repl
@@ -257,7 +263,8 @@ def main (args : List String) : IO UInt32 := do
   | cmd :: rest =>
     -- Only known flags are options; leading `-` may be unary minus (`-x^2`).
     if cmd == "-i" || cmd == "--repl" || cmd == "-h" || cmd == "--help"
-        || cmd == "--usage" || cmd == "-c" || cmd == "--regression" || cmd == "-r" then
+        || cmd == "--usage" || cmd == "-c" || cmd == "--regression" || cmd == "-r"
+        || cmd == "--matrix-regression" || cmd == "--mat-regression" || cmd == "-mr" then
       IO.eprintln s!"unknown option usage: {cmd}"
       IO.eprintln usage
       pure 2

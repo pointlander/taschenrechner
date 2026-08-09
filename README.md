@@ -17,7 +17,8 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
-lake exe taschenrechner --regression    # 40-case integration suite
+lake exe taschenrechner --regression           # 40-case integration suite
+lake exe taschenrechner --matrix-regression    # RREF / solve suite
 ```
 
 Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the library).
@@ -29,6 +30,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
+| `Taschenrechner.LinAlg` | RREF, rank, `solve(A,b)` (Gauss–Jordan) |
+| `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
@@ -51,6 +54,8 @@ euler(exp(i*x))      # → cos(x) + i·sin(x)
 [1, 2; 3, 4]         # 2×2 matrix
 det([1, 2; 3, 4])    # −2
 inv([1, 2; 0, 1])    # inverse
+rref([1, 2; 2, 4])   # reduced row echelon form
+solve([1, 1; 0, 1], [3; 2])  # → [1; 2]
 [1, 2; 3, 4]*eye(2)  # matrix product
 diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
