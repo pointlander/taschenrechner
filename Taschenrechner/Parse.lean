@@ -225,12 +225,27 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
     match asMat? e with
     | some rows => pure (Expr.ofNat (Mat.rank rows))
     | none => throw "rank: expected a matrix"
+  | "nullity", [e] =>
+    match asMat? e with
+    | some rows => pure (Expr.ofNat (Mat.nullity rows))
+    | none => throw "nullity: expected a matrix"
+  | "nullspace", [e] | "null", [e] | "ker", [e] =>
+    match asMat? e with
+    | some rows =>
+      let N := Mat.nullspace rows
+      if N.isEmpty then
+        -- trivial nullspace: return  n×0 as empty mat is awkward; use zeros(n,0) empty rows
+        let n := Mat.ncols rows
+        pure (Expr.mat (Array.replicate n #[]))
+      else
+        pure (simplify (Expr.mat N))
+    | none => throw "nullspace: expected a matrix"
   | "solve", [a, b] =>
     match asMat? a, asMat? b with
     | some A, some B =>
       match Mat.solve A B with
       | .unique x => pure (simplify (Expr.mat x))
-      | .infinite msg => throw s!"solve: {msg}"
+      | .general x _k => pure (simplify (Expr.mat x))
       | .inconsistent msg => throw s!"solve: {msg}"
       | .error msg => throw s!"solve: {msg}"
     | none, _ => throw "solve: first argument must be a matrix A"
@@ -275,7 +290,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _
   | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _
-  | "rref", _ | "rank", _ | "eye", _ =>
+  | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
   | "zeros", _ | "ones", _ | "solve", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
@@ -300,7 +315,8 @@ def isBuiltinName (name : String) : Bool :=
     || n == "abs" || n == "simplify" || n == "expand"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
-    || n == "rref" || n == "rank" || n == "solve"
+    || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
+    || n == "ker" || n == "nullity"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
 /-! ### Recursive-descent parsing -/
@@ -607,7 +623,8 @@ def helpText : String :=
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
-                det inv transpose/tp trace/tr rref rank solve(A,b)\n\
+                det inv transpose/tp trace/tr rref rank nullity\n\
+                nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 simplify(e)  expand(e)  euler(e)\n\

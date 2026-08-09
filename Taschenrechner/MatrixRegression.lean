@@ -99,11 +99,10 @@ def suite : List Case := [
   { name := "rank deficient"
     input := "rank([1, 2; 2, 4])"
     check := fun e => simplify e == (1 : Expr) },
-  -- solve
+  -- solve (unique)
   { name := "solve 2x2"
     input := "solve([1, 1; 0, 1], [3; 2])"
     check := fun e =>
-      -- x + y = 3, y = 2 → x = 1, y = 2
       isMat e 2 1
         && entryEq e 0 0 (1 : Expr) && entryEq e 1 0 (2 : Expr) },
   { name := "solve identity"
@@ -118,6 +117,32 @@ def suite : List Case := [
         && entryEq e 0 0 (1 : Expr)
         && entryEq e 1 0 (2 : Expr)
         && entryEq e 2 0 (3 : Expr) },
+  -- nullspace / general solve
+  { name := "nullspace rank-1"
+    input := "nullspace([1, 2; 2, 4])"
+    check := fun e =>
+      -- ker spanned by [-2; 1]
+      isMat e 2 1
+        && entryEq e 0 0 (ofInt (-2))
+        && entryEq e 1 0 (1 : Expr) },
+  { name := "nullity rank-1"
+    input := "nullity([1, 2; 2, 4])"
+    check := fun e => simplify e == (1 : Expr) },
+  { name := "nullspace full rank"
+    input := "nullspace([1, 2; 3, 4])"
+    check := fun e =>
+      -- trivial: n×0 empty columns → rows of length 0
+      match asMat? e with
+      | some rows => Mat.nrows rows == 2 && Mat.ncols rows == 0
+      | none => false },
+  { name := "solve underdetermined"
+    input := "solve([1, 2; 2, 4], [3; 6])"
+    check := fun e =>
+      -- x + 2y = 3 → x = 3 - 2 t1, y = t1
+      isMat e 2 1
+        && entryEq e 1 0 (var "t1")
+        && (entryEq e 0 0 (simplify (sub (3 : Expr) (mul (2 : Expr) (var "t1"))))
+            || entryEq e 0 0 (simplify (add (3 : Expr) (mul (ofInt (-2)) (var "t1"))))) },
   { name := "inv via solve consistency"
     input := "inv([2, 0; 0, 3])"
     check := fun e =>

@@ -30,7 +30,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
-| `Taschenrechner.LinAlg` | RREF, rank, `solve(A,b)` (Gauss–Jordan) |
+| `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
 | `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
@@ -55,7 +55,9 @@ euler(exp(i*x))      # → cos(x) + i·sin(x)
 det([1, 2; 3, 4])    # −2
 inv([1, 2; 0, 1])    # inverse
 rref([1, 2; 2, 4])   # reduced row echelon form
+nullspace([1, 2; 2, 4])      # → [-2; 1]
 solve([1, 1; 0, 1], [3; 2])  # → [1; 2]
+solve([1, 2; 2, 4], [3; 6])  # → [3-2·t1; t1]
 [1, 2; 3, 4]*eye(2)  # matrix product
 diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))

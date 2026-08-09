@@ -106,7 +106,9 @@ def runDemo : IO Unit := do
     "2 * [1, 0; 0, 1]",
     "rref([1, 2; 2, 4])",
     "rank([1, 2; 2, 4])",
-    "solve([1, 1; 0, 1], [3; 2])"
+    "nullspace([1, 2; 2, 4])",
+    "solve([1, 1; 0, 1], [3; 2])",
+    "solve([1, 2; 2, 4], [3; 6])"
   ]
   for s in matSamples do
     match parse s with
