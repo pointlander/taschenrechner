@@ -23,6 +23,14 @@ def showInt (label : String) (e : Expr) : IO Unit := do
     IO.println s!"            failed: {r}"
   IO.println ""
 
+def printExpr (e : Expr) : IO Unit := do
+  match asMat? e with
+  | some rows =>
+    for line in (Mat.pretty rows).splitOn "\n" do
+      IO.println line
+  | none =>
+    IO.println s!"{e}"
+
 def runDemo : IO Unit := do
   IO.println "═══════════════════════════════════════════════"
   IO.println "  Taschenrechner — Lean 4 Computer Algebra"
@@ -163,74 +171,108 @@ def runDemo : IO Unit := do
   IO.println "── Regression suite ─────────────────────────"
   IO.println (Regression.formatReport (Regression.runSuite))
   IO.println ""
-  IO.println "Done.  Try:  lake exe taschenrechner 'diff sin(x^2)'"
-  IO.println "       or:  lake exe taschenrechner --regression"
+  IO.println "Done.  Try:  lake exe taschenrechner -i"
+  IO.println "       A := [1, 2; 3, 4]   then   det(A)"
 
-def runCommand (cmd : Command) : IO UInt32 := do
+/-- Run a command under `env`; returns exit code and updated environment. -/
+def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
   match cmd with
   | .help =>
     IO.println helpText
-    pure 0
+    pure (0, env)
+  | .vars =>
+    IO.println (Env.format env)
+    pure (0, env)
+  | .clearAll =>
+    IO.println "(cleared all bindings)"
+    pure (0, Env.empty)
+  | .clearOne name =>
+    if (env.get? name).isSome then
+      IO.println s!"(cleared {name})"
+      pure (0, env.erase name)
+    else
+      IO.eprintln s!"clear: '{name}' is not bound"
+      pure (1, env)
+  | .assign name rhs =>
+    match envAssign env name rhs with
+    | .error err =>
+      IO.eprintln s!"assign error: {err}"
+      pure (1, env)
+    | .ok (env', val) =>
+      IO.print s!"{name} := "
+      printExpr val
+      pure (0, env')
   | .expr e =>
-    IO.println s!"{e}"
-    pure 0
+    let e := simplify (substEnv env e)
+    printExpr e
+    pure (0, env)
   | .simplify e =>
-    IO.println s!"{simplify e}"
-    pure 0
+    let e := simplify (substEnv env e)
+    printExpr e
+    pure (0, env)
   | .expand e =>
-    IO.println s!"{expand e}"
-    pure 0
+    let e := expand (substEnv env e)
+    printExpr e
+    pure (0, env)
   | .diff e v =>
+    let e := simplify (substEnv env e)
     let d := diff e v
     IO.println s!"d/d{v} ({e})  =  {d}"
-    pure 0
+    pure (0, env)
   | .integrate e v =>
+    let e := simplify (substEnv env e)
     match integrate e v with
     | .success F src =>
       IO.println s!"∫ ({e}) d{v}  =  {F}  + C"
       IO.println s!"source: {src}  verified: {verifyDerivative F e v}"
       IO.println s!"check: d/d{v} = {diff F v}"
-      pure 0
+      pure (0, env)
     | .notElementary r =>
       IO.eprintln s!"not elementary: {r}"
-      pure 1
+      pure (1, env)
     | .failure r =>
       IO.eprintln s!"integration failed: {r}"
-      pure 1
+      pure (1, env)
 
-def runLine (line : String) : IO UInt32 := do
-  match parseCommand line with
-  | .ok cmd => runCommand cmd
+def runLine (env : Env) (line : String) : IO (UInt32 × Env) := do
+  match parseCommand line env with
+  | .ok cmd => runCommand env cmd
   | .error err =>
     IO.eprintln s!"parse error: {err}"
-    pure 1
+    pure (1, env)
 
-/-- Read-eval-print loop. -/
+/-- Read-eval-print loop with session bindings. -/
 private def trimLine (s : String) : String :=
   String.ofList (s.toList.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
     |>.reverse.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
     |>.reverse)
 
-partial def repl : IO Unit := do
+partial def repl (env : Env) : IO Unit := do
   IO.print "taschenrechner> "
   let line := trimLine (← (← IO.getStdin).getLine)
   if line.isEmpty then
-    repl
+    repl env
   else if line == "quit" || line == "exit" || line == ":q" then
     IO.println "bye"
   else
-    let _ ← runLine line
-    repl
+    let (_code, env') ← runLine env line
+    repl env'
 
 def usage : String :=
   "Usage:\n" ++
   "  taschenrechner                  run demo\n" ++
   "  taschenrechner <expr-or-cmd>    evaluate one expression/command\n" ++
   "  taschenrechner -c <cmd>         same as above\n" ++
-  "  taschenrechner -i               interactive REPL\n" ++
+  "  taschenrechner -i               interactive REPL (with bindings)\n" ++
   "  taschenrechner --regression     run 40-case integration suite\n" ++
   "  taschenrechner --matrix-regression  run matrix RREF/solve suite\n" ++
   "  taschenrechner --help           language help\n" ++
+  "\n" ++
+  "REPL bindings:\n" ++
+  "  A := [1, 2; 3, 4]\n" ++
+  "  det(A)\n" ++
+  "  vars\n" ++
+  "  clear A\n" ++
   "\n" ++
   "Examples:\n" ++
   "  taschenrechner 'x^2 + 2x + 1'\n" ++
@@ -254,16 +296,17 @@ def main (args : List String) : IO UInt32 := do
   | ["--matrix-regression"] | ["--mat-regression"] | ["-mr"] =>
     MatrixRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
-    IO.println "Taschenrechner REPL  (help | quit)"
-    repl
+    IO.println "Taschenrechner REPL  (help | vars | clear | quit)"
+    IO.println "  Bindings:  name := expr"
+    repl Env.empty
     pure 0
   | ["-c", cmd] =>
-    runLine cmd
+    let (code, _) ← runLine Env.empty cmd
+    pure code
   | "-c" :: _ =>
     IO.eprintln "option -c requires an argument"
     pure 2
   | cmd :: rest =>
-    -- Only known flags are options; leading `-` may be unary minus (`-x^2`).
     if cmd == "-i" || cmd == "--repl" || cmd == "-h" || cmd == "--help"
         || cmd == "--usage" || cmd == "-c" || cmd == "--regression" || cmd == "-r"
         || cmd == "--matrix-regression" || cmd == "--mat-regression" || cmd == "-mr" then
@@ -271,6 +314,6 @@ def main (args : List String) : IO UInt32 := do
       IO.eprintln usage
       pure 2
     else
-      -- join remaining args so shell-less use works: diff sin(x)
       let line := " ".intercalate (cmd :: rest)
-      runLine line
+      let (code, _) ← runLine Env.empty line
+      pure code

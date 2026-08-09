@@ -8,6 +8,7 @@ import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Parse
 import Taschenrechner.Risch
+import Taschenrechner.Env
 
 namespace Taschenrechner.Tests
 
@@ -219,5 +220,44 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       rows[0]![0]! == (1 : Expr) && rows[0]![1]! == (3 : Expr)
         && rows[1]![0]! == (2 : Expr) && rows[1]![1]! == (4 : Expr)
   | _ => false
+
+-- Environment bindings
+#guard
+  match envAssign Env.empty "A" (ofInt 3) with
+  | .ok (env, _) =>
+      match env.get? "A", substEnv env (var "A" + var "A") with
+      | some _, e => simplify e == ofInt 6
+      | _, _ => false
+  | .error _ => false
+#guard
+  match parseCommand "A := 1+2" with
+  | .ok (.assign "A" e) => simplify e == ofInt 3
+  | _ => false
+#guard
+  match parse "[1, 2; 3, 4]" with
+  | .ok m =>
+    match envAssign Env.empty "M" m with
+    | .ok (env, _) =>
+      match parse "det(M)" env with
+      | .ok e => simplify e == ofInt (-2)
+      | _ => false
+    | _ => false
+  | _ => false
+#guard
+  match parseCommand "vars" with
+  | .ok .vars => true
+  | _ => false
+#guard
+  match parseCommand "clear" with
+  | .ok .clearAll => true
+  | _ => false
+#guard
+  match parseCommand "clear A" with
+  | .ok (.clearOne "A") => true
+  | _ => false
+#guard
+  match envAssign Env.empty "i" (ofInt 1) with
+  | .error _ => true
+  | .ok _ => false
 
 end Taschenrechner.Tests

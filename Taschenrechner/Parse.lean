@@ -26,6 +26,7 @@ import Taschenrechner.Integrate
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
+import Taschenrechner.Env
 
 namespace Taschenrechner.Parse
 
@@ -319,140 +320,144 @@ def isBuiltinName (name : String) : Bool :=
     || n == "ker" || n == "nullity"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
-/-! ### Recursive-descent parsing -/
+/-! ### Recursive-descent parsing (environment-aware) -/
 
 mutual
 
-partial def parseExpr (p : Parser) : Except String (Expr × Parser) :=
-  parseSum p
+partial def parseExpr (env : Env) (p : Parser) : Except String (Expr × Parser) :=
+  parseSum env p
 
-partial def parseSum (p : Parser) : Except String (Expr × Parser) := do
-  let (lhs, p) ← parseProduct p
+partial def parseSum (env : Env) (p : Parser) : Except String (Expr × Parser) := do
+  let (lhs, p) ← parseProduct env p
   go lhs p
 where
   go (lhs : Expr) (p : Parser) : Except String (Expr × Parser) := do
     match p.peek with
     | .plus =>
-      let (rhs, p) ← parseProduct p.advance
+      let (rhs, p) ← parseProduct env p.advance
       go (Expr.add lhs rhs) p
     | .minus =>
-      let (rhs, p) ← parseProduct p.advance
+      let (rhs, p) ← parseProduct env p.advance
       go (Expr.sub lhs rhs) p
     | _ => pure (lhs, p)
 
-partial def parseProduct (p : Parser) : Except String (Expr × Parser) := do
-  let (lhs, p) ← parseUnary p
+partial def parseProduct (env : Env) (p : Parser) : Except String (Expr × Parser) := do
+  let (lhs, p) ← parseUnary env p
   go lhs p
 where
   go (lhs : Expr) (p : Parser) : Except String (Expr × Parser) := do
     match p.peek with
     | .star | .middot =>
-      let (rhs, p) ← parseUnary p.advance
+      let (rhs, p) ← parseUnary env p.advance
       go (Expr.mul lhs rhs) p
     | .slash =>
-      let (rhs, p) ← parseUnary p.advance
+      let (rhs, p) ← parseUnary env p.advance
       go (Expr.div lhs rhs) p
     | t =>
       if t.startsAtom then
-        let (rhs, p) ← parseUnary p
+        let (rhs, p) ← parseUnary env p
         go (Expr.mul lhs rhs) p
       else
         pure (lhs, p)
 
 /-- Unary binds looser than `^`, so `-x^2` = `-(x^2)`. -/
-partial def parseUnary (p : Parser) : Except String (Expr × Parser) := do
+partial def parseUnary (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   match p.peek with
-  | .plus => parseUnary p.advance
+  | .plus => parseUnary env p.advance
   | .minus =>
-    let (e, p) ← parseUnary p.advance
+    let (e, p) ← parseUnary env p.advance
     pure (Expr.neg e, p)
-  | _ => parsePower p
+  | _ => parsePower env p
 
 /-- Right-associative exponentiation: `a^b^c` = `a^(b^c)`. -/
-partial def parsePower (p : Parser) : Except String (Expr × Parser) := do
-  let (lhs, p) ← parseAtom p
+partial def parsePower (env : Env) (p : Parser) : Except String (Expr × Parser) := do
+  let (lhs, p) ← parseAtom env p
   match p.peek with
   | .caret =>
-    let (rhs, p) ← parseUnary p.advance
+    let (rhs, p) ← parseUnary env p.advance
     pure (Expr.pow lhs rhs, p)
   | _ => pure (lhs, p)
 
-partial def parseAtom (p : Parser) : Except String (Expr × Parser) := do
+partial def parseAtom (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   match p.peek with
   | .num n => pure (Expr.ofInt n, p.advance)
-  | .ident name => parseIdent name p.advance
+  | .ident name => parseIdent env name p.advance
   | .lparen =>
-    let (e, p) ← parseExpr p.advance
+    let (e, p) ← parseExpr env p.advance
     let p ← p.expect .rparen
     pure (e, p)
   | .lbracket =>
-    -- [a, b; c, d] matrix literal
-    parseMatrixBody p.advance .rbracket
+    parseMatrixBody env p.advance .rbracket
   | t => throw s!"expected number, identifier, '(', or '[', got '{t}'"
 
 /--
   Parse matrix body until `closer` (`)` or `]`).
   Rows separated by `;`, entries by `,`.
 -/
-partial def parseMatrixBody (p : Parser) (closer : Token) : Except String (Expr × Parser) := do
+partial def parseMatrixBody (env : Env) (p : Parser) (closer : Token) : Except String (Expr × Parser) := do
   if p.peek == closer then
     throw "empty matrix"
-  let (rows, p) ← parseMatrixRows p closer
+  let (rows, p) ← parseMatrixRows env p closer
   let p ← p.expect closer
   match Mat.ofLists rows with
   | .error err => throw err
   | .ok data => pure (Expr.mat data, p)
 
-partial def parseMatrixRows (p : Parser) (closer : Token) : Except String (List (List Expr) × Parser) := do
-  let (row, p) ← parseMatrixRow p closer
+partial def parseMatrixRows (env : Env) (p : Parser) (closer : Token) :
+    Except String (List (List Expr) × Parser) := do
+  let (row, p) ← parseMatrixRow env p closer
   match p.peek with
   | .semicolon =>
-    let (rest, p) ← parseMatrixRows p.advance closer
+    let (rest, p) ← parseMatrixRows env p.advance closer
     pure (row :: rest, p)
   | t =>
     if t == closer then pure ([row], p)
     else throw s!"expected ';' or '{closer}' in matrix, got '{t}'"
 
-partial def parseMatrixRow (p : Parser) (closer : Token) : Except String (List Expr × Parser) := do
-  let (e, p) ← parseExpr p
+partial def parseMatrixRow (env : Env) (p : Parser) (closer : Token) :
+    Except String (List Expr × Parser) := do
+  let (e, p) ← parseExpr env p
   go [e] p
 where
   go (acc : List Expr) (p : Parser) : Except String (List Expr × Parser) := do
     match p.peek with
     | .comma =>
-      let (e, p) ← parseExpr p.advance
+      let (e, p) ← parseExpr env p.advance
       go (acc ++ [e]) p
     | .semicolon => pure (acc, p)
     | t =>
       if t == closer then pure (acc, p)
       else throw s!"expected ',', ';', or '{closer}' in matrix row, got '{t}'"
 
-partial def parseIdent (name : String) (p : Parser) : Except String (Expr × Parser) := do
+partial def parseIdent (env : Env) (name : String) (p : Parser) : Except String (Expr × Parser) := do
   let lower := name.toLower
   if p.peek == .lparen && (lower == "matrix" || lower == "mat") then
-    parseMatrixBody p.advance .rparen
+    parseMatrixBody env p.advance .rparen
   else if p.peek == .lparen && isBuiltinName name then
-    let (args, p) ← parseArgList p.advance
+    let (args, p) ← parseArgList env p.advance
     let e ← applyCall name args
     pure (e, p)
   else if name == "i" || name == "I" then
     pure (Expr.I, p)
+  else if let some val := env.get? name then
+    -- Session binding (must not shadow function calls above)
+    pure (val, p)
   else
     pure (Expr.var name, p)
 
-partial def parseArgList (p : Parser) : Except String (List Expr × Parser) := do
+partial def parseArgList (env : Env) (p : Parser) : Except String (List Expr × Parser) := do
   if p.peek == .rparen then
     pure ([], p.advance)
   else
-    let (e, p) ← parseExpr p
-    let (rest, p) ← parseArgListCont p
+    let (e, p) ← parseExpr env p
+    let (rest, p) ← parseArgListCont env p
     pure (e :: rest, p)
 
-partial def parseArgListCont (p : Parser) : Except String (List Expr × Parser) := do
+partial def parseArgListCont (env : Env) (p : Parser) : Except String (List Expr × Parser) := do
   match p.peek with
   | .comma =>
-    let (e, p) ← parseExpr p.advance
-    let (rest, p) ← parseArgListCont p
+    let (e, p) ← parseExpr env p.advance
+    let (rest, p) ← parseArgListCont env p
     pure (e :: rest, p)
   | .rparen => pure ([], p.advance)
   | t => throw s!"expected ',' or ')', got '{t}'"
@@ -461,24 +466,24 @@ end
 
 /-! ### Public API -/
 
-/-- Parse a full expression string; trailing input is an error. -/
-def parse (input : String) : Except String Expr := do
+/-- Parse a full expression string under optional session `env`. -/
+def parse (input : String) (env : Env := {}) : Except String Expr := do
   let tokens ← tokenize input
   let p : Parser := { tokens, pos := 0 }
   if p.peek == .eof then
     throw "empty expression"
-  let (e, p) ← parseExpr p
+  let (e, p) ← parseExpr env p
   match p.peek with
   | .eof => pure (simplify e)
   | t => throw s!"unexpected token '{t}' after expression"
 
 /-- Parse without simplifying (useful for debugging the AST). -/
-def parseRaw (input : String) : Except String Expr := do
+def parseRaw (input : String) (env : Env := {}) : Except String Expr := do
   let tokens ← tokenize input
   let p : Parser := { tokens, pos := 0 }
   if p.peek == .eof then
     throw "empty expression"
-  let (e, p) ← parseExpr p
+  let (e, p) ← parseExpr env p
   match p.peek with
   | .eof => pure e
   | t => throw s!"unexpected token '{t}' after expression"
@@ -490,12 +495,17 @@ inductive Command where
   | integrate : Expr → String → Command
   | simplify  : Expr → Command
   | expand    : Expr → Command
+  | assign    : String → Expr → Command
+  | vars      : Command
+  | clearAll  : Command
+  | clearOne  : String → Command
   | help      : Command
   deriving Repr
 
 private def isKeyword (k : String) : Bool :=
   k == "diff" || k == "d" || k == "int" || k == "integrate"
     || k == "simplify" || k == "expand" || k == "help"
+    || k == "vars" || k == "clear"
 
 private def isReservedFun (k : String) : Bool :=
   k == "sin" || k == "cos" || k == "tan" || k == "exp"
@@ -547,69 +557,107 @@ private def trailingVar (s : String) : Option (String × String) :=
     else none
   | [] => none
 
-private def parseVarName (s : String) : Except String String := do
-  let e ← parse s
+private def parseVarName (s : String) (env : Env := {}) : Except String String := do
+  let e ← parse s env
   asVarName e
 
-private def parseExprAndOptionalVar (s : String) : Except String (Expr × String) := do
+private def parseExprAndOptionalVar (s : String) (env : Env := {}) : Except String (Expr × String) := do
   let s := strTrim s
   if let some (left, right) := splitTopComma s then
-    let e ← parse left
-    let v ← parseVarName right
+    let e ← parse left env
+    let v ← parseVarName right env
     pure (e, v)
   else
     match trailingVar s with
     | some (left, v) =>
-      let e ← parse left
+      let e ← parse left env
       pure (e, v)
     | none =>
-      let e ← parse s
+      let e ← parse s env
       pure (e, "x")
+
+/-- Split `name := rhs` at top-level `:=` (paren/bracket depth 0). -/
+partial def splitAssign (s : String) : Option (String × String) :=
+  let cs := s.toList.toArray
+  let rec go (i : Nat) (depth : Nat) : Option Nat :=
+    if i + 1 < cs.size then
+      let c := cs[i]!
+      let d :=
+        match c with
+        | '(' | '[' => depth + 1
+        | ')' | ']' => if depth = 0 then 0 else depth - 1
+        | _ => depth
+      if depth == 0 && c == ':' && cs[i+1]! == '=' then some i
+      else go (i + 1) d
+    else none
+  match go 0 0 with
+  | none => none
+  | some i =>
+    let left := strTrim (charsToString (cs.toList.take i))
+    let right := strTrim (charsToString (cs.toList.drop (i + 2)))
+    if left.isEmpty || right.isEmpty then none
+    else some (left, right)
 
 /--
   Parse a calculator command line.
 
-  Supported forms:
-  * `<expr>`
-  * `diff <expr>` / `diff <expr> <var>`
-  * `int <expr>`  / `int <expr> <var>`
-  * `simplify <expr>` / `expand <expr>`
-  * `help`
-  * or CAS calls inside expressions: `diff(sin(x^2), x)`
+  Supports assignment (`name := expr`), `vars`, `clear`, calculus commands,
+  and bare expressions.
 -/
-def parseCommand (input : String) : Except String Command := do
+def parseCommand (input : String) (env : Env := {}) : Except String Command := do
   let trimmed := strTrim input
   if trimmed.isEmpty then
     throw "empty input"
   let lower := trimmed.toLower
   if lower == "help" || lower == "?" then
     pure .help
+  else if lower == "vars" || lower == "bindings" then
+    pure .vars
+  else if lower == "clear" then
+    pure .clearAll
+  else if lower.startsWith "clear " then
+    let name := strTrim (charsToString (trimmed.toList.drop 6))
+    if name.isEmpty then pure .clearAll
+    else if isBindingName name then pure (.clearOne name)
+    else throw s!"clear: invalid name '{name}'"
+  else if let some (lhs, rhs) := splitAssign trimmed then
+    if !isBindingName lhs then
+      throw s!"invalid assignment target '{lhs}'"
+    let e ← parse rhs env
+    pure (.assign lhs e)
   else
     let (kw, rest?) := splitKeyword trimmed
     match kw, rest? with
     | some "diff", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest
+      let (e, v) ← parseExprAndOptionalVar rest env
       pure (.diff e v)
     | some "d", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest
+      let (e, v) ← parseExprAndOptionalVar rest env
       pure (.diff e v)
     | some "int", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest
+      let (e, v) ← parseExprAndOptionalVar rest env
       pure (.integrate e v)
     | some "integrate", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest
+      let (e, v) ← parseExprAndOptionalVar rest env
       pure (.integrate e v)
     | some "simplify", some rest =>
-      let e ← parse rest
+      let e ← parse rest env
       pure (.simplify e)
     | some "expand", some rest =>
-      let e ← parse rest
+      let e ← parse rest env
       pure (.expand e)
     | some "help", _ => pure .help
+    | some "vars", _ => pure .vars
+    | some "clear", none => pure .clearAll
+    | some "clear", some rest =>
+      let name := strTrim rest
+      if name.isEmpty then pure .clearAll
+      else if isBindingName name then pure (.clearOne name)
+      else throw s!"clear: invalid name '{name}'"
     | some kw, none =>
       throw s!"command '{kw}' needs an expression"
     | _, _ =>
-      let e ← parse trimmed
+      let e ← parse trimmed env
       pure (.expr e)
 
 /-- Pretty help text for the CLI. -/
@@ -631,6 +679,9 @@ def helpText : String :=
   \n\
   Commands:\n\
     <expr>\n\
+    name := <expr>          bind a session variable\n\
+    vars                    list bindings\n\
+    clear [name]            clear all or one binding\n\
     diff <expr> [var]       (default var: x)\n\
     int  <expr> [var]\n\
     simplify <expr>\n\
@@ -639,9 +690,14 @@ def helpText : String :=
   \n\
   Examples:\n\
     x^2 + 3*x + 1\n\
+    A := [1, 2; 3, 4]\n\
+    det(A)\n\
+    b := [5; 6]\n\
+    solve(A, b)\n\
+    vars\n\
+    clear A\n\
     diff sin(x^2)\n\
     int x*exp(x)\n\
-    diff(sin(x^2), x)\n\
     int(1/x, x)"
 
 end Taschenrechner.Parse

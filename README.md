@@ -19,6 +19,7 @@ lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
 lake exe taschenrechner --regression           # 40-case integration suite
 lake exe taschenrechner --matrix-regression    # RREF / solve suite
+lake exe taschenrechner -i                     # REPL with bindings
 ```
 
 Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the library).
@@ -63,7 +64,16 @@ diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```
 
-Commands: `diff <expr> [var]`, `int <expr> [var]`, `simplify <expr>`, `expand <expr>`, `help`.
+Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `help`.
+
+```bash
+lake exe taschenrechner -i
+taschenrechner> A := [1, 2; 3, 4]
+taschenrechner> b := [5; 11]
+taschenrechner> solve(A, b)
+taschenrechner> vars
+taschenrechner> clear A
+```
 
 ## Quick examples
 
