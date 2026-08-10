@@ -7,7 +7,9 @@
 import Taschenrechner.Parse
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
+import Taschenrechner.Eigen
 import Taschenrechner.Simplify
+import Taschenrechner.Normal
 
 namespace Taschenrechner.MatrixRegression
 
@@ -154,7 +156,39 @@ def suite : List Case := [
     check := fun e =>
       isMat e 2 2
         && entryEq e 0 0 (2 : Expr) && entryEq e 1 1 (2 : Expr)
-        && entryEq e 0 1 (0 : Expr) }
+        && entryEq e 0 1 (0 : Expr) },
+  -- characteristic polynomial / eigenvalues
+  { name := "charpoly diagonal"
+    input := "charpoly([1, 0; 0, 2])"
+    check := fun e =>
+      -- t² − 3t + 2
+      equivNF e ((var "t") ^ (2 : Expr) - (3 : Expr) * var "t" + (2 : Expr)) },
+  { name := "eigvals diagonal"
+    input := "eigvals([1, 0; 0, 2])"
+    check := fun e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 1 && Mat.ncols rows == 2
+            && (let a := simplify (Mat.get! rows 0 0)
+                let b := simplify (Mat.get! rows 0 1)
+                (a == ofInt 1 || a == ofInt 2)
+                  && (b == ofInt 1 || b == ofInt 2)
+                  && a != b)
+      | none => false },
+  { name := "eigenspace for λ=2"
+    input := "eigenspace([1, 0; 0, 2], 2)"
+    check := fun e =>
+      -- nullspace of diag(-1,0) → span of e₂
+      isMat e 2 1
+        && entryEq e 0 0 (0 : Expr)
+        && entryEq e 1 0 (1 : Expr) },
+  { name := "eigvals rotation"
+    input := "eigvals([0, -1; 1, 0])"
+    check := fun e =>
+      -- ±i
+      isMat e 1 2
+        && (entryEq e 0 0 I || entryEq e 0 0 (neg I))
+        && (entryEq e 0 1 I || entryEq e 0 1 (neg I)) }
 ]
 
 structure CaseResult where

@@ -30,6 +30,7 @@ import Taschenrechner.Series
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
+import Taschenrechner.Eigen
 import Taschenrechner.Env
 
 namespace Taschenrechner.Parse
@@ -267,6 +268,40 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       else
         pure (simplify (Expr.mat N))
     | none => throw "nullspace: expected a matrix"
+  | "charpoly", [e] | "characteristic", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.charpoly rows with
+      | some p => pure p
+      | none => throw "charpoly: expected square matrix"
+    | none => throw "charpoly: expected a matrix"
+  | "charpoly", [e, v] | "characteristic", [e, v] => do
+      let v ← asVarName v
+      match asMat? e with
+      | some rows =>
+        match Mat.charpoly rows v with
+        | some p => pure p
+        | none => throw "charpoly: expected square matrix"
+      | none => throw "charpoly: expected a matrix"
+  | "eigvals", [e] | "eigenvalues", [e] | "eigen", [e] | "eig", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.eigenvaluesMat rows with
+      | some m => pure (simplify (Expr.mat m))
+      | none => throw "eigvals: expected square matrix"
+    | none => throw "eigvals: expected a matrix"
+  | "eigenspace", [e, lam] | "eigenvectors", [e, lam] | "eigvec", [e, lam] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.eigenspace rows lam with
+      | some N =>
+        if N.isEmpty then
+          let n := Mat.ncols rows
+          pure (Expr.mat (Array.replicate n #[]))
+        else
+          pure (simplify (Expr.mat N))
+      | none => throw "eigenspace: expected square matrix"
+    | none => throw "eigenspace: expected a matrix"
   | "solve", [a, b] =>
     match asMat? a, asMat? b with
     | some A, some B =>
@@ -406,8 +441,12 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
   | "zeros", _ | "ones", _ | "together", _ | "nf", _ | "normal", _ | "normalform", _
-  | "roots", _ | "factor", _ | "collect", _ =>
+  | "roots", _ | "factor", _ | "collect", _ | "charpoly", _ | "characteristic", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
+  | "eigvals", _ | "eigenvalues", _ | "eigen", _ | "eig", _ =>
+      throw s!"{name} expects 1 argument (square matrix), got {args.length}"
+  | "eigenspace", _ | "eigenvectors", _ | "eigvec", _ =>
+      throw s!"{name} expects 2 arguments (matrix, eigenvalue), got {args.length}"
   | "solve", _ =>
       throw s!"solve expects solve(A,b) | solve(f) | solve(f,x) | solve(lhs,rhs,x), got {args.length} args"
   | "coeff", _ =>
@@ -449,6 +488,9 @@ def isBuiltinName (name : String) : Bool :=
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
     || n == "ker" || n == "nullity"
+    || n == "charpoly" || n == "characteristic"
+    || n == "eigvals" || n == "eigenvalues" || n == "eigen" || n == "eig"
+    || n == "eigenspace" || n == "eigenvectors" || n == "eigvec"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
 /-! ### Recursive-descent parsing (environment-aware) -/
@@ -864,6 +906,7 @@ def helpText : String :=
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
                 det inv transpose/tp trace/tr rref rank nullity\n\
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
+                charpoly(A)  eigvals/eigen/eig(A)  eigenspace(A,λ)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs,rhs,x)\n\
                 collect(e)  coeff(e,n)  coeff(e,v,n)\n\

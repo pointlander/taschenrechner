@@ -13,6 +13,7 @@ import Taschenrechner.Trig
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
+import Taschenrechner.Eigen
 import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Series

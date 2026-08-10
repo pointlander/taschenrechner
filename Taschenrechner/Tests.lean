@@ -13,6 +13,7 @@ import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Solve
 import Taschenrechner.Series
+import Taschenrechner.Eigen
 
 namespace Taschenrechner.Tests
 
@@ -455,5 +456,50 @@ def parseEq (s : String) (expected : Expr) : Bool :=
     (1 + x + x ^ (2 : Expr))
 #guard natFactorial 5 == 120
 #guard natFactorial 0 == 1
+
+-- Characteristic polynomial & eigenvalues
+#guard
+  let A := #[#[(1 : Expr), (0 : Expr)], #[(0 : Expr), (2 : Expr)]]
+  match Mat.charpoly A with
+  | some p =>
+      equivNF p ((var "t") ^ (2 : Expr) - (3 : Expr) * var "t" + (2 : Expr))
+  | none => false
+#guard
+  let A := #[#[(1 : Expr), (0 : Expr)], #[(0 : Expr), (2 : Expr)]]
+  match Mat.eigenvalues A with
+  | some rs =>
+      rs.length == 2 && rs.any (· == ofInt 1) && rs.any (· == ofInt 2)
+  | none => false
+#guard
+  match parse "eigvals([0, -1; 1, 0])" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          rows.size == 1 && rows[0]!.size == 2
+            && rows[0]!.toList.any (fun x => simplify x == I || simplify x == neg I)
+      | none => false
+  | _ => false
+#guard
+  match parse "charpoly([1, 0; 0, 2])" with
+  | .ok e =>
+      equivNF e ((var "t") ^ (2 : Expr) - (3 : Expr) * var "t" + (2 : Expr))
+  | _ => false
+#guard
+  match parse "eigvals([1, 0; 0, 2])" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows.size == 1 && rows[0]!.size == 2
+      | none => false
+  | _ => false
+#guard
+  match parse "eigenspace([1, 0; 0, 2], 2)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 2 && Mat.ncols rows == 1
+            && simplify (Mat.get! rows 0 0) == ofInt 0
+            && simplify (Mat.get! rows 1 0) == ofInt 1
+      | none => false
+  | _ => false
 
 end Taschenrechner.Tests
