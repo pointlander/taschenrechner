@@ -78,7 +78,36 @@ def suite : List Case := [
     check := fun e => simplify e == ofInt 15 },
   { name := "sum k² at n=3 equals 14"
     input := "subst(sum(k^2, k, 1, n), n, 3)"
-    check := fun e => simplify e == ofInt 14 }
+    check := fun e => simplify e == ofInt 14 },
+  { name := "numeric sum k=1..10"
+    input := "sum(k, 1, 10, k)"
+    check := fun e => simplify e == ofInt 55 },
+  { name := "numeric sum k²=1..5"
+    input := "sum(k^2, k, 1, 5)"
+    check := fun e => simplify e == ofInt 55 },
+  { name := "y' syntax dsolve"
+    input := "dsolve(y' + y = 0)"
+    check := fun e => isEqY e && dependsOn e "C" },
+  { name := "IC y(0)=1"
+    input := "dsolve(yp + y = 0, 0, 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && !dependsOn r "C"
+            && equivNF (simplify (subst r "x" (0 : Expr))) (1 : Expr)
+      | none => false },
+  { name := "IC y(0)=2 full args"
+    input := "dsolve(yp + y = 0, y, x, 0, 2)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          equivNF (simplify (subst r "x" (0 : Expr))) (2 : Expr)
+      | none => false },
+  { name := "tidy exp form C·exp(-x)"
+    input := "dsolve(yp + y = 0)"
+    check := fun e =>
+      let s := Expr.toString e
+      s.contains "exp(-" }
 ]
 
 structure CaseResult where

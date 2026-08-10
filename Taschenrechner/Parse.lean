@@ -125,6 +125,9 @@ def tokenize (input : String) : Except String (Array Token) := do
       i := i + 1
       while i < len && isIdentCont cs[i]! do
         i := i + 1
+      -- Allow trailing prime(s): y', f'', yp remains yp
+      while i < len && cs[i]! == '\'' do
+        i := i + 1
       let name := charsToString (cs.extract start i).toList
       out := out.push (.ident name)
     else
@@ -561,10 +564,19 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "dsolve", [e, y] => do
       let y ← asVarName y
       dsolve e y "x"
-  | "dsolve", [e, y, x] => do
+  | "dsolve", [e, a, b] => do
+      -- dsolve(eq, y, x)  OR  dsolve(eq, x0, y0) for y(x0)=y0
+      match asVarName a, asVarName b with
+      | .ok y, .ok x => dsolve e y x
+      | _, _ => dsolveIC e "y" "x" a b
+  | "dsolve", [e, y, a, b] => do
+      -- Convention for 4 args: dsolve(eq, y, x0, y0) with independent var x
+      let y ← asVarName y
+      dsolveIC e y "x" a b
+  | "dsolve", [e, y, x, x0, y0] => do
       let y ← asVarName y
       let x ← asVarName x
-      dsolve e y x
+      dsolveIC e y x x0 y0
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -603,7 +615,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "sum", _ =>
       throw s!"sum expects sum(expr, k, lo, hi) or sum(k, lo, hi, expr), got {args.length} args"
   | "dsolve", _ =>
-      throw s!"dsolve expects dsolve(eq) | dsolve(eq, y) | dsolve(eq, y, x) [use yp for y'], got {args.length} args"
+      throw s!"dsolve expects dsolve(eq) | dsolve(eq,y,x) | dsolve(eq,x0,y0) | dsolve(eq,y,x,x0,y0) (y' or yp), got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -1076,7 +1088,8 @@ def helpText : String :=
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
-                sum(expr, k, lo, hi)  dsolve(eq)  (yp = y'; C = const)\n\
+                sum(expr, k, lo, hi)  dsolve(eq)  (y' or yp; C = const)\n\
+                dsolve(eq, x0, y0)  dsolve(eq, y, x, x0, y0)  initial conditions\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\

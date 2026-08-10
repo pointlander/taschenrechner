@@ -170,21 +170,23 @@ lake exe taschenrechner 'expm(zeros(2))'              # → I
 
 | Form | What it does |
 |------|----------------|
-| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (poly via Faulhaber, or geometric r^k) |
+| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber / geometric; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
-| `dsolve(eq)` | First-order ODE; use **`yp`** for y′ (default y,x) |
+| `dsolve(eq)` | First-order ODE; use **`y'`** or **`yp`** for y′ |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
-| `C` | Arbitrary constant in the solution |
+| `dsolve(eq, x0, y0)` | With initial condition y(x0)=y0 |
+| `dsolve(eq, y, x, x0, y0)` | Full IC form |
+| `C` | Arbitrary constant (eliminated when an IC is given) |
 
-Linear form: `yp + P(x)*y = Q(x)`. Separable: `yp = f(x)*g(y)`.
+Linear: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Answers use `C·exp(…)` form.
 
 ```bash
-lake exe taschenrechner 'sum(k, 1, n, k)'           # → n(n+1)/2
-lake exe taschenrechner 'sum(k^2, k, 1, n)'         # → n(n+1)(2n+1)/6
-lake exe taschenrechner 'sum(k, 0, n, 2^k)'         # → 2^{n+1}−1
-lake exe taschenrechner 'dsolve(yp + y = 0)'        # → y = C/exp(x)  (= C e^{-x})
-lake exe taschenrechner 'dsolve(yp + y = x)'        # → y = x − 1 + C e^{-x}
-lake exe taschenrechner 'dsolve(yp = x*y)'          # → ln|y| = x²/2 + C  (or explicit)
+lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
+lake exe taschenrechner 'sum(k, 1, 10, k)'             # → 55
+lake exe taschenrechner 'dsolve(y'\'' + y = 0)'         # → y = C·exp(-x)
+lake exe taschenrechner 'dsolve(y'\'' + y = x)'         # → y = C·exp(-x) + x − 1
+lake exe taschenrechner 'dsolve(yp + y = 0, 0, 1)'     # → y = exp(-x)
+lake exe taschenrechner 'dsolve(yp = x*y)'             # → y = C·exp(x²/2)
 ```
 
 **Limits & radical integrals**

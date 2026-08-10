@@ -11,6 +11,7 @@ import Taschenrechner.Poly
 import Taschenrechner.RatInt
 import Taschenrechner.Solve
 import Taschenrechner.Normal
+import Taschenrechner.Eval
 
 namespace Taschenrechner
 
@@ -161,12 +162,64 @@ where
     | const c => CplxConst.toRat? c
     | _ => none
 
+/-- Integer constant? -/
+def asIntConstExpr : Expr → Option Int
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q => if q.den == 1 then some q.num else none
+    | none => none
+  | _ => none
+
+/-- Brute-force ∑_{k=lo}^{hi} body when bounds are integers (exact eval). -/
+def sumBrute (body : Expr) (k : String) (lo hi : Int) : Option Expr :=
+  if hi < lo then some zero
+  else
+    Id.run do
+      let mut acc : Expr := zero
+      let mut i := lo
+      -- fuel: at most 10_000 terms
+      let mut steps : Nat := 0
+      while i ≤ hi && steps < 10000 do
+        let term := simplify (subst body k (ofInt i))
+        match eval? term with
+        | some c => acc := simplify (add acc (const c))
+        | none =>
+          -- keep symbolic term if ground simplify failed partially
+          acc := simplify (add acc term)
+        i := i + 1
+        steps := steps + 1
+      if i ≤ hi then pure none else pure (some (simplify acc))
+
 /--
   Finite sum ∑_{k=lo}^{hi} body.
   Returns `none` if no closed form is available.
+  When `lo`/`hi` are integers, evaluates the closed form (or brute-forces).
 -/
 def sumFinite (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
-  sumBody body k lo hi
+  let lo := simplify lo
+  let hi := simplify hi
+  match sumBody body k lo hi with
+  | some s =>
+    let s := simplify s
+    match asIntConstExpr lo, asIntConstExpr hi with
+    | some _, some _ =>
+      -- Concrete bounds: prefer exact eval of closed form
+      match eval? s with
+      | some c => some (const c)
+      | none =>
+        -- closed form may still mention free vars incorrectly; brute force
+        match asIntConstExpr lo, asIntConstExpr hi with
+        | some a, some b =>
+          match sumBrute body k a b with
+          | some t => some t
+          | none => some s
+        | _, _ => some s
+    | _, _ => some s
+  | none =>
+    -- No Faulhaber/geometric form: try brute force on integer bounds
+    match asIntConstExpr lo, asIntConstExpr hi with
+    | some a, some b => sumBrute body k a b
+    | _, _ => none
 
 /-- Sum with fallback message via Except. -/
 def sumFiniteExpr (body : Expr) (k : String) (lo hi : Expr) : Except String Expr :=

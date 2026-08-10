@@ -772,5 +772,29 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some _ => true
       | none => false
   | _ => false
+#guard
+  match parse "dsolve(y' + y = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => l == var "y" && dependsOn r "C"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp + y = 0, 0, 1)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && simplify (subst r "x" (0 : Expr)) == ofInt 1
+      | none => false
+  | _ => false
+#guard
+  match parse "sum(k, 1, 10, k)" with
+  | .ok e => simplify e == ofInt 55
+  | _ => false
+#guard
+  match parse "sum(k^2, k, 1, 5)" with
+  | .ok e => simplify e == ofInt 55
+  | _ => false
 
 end Taschenrechner.Tests
