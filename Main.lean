@@ -24,12 +24,17 @@ def showInt (label : String) (e : Expr) : IO Unit := do
   IO.println ""
 
 def printExpr (e : Expr) : IO Unit := do
-  match asMat? e with
-  | some rows =>
-    for line in (Mat.pretty rows).splitOn "\n" do
-      IO.println line
-  | none =>
-    IO.println s!"{e}"
+  -- Prefer solution pretty-print (named systems, intervals, root sets).
+  let sol := prettySolution e
+  if sol != Expr.toString e then
+    IO.println sol
+  else
+    match asMat? e with
+    | some rows =>
+      for line in (Mat.pretty rows).splitOn "\n" do
+        IO.println line
+    | none =>
+      IO.println s!"{e}"
 
 def runDemo : IO Unit := do
   IO.println "═══════════════════════════════════════════════"

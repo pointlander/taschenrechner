@@ -4,7 +4,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients  
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
-- **Equations & inequalities**: `solve(x^2=4, x)`, **systems** `solve(x+y=1,x-y=3)`, **intervals** `solve(x^2-1>0)`
+- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **systems** `solve(x+y=1,x-y=3)` → `x = 2, y = -1`; **intervals** `solve(x^2-1>0)` → `(-∞, -1) ∪ (1, ∞)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
@@ -90,10 +90,11 @@ rref([1, 2; 2, 4])   # reduced row echelon form
 nullspace([1, 2; 2, 4])      # → [-2; 1]
 solve([1, 1; 0, 1], [3; 2])  # → [1; 2]
 solve([1, 2; 2, 4], [3; 6])  # → [3-2·t1; t1]
-solve(x^2=4, x)              # → [2, -2]
-solve(2*x+1=0)               # → [-1/2]
-solve(x+y=1, x-y=3)          # → [2; -1]  (vars alphabetical)
-solve(x^2-1>0)               # → [-∞, -1; 1, ∞]
+solve(x^2=4, x)              # → {2, -2}
+solve(2*x+1=0)               # → {-1/2}
+solve(x+y=1, x-y=3)          # → x = 2, y = -1
+solve(x^2-1>0)               # → (-∞, -1) ∪ (1, ∞)
+solve(x^2-1>=0)              # → (-∞, -1] ∪ [1, ∞)
 charpoly([1, 0; 0, 2])       # → t² − 3·t + 2
 eigvals([1, 0; 0, 2])        # → [1, 2]
 eigenspace([1, 0; 0, 2], 2)  # → [0; 1]
@@ -138,22 +139,23 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
 | `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
-| `solve(eq1, eq2, …[, x, y, …])` | **Linear system** → column solution (var order explicit or alphabetical) |
-| `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** (`<`, `≤`, `>`, `≥`) → interval matrix `[lo, hi; …]` (±∞) |
+| `solve(eq1, eq2, …[, x, y, …])` | **Linear system** → named eqs `x = …, y = …` (var order explicit or alphabetical) |
+| `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** → merged intervals with open/closed ends; print as `(-∞, -1) ∪ [1, ∞)` |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
 
-Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Systems require linear equations; inequalities are univariate polynomial (lite: open/closed endpoints share the same `[lo,hi]` display, with isolated roots as `[r,r]` when needed).
+Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Systems require linear equations; inequalities are univariate polynomial. Internally intervals are n×4 rows `[lo, hi, loClosed, hiClosed]` (CLI pretty-prints unions); whole line → `ℝ`, empty → `∅`, scalar roots → `{…}`.
 
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
-lake exe taschenrechner 'solve(x^2=4, x)'             # → [2, -2]
-lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → [3, 2]
-lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]  (3-arg form)
-lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → [2; -1]
-lake exe taschenrechner 'solve(x+y+z=6, x-y=1, y-z=1)' # → [3; 2; 1]
-lake exe taschenrechner 'solve(x^2-1>0)'              # → [-∞, -1; 1, ∞]
-lake exe taschenrechner 'solve(x^2-1<0)'              # → [-1, 1]
+lake exe taschenrechner 'solve(x^2=4, x)'             # → {2, -2}
+lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
+lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
+lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1
+lake exe taschenrechner 'solve(x+y+z=6, x-y=1, y-z=1)' # → x = 3, y = 2, z = 1
+lake exe taschenrechner 'solve(x^2-1>0)'              # → (-∞, -1) ∪ (1, ∞)
+lake exe taschenrechner 'solve(x^2-1>=0)'             # → (-∞, -1] ∪ [1, ∞)
+lake exe taschenrechner 'solve(x^2-1<0)'              # → (-1, 1)
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 ```
 

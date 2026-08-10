@@ -409,10 +409,26 @@ def collectVars (es : List Expr) : List String :=
   es.foldl (fun acc e => (acc ++ freeVars e).eraseDups) []
     |>.mergeSort (· < ·)
 
+/-- Pack a column of values into named equations `vᵢ = valᵢ`. -/
+def namedSolution (vars : List String) (x : Array (Array Expr)) : Expr :=
+  let n := vars.length
+  let rows : Array (Array Expr) :=
+    Id.run do
+      let mut out : Array (Array Expr) := Array.empty
+      for i in [:n] do
+        let name := vars[i]!
+        let val :=
+          if i < Mat.nrows x && Mat.ncols x ≥ 1 then
+            simplify (Mat.get! x i 0)
+          else zero
+        out := out.push #[eq (var name) val]
+      pure out
+  Expr.mat rows
+
 /--
   Solve a system of linear equations (each entry an equation or residual = 0).
-  Returns a column matrix of solutions in the given variable order
-  (or inferred free variables, sorted alphabetically).
+  Returns an n×1 column of **named equations** `vᵢ = …` in the given variable
+  order (or inferred free variables, sorted alphabetically).
 -/
 def solveLinearSystem (eqs : List Expr) (vars? : Option (List String) := none) :
     Except String Expr :=
@@ -449,12 +465,12 @@ def solveLinearSystem (eqs : List Expr) (vars? : Option (List String) := none) :
           throw "solve: internal shape error"
         else
           match Mat.solve A b with
-          | .unique x => pure (simplify (Expr.mat x))
-          | .general x _ => pure (simplify (Expr.mat x))
+          | .unique x => pure (namedSolution vars x)
+          | .general x _ => pure (namedSolution vars x)
           | .inconsistent msg => throw s!"solve: {msg}"
           | .error msg => throw s!"solve: {msg}"
 
-/-! ### Inequalities (univariate poly, lite) -/
+/-! ### Inequalities (univariate poly) + interval merge -/
 
 /-- Compare two real rational expressions for ordering (only rational constants). -/
 def ratExprCompare (a b : Expr) : Option Ordering :=
@@ -489,17 +505,251 @@ def midPoint (a b : Option RatConst) : RatConst :=
     | some m => m
     | none => lo
 
+/-- Real interval with optional infinite ends and open/closed flags. -/
+structure RealInterval where
+  lo       : Option RatConst  -- none = −∞
+  hi       : Option RatConst  -- none = +∞
+  loClosed : Bool
+  hiClosed : Bool
+  deriving Repr, Inhabited
+
+namespace RealInterval
+
+def isEmpty (I : RealInterval) : Bool :=
+  match I.lo, I.hi with
+  | some a, some b =>
+    match RatConst.compare a b with
+    | .gt => true
+    | .eq => !(I.loClosed && I.hiClosed)
+    | .lt => false
+  | _, _ => false
+
+def isPoint (I : RealInterval) : Bool :=
+  match I.lo, I.hi with
+  | some a, some b => a == b && I.loClosed && I.hiClosed
+  | _, _ => false
+
+/-- Compare lo endpoints for sorting (−∞ first). -/
+def loLess (a b : RealInterval) : Bool :=
+  match a.lo, b.lo with
+  | none, none =>
+    -- same lo −∞: open before closed is irrelevant; use hi
+    true
+  | none, some _ => true
+  | some _, none => false
+  | some ra, some rb =>
+    match RatConst.compare ra rb with
+    | .lt => true
+    | .gt => false
+    | .eq =>
+      -- closed lo sorts before open lo (smaller set-start)
+      a.loClosed && !b.loClosed
+
+/-- Does `I` contain the rational point `r`? -/
+def containsRat (I : RealInterval) (r : RatConst) : Bool :=
+  let leftOk :=
+    match I.lo with
+    | none => true
+    | some a =>
+      match RatConst.compare a r with
+      | .lt => true
+      | .eq => I.loClosed
+      | .gt => false
+  let rightOk :=
+    match I.hi with
+    | none => true
+    | some b =>
+      match RatConst.compare r b with
+      | .lt => true
+      | .eq => I.hiClosed
+      | .gt => false
+  leftOk && rightOk
+
+/--
+  Can `A` and `B` (sorted, A.lo ≤ B.lo) be merged into one interval?
+  Adjacent intervals merge if they overlap or touch at an included endpoint.
+-/
+def canMerge (A B : RealInterval) : Bool :=
+  match A.hi, B.lo with
+  | none, _ => true  -- A goes to +∞
+  | some _, none => true  -- B from −∞ (shouldn't if sorted)
+  | some ah, some bl =>
+    match RatConst.compare ah bl with
+    | .gt => true  -- overlap
+    | .lt => false  -- gap
+    | .eq => A.hiClosed || B.loClosed  -- touch
+
+def mergeTwo (A B : RealInterval) : RealInterval :=
+  -- lo: earlier of the two
+  let (lo, loC) :=
+    match A.lo, B.lo with
+    | none, _ => (none, A.loClosed)
+    | _, none => (none, B.loClosed)
+    | some ra, some rb =>
+      match RatConst.compare ra rb with
+      | .lt => (some ra, A.loClosed)
+      | .gt => (some rb, B.loClosed)
+      | .eq => (some ra, A.loClosed || B.loClosed)
+  let (hi, hiC) :=
+    match A.hi, B.hi with
+    | none, _ => (none, A.hiClosed)
+    | _, none => (none, B.hiClosed)
+    | some ra, some rb =>
+      match RatConst.compare ra rb with
+      | .gt => (some ra, A.hiClosed)
+      | .lt => (some rb, B.hiClosed)
+      | .eq => (some ra, A.hiClosed || B.hiClosed)
+  { lo := lo, hi := hi, loClosed := loC, hiClosed := hiC }
+
+/-- Sort and merge overlapping/adjacent intervals. -/
+def mergeAll (xs : List RealInterval) : List RealInterval :=
+  let xs := xs.filter (fun I => !I.isEmpty)
+  if xs.isEmpty then []
+  else
+    let sorted := xs.toArray.qsort loLess |>.toList
+    Id.run do
+      let mut acc : List RealInterval := []
+      let mut cur := sorted.head!
+      for I in sorted.tail do
+        if canMerge cur I then
+          cur := mergeTwo cur I
+        else
+          acc := acc ++ [cur]
+          cur := I
+      pure (acc ++ [cur])
+
+def loExpr (I : RealInterval) : Expr :=
+  match I.lo with
+  | none => neg (var "∞")
+  | some r => ofRat r
+
+def hiExpr (I : RealInterval) : Expr :=
+  match I.hi with
+  | none => var "∞"
+  | some r => ofRat r
+
+/-- Encode as row `[lo, hi, loClosed, hiClosed]` with closed ∈ {0,1}. -/
+def toRow (I : RealInterval) : Array Expr :=
+  #[loExpr I, hiExpr I,
+    ofInt (if I.loClosed then 1 else 0),
+    ofInt (if I.hiClosed then 1 else 0)]
+
+/-- Encode a list of intervals as an n×4 matrix (empty → 1×0). -/
+def toExpr (xs : List RealInterval) : Expr :=
+  match mergeAll xs with
+  | [] => Expr.mat #[#[] ]
+  | ys =>
+    -- Whole real line?
+    match ys with
+    | [I] =>
+      if I.lo.isNone && I.hi.isNone then var "all"
+      else simplify (Expr.mat (ys.map toRow).toArray)
+    | _ => simplify (Expr.mat (ys.map toRow).toArray)
+
+end RealInterval
+
+/-- Bound expression as optional rational (±∞ → none). -/
+def asBoundRat? (e : Expr) : Option (Option RatConst) :=
+  match simplify e with
+  | const c =>
+    match CplxConst.toRat? c with
+    | some r => some (some r)
+    | none => none
+  | var v => if isInfName v then some none else none
+  | mul (const _) (var v) =>
+    if isInfName v then some none else none  -- ±∞
+  | _ => none
+
+/-- Parse an interval row (2-col legacy or 4-col with closed flags). -/
+def parseIntervalRow? (row : Array Expr) : Option RealInterval :=
+  if row.size == 2 || row.size == 4 then
+    match asBoundRat? row[0]!, asBoundRat? row[1]! with
+    | some lo, some hi =>
+      let loC :=
+        if row.size == 4 then
+          match simplify row[2]! with
+          | const c => !(c.isZero)
+          | _ => true
+        else true
+      let hiC :=
+        if row.size == 4 then
+          match simplify row[3]! with
+          | const c => !(c.isZero)
+          | _ => true
+        else true
+      some { lo := lo, hi := hi, loClosed := loC, hiClosed := hiC }
+    | _, _ => none
+  else none
+
+/-- Format one interval for display: `(a, b)`, `[a, b]`, `{a}`, … -/
+def formatInterval (I : RealInterval) : String :=
+  if I.isEmpty then "∅"
+  else if I.isPoint then
+    match I.lo with
+    | some r => s!"\{{Expr.toString (ofRat r)}}"
+    | none => "∅"
+  else
+    let ls := if I.loClosed then "[" else "("
+    let rs := if I.hiClosed then "]" else ")"
+    let loS :=
+      match I.lo with
+      | none => "-∞"
+      | some r => Expr.toString (ofRat r)
+    let hiS :=
+      match I.hi with
+      | none => "∞"
+      | some r => Expr.toString (ofRat r)
+    s!"{ls}{loS}, {hiS}{rs}"
+
+/--
+  Pretty-print a solve result:
+  * `all` → `ℝ`
+  * empty matrix → `∅`
+  * n×1 of equations → `x = …, y = …`
+  * n×2 / n×4 interval matrix → union of intervals
+  * 1×n root row → `{a, b, …}`
+  * otherwise default `Expr.toString`
+-/
+def prettySolution (e : Expr) : String :=
+  match e with
+  | var name =>
+    if name == "all" || name == "ℝ" || name == "R" then "ℝ"
+    else Expr.toString e
+  | mat rows =>
+    let nr := Mat.nrows rows
+    let nc := Mat.ncols rows
+    if nr == 1 && nc == 0 then "∅"
+    else if nr == 0 then "∅"
+    else if nc == 1 && nr ≥ 1 && rows.all (fun r =>
+        match r[0]! with | eq _ _ => true | _ => false) then
+      -- Named system solution
+      let parts := rows.toList.map fun r => Expr.toString r[0]!
+      String.intercalate ", " parts
+    else if nc == 4 && nr ≥ 1 then
+      -- Interval set (n×4: lo, hi, loClosed, hiClosed)
+      let parsed := rows.toList.filterMap parseIntervalRow?
+      if parsed.length == nr then
+        match RealInterval.mergeAll parsed with
+        | [] => "∅"
+        | [I] =>
+          if I.lo.isNone && I.hi.isNone then "ℝ"
+          else formatInterval I
+        | Is => String.intercalate " ∪ " (Is.map formatInterval)
+      else Expr.toString e
+    else if nr == 1 && nc ≥ 1 then
+      -- 1×n root / value row → set notation
+      let rs := rows[0]!.toList.map fun x => Expr.toString (simplify x)
+      if rs.isEmpty then "∅" else s!"\{{String.intercalate ", " rs}}"
+    else Expr.toString e
+  | e => Expr.toString e
+
 /--
   Solve univariate poly inequality `residual ? 0` in free var `v`.
-  Returns a matrix of intervals as rows `[lo, hi]`; ±∞ for unbounded ends.
-  Strict vs non-strict only affects whether roots are included (still listed as
-  endpoints; open/closed is indicated by using the same matrix convention:
-  for strict inequalities roots are omitted from the covered set by using
-  open intervals — we encode open ends by still listing the root as an
-  endpoint and documenting; for practicality we include roots for ≤/≥ and
-  exclude for < / > by shrinking to adjacent open rays only when testing.
-
-  Representation: n×2 matrix, each row an interval [lo, hi].
+  Returns:
+  * `all` for the whole line
+  * empty matrix for ∅
+  * n×4 interval matrix `[lo, hi, loClosed, hiClosed]` after merge
+    (Closed flags are 0/1; ±∞ for unbounded ends.)
 -/
 def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except String Expr :=
   let residual := simplify residual
@@ -508,10 +758,9 @@ def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except Str
   | some p =>
     let p := Poly.strip p
     if p.isZero then
-      -- 0 ? 0
       match kind with
       | .eq | .le | .ge => pure (var "all")
-      | .lt | .gt => pure (Expr.mat #[#[]])  -- empty
+      | .lt | .gt => pure (Expr.mat #[#[]])
     else if p.deg == 0 then
       let c := Poly.coeff p 0
       let pos := c.num > 0
@@ -522,25 +771,20 @@ def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except Str
       | .le => pure (if !pos then var "all" else Expr.mat #[#[]])
       | .ge => pure (if pos || c.isZero then var "all" else Expr.mat #[#[]])
     else
-      -- Real roots (rational + quadratic); keep only real constant roots
       let rs := rootsPoly p
       let realRoots :=
         rs.filterMap fun r =>
           match simplify r with
           | const c =>
             match CplxConst.toRat? c with
-            | some q => some (ofRat q)
-            | none => none  -- pure imaginary etc.
-          | _ => none  -- symbolic radicals: skip for interval endpoints lite
-      let rootsSorted := sortRatExprs realRoots.eraseDups
-      let rootRats :=
-        rootsSorted.filterMap fun e =>
-          match e with
-          | const c => CplxConst.toRat? c
+            | some q => some q
+            | none => none
           | _ => none
-      -- Build test points: (−∞,r0), (r0,r1), …, (rn,+∞)
+      let rootRats :=
+        realRoots.eraseDups.toArray.qsort (fun a b =>
+          RatConst.compare a b == .lt) |>.toList
       let n := rootRats.length
-      let intervals : List (Option RatConst × Option RatConst) :=
+      let openSegs : List (Option RatConst × Option RatConst) :=
         if n == 0 then [(none, none)]
         else
           let left := (none, some rootRats[0]!)
@@ -549,16 +793,17 @@ def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except Str
             (List.range (n - 1)).map fun i =>
               (some rootRats[i]!, some rootRats[i + 1]!)
           left :: mids ++ [right]
-      -- Which open intervals satisfy the strict relation?
-      let wantZero := kind == .eq || kind == .le || kind == .ge
+      let closedEnds := kind == .le || kind == .ge
       if kind == .eq then
-        let only := rootsSorted.map fun r => #[r, r]
-        pure (simplify (Expr.mat only.toArray))
+        let pts : List RealInterval :=
+          rootRats.map fun r =>
+            { lo := some r, hi := some r, loClosed := true, hiClosed := true }
+        pure (RealInterval.toExpr pts)
       else
-        let rows : List (Array Expr) :=
+        let mutIs : List RealInterval :=
           Id.run do
-            let mut rows : List (Array Expr) := []
-            for (lo, hi) in intervals do
+            let mut acc : List RealInterval := []
+            for (lo, hi) in openSegs do
               let t := midPoint lo hi
               match polySignAt p t with
               | none => pure ()
@@ -567,29 +812,26 @@ def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except Str
                   (pos && (kind == .gt || kind == .ge))
                     || (!pos && (kind == .lt || kind == .le))
                 if ok then
-                  let loE :=
+                  -- Finite ends: open for strict, closed for ≤/≥
+                  let loC :=
                     match lo with
-                    | none => neg (var "∞")
-                    | some r => ofRat r
-                  let hiE :=
+                    | none => false  -- −∞ always open
+                    | some _ => closedEnds
+                  let hiC :=
                     match hi with
-                    | none => var "∞"
-                    | some r => ofRat r
-                  rows := rows ++ [#[loE, hiE]]
-            -- Non-strict: include roots not already endpoints of selected intervals
-            -- (isolated roots of ≥/≤, e.g. −(x−1)² ≥ 0 → {1}).
-            if wantZero then
-              for r in rootsSorted do
-                let already :=
-                  rows.any fun row =>
-                    row.size ≥ 2 && (simplify row[0]! == simplify r || simplify row[1]! == simplify r)
-                if !already then
-                  rows := rows ++ [#[r, r]]
-            pure rows
-        if rows.isEmpty then
-          pure (Expr.mat #[#[]])
-        else
-          pure (simplify (Expr.mat rows.toArray))
+                    | none => false
+                    | some _ => closedEnds
+                  acc := acc ++
+                    [{ lo := lo, hi := hi, loClosed := loC, hiClosed := hiC }]
+            -- Isolated roots for non-strict (sign zero, not interior of a segment)
+            if closedEnds then
+              for r in rootRats do
+                let covered := acc.any (fun I => I.containsRat r)
+                if !covered then
+                  acc := acc ++
+                    [{ lo := some r, hi := some r, loClosed := true, hiClosed := true }]
+            pure acc
+        pure (RealInterval.toExpr mutIs)
 
 /-- Dispatch a single relation or residual for solve. -/
 def solveRelation (e : Expr) (v : String) : Except String Expr :=
@@ -602,5 +844,29 @@ def solveRelation (e : Expr) (v : String) : Except String Expr :=
   | none =>
     -- bare expression = 0
     solveScalarExpr? e v
+
+/-- Extract `vᵢ ↦ val` from a named system solution matrix. -/
+def asNamedSolution? (e : Expr) : Option (List (String × Expr)) :=
+  match asMat? e with
+  | none => none
+  | some rows =>
+    if Mat.ncols rows != 1 then none
+    else
+      Id.run do
+        let mut out : List (String × Expr) := []
+        for i in [:Mat.nrows rows] do
+          match rows[i]![0]! with
+          | eq (var name) val => out := out ++ [(name, simplify val)]
+          | _ => return none
+        pure (some out)
+
+/-- Look up a binding in a named solution. -/
+def namedGet? (e : Expr) (v : String) : Option Expr :=
+  match asNamedSolution? e with
+  | none => none
+  | some pairs =>
+    match pairs.find? (fun p => p.1 == v) with
+    | some (_, val) => some val
+    | none => none
 
 end Taschenrechner

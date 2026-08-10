@@ -629,16 +629,12 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some rows => simplify rows[0]![0]! == ofRat ⟨-1, 2⟩
       | none => false
   | _ => false
--- Linear systems & inequalities (PR M)
+-- Linear systems & inequalities (PR M/N)
 #guard
   match parse "solve(x+y=1, x-y=3)" with
   | .ok e =>
-      match asMat? e with
-      | some rows =>
-          Mat.nrows rows == 2
-            && simplify (Mat.get! rows 0 0) == ofInt 2
-            && simplify (Mat.get! rows 1 0) == ofInt (-1)
-      | none => false
+      namedGet? e "x" == some (ofInt 2)
+        && namedGet? e "y" == some (ofInt (-1))
   | _ => false
 #guard
   match parse "x^2 > 1" with
@@ -651,7 +647,7 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "solve(x^2-1>0)" with
   | .ok e =>
       match asMat? e with
-      | some rows => Mat.nrows rows == 2 && Mat.ncols rows == 2
+      | some rows => Mat.nrows rows == 2 && Mat.ncols rows == 4
       | none => false
   | _ => false
 #guard
@@ -659,10 +655,24 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       match asMat? e with
       | some rows =>
-          Mat.nrows rows == 1
+          Mat.nrows rows == 1 && Mat.ncols rows ≥ 2
             && simplify (Mat.get! rows 0 0) == ofInt (-1)
             && simplify (Mat.get! rows 0 1) == ofInt 1
       | none => false
+  | _ => false
+#guard
+  match parse "solve(x+y=1, x-y=3)" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "x = 2" && s.contains "y = -1"
+  | _ => false
+#guard
+  match parse "solve(x^2-1>0)" with
+  | .ok e => (prettySolution e).contains "∪"
+  | _ => false
+#guard
+  match parse "solve(x^2+1<0)" with
+  | .ok e => prettySolution e == "∅"
   | _ => false
 #guard
   -- √ and superscripts

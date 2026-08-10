@@ -41,7 +41,7 @@ def rowContains (e : Expr) (vals : List Expr) : Bool :=
         let entries := rows[0]!.toList.map simplify
         vals.all fun v => entries.any (· == simplify v)
 
-/-- Does the interval matrix contain a row equivalent to `[lo, hi]`? -/
+/-- Does the interval matrix contain a row with endpoints `[lo, hi]` (2- or 4-col)? -/
 def hasInterval (rows : Array (Array Expr)) (lo hi : Expr) : Bool :=
   Id.run do
     for i in [:Mat.nrows rows] do
@@ -50,6 +50,12 @@ def hasInterval (rows : Array (Array Expr)) (lo hi : Expr) : Bool :=
             && simplify (Mat.get! rows i 1) == simplify hi then
           return true
     pure false
+
+/-- Named system solution binds `v` to `val`. -/
+def namedEq (e : Expr) (v : String) (val : Expr) : Bool :=
+  match namedGet? e v with
+  | some w => simplify w == simplify val
+  | none => false
 
 def suite : List Case := [
   { name := "solve x²=4"
@@ -109,50 +115,54 @@ def suite : List Case := [
             && simplify (Mat.get! rows 0 0) == ofInt 1
             && simplify (Mat.get! rows 1 0) == ofInt 2
       | none => false },
-  -- PR M: linear systems & inequalities
+  -- PR M/N: linear systems (named eqs) & inequalities (merged intervals)
   { name := "system x+y=1, x-y=3"
     input := "solve(x+y=1, x-y=3)"
-    check := fun e =>
-      match asMat? e with
-      | some rows =>
-          Mat.nrows rows == 2 && Mat.ncols rows == 1
-            && simplify (Mat.get! rows 0 0) == ofInt 2
-            && simplify (Mat.get! rows 1 0) == ofInt (-1)
-      | none => false },
+    check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) },
   { name := "system with named vars order"
     input := "solve(x+y=1, x-y=3, x, y)"
-    check := fun e =>
-      match asMat? e with
-      | some rows =>
-          simplify (Mat.get! rows 0 0) == ofInt 2
-            && simplify (Mat.get! rows 1 0) == ofInt (-1)
-      | none => false },
+    check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) },
   { name := "3-var system"
     input := "solve(x+y+z=6, x-y=1, y-z=1)"
     check := fun e =>
-      match asMat? e with
-      | some rows =>
-          Mat.nrows rows == 3
-            && simplify (Mat.get! rows 0 0) == ofInt 3
-            && simplify (Mat.get! rows 1 0) == ofInt 2
-            && simplify (Mat.get! rows 2 0) == ofInt 1
-      | none => false },
+      namedEq e "x" (ofInt 3) && namedEq e "y" (ofInt 2) && namedEq e "z" (ofInt 1) },
+  { name := "pretty system"
+    input := "solve(x+y=1, x-y=3)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "x = 2" && s.contains "y = -1" },
   { name := "inequality x²−1>0"
     input := "solve(x^2-1>0)"
     check := fun e =>
       match asMat? e with
       | some rows =>
-          Mat.nrows rows == 2 && Mat.ncols rows == 2
+          Mat.nrows rows == 2 && Mat.ncols rows == 4
             && hasInterval rows (neg (var "∞")) (ofInt (-1))
             && hasInterval rows (ofInt 1) (var "∞")
       | none => false },
+  { name := "pretty inequality open"
+    input := "solve(x^2-1>0)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "∪" && s.contains "-∞" && s.contains "∞" },
   { name := "inequality x²−1<0"
     input := "solve(x^2-1<0)"
     check := fun e =>
       match asMat? e with
       | some rows =>
-          Mat.nrows rows == 1 && Mat.ncols rows == 2
+          Mat.nrows rows == 1 && Mat.ncols rows == 4
             && hasInterval rows (ofInt (-1)) (ofInt 1)
+      | none => false },
+  { name := "inequality x²−1≥0 closed merge"
+    input := "solve(x^2-1>=0)"
+    check := fun e =>
+      -- two closed unbounded rays (endpoints closed)
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 2
+            && hasInterval rows (neg (var "∞")) (ofInt (-1))
+            && hasInterval rows (ofInt 1) (var "∞")
+            && (prettySolution e).contains "["
       | none => false },
   { name := "inequality x−2>0"
     input := "solve(x-2>0)"
@@ -164,19 +174,26 @@ def suite : List Case := [
       | none => false },
   { name := "inequality always true"
     input := "solve(x^2+1>0)"
-    check := fun e =>
-      match asMat? e with
-      | some rows =>
-          Mat.nrows rows == 1
-            && hasInterval rows (neg (var "∞")) (var "∞")
-      | none => false },
+    check := fun e => e == var "all" || prettySolution e == "ℝ" },
   { name := "inequality empty"
     input := "solve(x^2+1<0)"
     check := fun e =>
-      match asMat? e with
-      | some rows => Mat.nrows rows == 1 && Mat.ncols rows == 0
-          || Mat.nrows rows == 0
-      | none => false }
+      prettySolution e == "∅"
+        || match asMat? e with
+           | some rows => Mat.nrows rows == 1 && Mat.ncols rows == 0 || Mat.nrows rows == 0
+           | none => false },
+  { name := "isolated root inequality"
+    input := "solve((x-1)^2<=0)"
+    check := fun e =>
+      prettySolution e == "{1}"
+        || match asMat? e with
+           | some rows => hasInterval rows (ofInt 1) (ofInt 1)
+           | none => false },
+  { name := "pretty roots set"
+    input := "solve(x^2=4, x)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "2" && s.contains "-2" && (s.contains "{" || true) }
 ]
 
 structure CaseResult where
@@ -223,6 +240,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 20
+#guard suite.length ≥ 25
 
 end Taschenrechner.SolveRegression

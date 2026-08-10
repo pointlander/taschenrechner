@@ -1158,7 +1158,7 @@ def helpText : String :=
     variables   x, y, theta\n\
     ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
-    inequalities  x^2-1>0  → solve(…) returns interval matrix [lo,hi;…]\n\
+    inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
@@ -1168,7 +1168,7 @@ def helpText : String :=
                 diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
-                solve(eq1,eq2,…) linear systems; solve(a>b) inequalities\n\
+                solve(eq1,eq2,…) → x=…,y=…;  solve(a>b) → intervals\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
