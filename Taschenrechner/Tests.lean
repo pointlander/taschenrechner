@@ -14,6 +14,7 @@ import Taschenrechner.Eval
 import Taschenrechner.Solve
 import Taschenrechner.Series
 import Taschenrechner.Eigen
+import Taschenrechner.Limit
 
 namespace Taschenrechner.Tests
 
@@ -500,6 +501,45 @@ def parseEq (s : String) (expected : Expr) : Bool :=
             && simplify (Mat.get! rows 0 0) == ofInt 0
             && simplify (Mat.get! rows 1 0) == ofInt 1
       | none => false
+  | _ => false
+
+-- Limits
+#guard
+  match limit ((x ^ (2 : Expr) - 1) / (x - 1)) "x" (.finite (1 : Expr)) with
+  | .value r => r == ofInt 2
+  | _ => false
+#guard
+  match limit ((3 : Expr) * x ^ (2 : Expr) + x) "x" .posInf with
+  | .infinity true => true
+  | _ => false
+#guard
+  match limit (((2 : Expr) * x + 1) / ((3 : Expr) * x + 4)) "x" .posInf with
+  | .value r => r == ofRat ⟨2, 3⟩
+  | _ => false
+#guard
+  match limit ((1 : Expr) / x) "x" .posInf with
+  | .value r => r == ofInt 0
+  | _ => false
+#guard
+  match parse "limit((x^2-1)/(x-1), 1)" with
+  | .ok e => e == ofInt 2
+  | _ => false
+#guard
+  match parse "limit(1/x, oo)" with
+  | .ok e => e == ofInt 0
+  | _ => false
+#guard
+  match parse "lim((2*x+1)/(3*x+4), x, oo)" with
+  | .ok e => e == ofRat ⟨2, 3⟩
+  | _ => false
+
+-- Radical integrals 1/√(·)
+#guard checkAntiderivative (1 / sqrt (x ^ (2 : Expr) + 1)) "x"
+#guard checkAntiderivative (1 / sqrt (1 - x ^ (2 : Expr))) "x"
+#guard checkAntiderivative (1 / sqrt (x ^ (2 : Expr) - 1)) "x"
+#guard
+  match parse "int(1/sqrt(x^2+1))" with
+  | .ok e => verifyDerivative e (1 / sqrt (x ^ (2 : Expr) + 1)) "x"
   | _ => false
 
 end Taschenrechner.Tests

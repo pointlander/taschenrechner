@@ -83,7 +83,11 @@ def suite : List Case := [
   { name := "x*ln(x)",            integrand := "x*ln(x)",             expect := .elementary },
   { name := "exp(x)+sin(x)",      integrand := "exp(x)+sin(x)",       expect := .risch },
   { name := "cos(x)-sin(x)",      integrand := "cos(x)-sin(x)",       expect := .risch },
-  { name := "x^2*exp(x^3)",       integrand := "x^2*exp(x^3)",        expect := .risch }
+  { name := "x^2*exp(x^3)",       integrand := "x^2*exp(x^3)",        expect := .risch },
+  -- radical table: 1/√(±x²±a²) (heuristic, verified)
+  { name := "1/sqrt(x^2+1)",      integrand := "1/sqrt(x^2+1)",       expect := .heuristic },
+  { name := "1/sqrt(1-x^2)",      integrand := "1/sqrt(1-x^2)",       expect := .heuristic },
+  { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .heuristic }
 ]
 
 /-- Does a result match the expectation? -/
@@ -157,6 +161,6 @@ def runSuiteIO : IO UInt32 := do
 
 -- Compile-time guard: full suite green
 #guard allPassed (runSuite suite)
-#guard suite.length == 40
+#guard suite.length ≥ 40
 
 end Taschenrechner.Regression

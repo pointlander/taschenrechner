@@ -27,6 +27,7 @@ import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Series
+import Taschenrechner.Limit
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
@@ -434,6 +435,16 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       match asNatDim n with
       | some k => pure (maclaurin e v k)
       | none => throw s!"{name}: expected non-negative integer order"
+  | "limit", [e, v, a] | "lim", [e, v, a] => do
+      let v ← asVarName v
+      match (limitAt e v a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
+  | "limit", [e, a] | "lim", [e, a] =>
+      -- default variable x
+      match (limitAt e "x" a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -459,6 +470,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"taylor expects taylor(f,n) | taylor(f,x,n) | taylor(f,a,n) | taylor(f,x,a,n), got {args.length} args"
   | "maclaurin", _ | "series", _ =>
       throw s!"{name} expects {name}(f,n) or {name}(f,x,n), got {args.length} args"
+  | "limit", _ | "lim", _ =>
+      throw s!"{name} expects limit(e, a) or limit(e, x, a) [a may be oo], got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -484,6 +497,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
     || n == "taylor" || n == "maclaurin" || n == "series"
+    || n == "limit" || n == "lim"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -913,6 +927,7 @@ def helpText : String :=
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
+                limit(e, a)  limit(e, x, a)  lim(...)   (a = oo for ±∞)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\

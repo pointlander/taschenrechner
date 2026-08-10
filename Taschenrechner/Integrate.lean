@@ -88,6 +88,30 @@ instance : ToString IntegrateResult where
 
 end IntegrateResult
 
+/--
+  Factors that clear inverse powers: for each `base^q` with `q < 0`,
+  include `base^{-q}` (so `u^{-1/2}` contributes `u^{1/2}`, `u^{-1}` contributes `u`).
+-/
+partial def invClearFactors : Expr → List Expr
+  | mul a b => invClearFactors a ++ invClearFactors b
+  | pow base (const r) =>
+    match CplxConst.toRat? r with
+    | some q =>
+      if q.num < 0 then
+        let pos := RatConst.neg q
+        pow base (ofRat pos) :: invClearFactors base
+      else invClearFactors base
+    | none => invClearFactors base
+  | pow base e => invClearFactors base ++ invClearFactors e
+  | add a b => invClearFactors a ++ invClearFactors b
+  | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => invClearFactors e
+  | _ => []
+
+/-- Multiply by clear-factors from `a` and `b` so expand can cancel radicals. -/
+def clearInvFactors (e : Expr) (extras : List Expr) : Expr :=
+  let fs := (invClearFactors e ++ extras).eraseDups
+  fs.foldl (fun acc f => mul acc f) e
+
 /-- Algebraic equivalence heuristic for verifying `F' = f`. -/
 def exprsEquivalent (a b : Expr) (v : String := "x") : Bool :=
   -- Prefer full normal forms + trig preprocess
@@ -98,7 +122,23 @@ def exprsEquivalent (a b : Expr) (v : String := "x") : Bool :=
   else
     let a1 := simplify (expand a0)
     let b1 := simplify (expand b0)
-    equivNF a1 b1 v || isZeroExpr (sub a1 b1) v
+    if equivNF a1 b1 v || isZeroExpr (sub a1 b1) v then true
+    else
+      -- Clear inverse powers (√ and other denominators), expand, repeat.
+      -- Proves identities such as d/dx ln(x+√(x²+1)) = 1/√(x²+1).
+      let rec clearLoop (n : Nat) (a b : Expr) : Bool :=
+        match n with
+        | 0 => false
+        | n'+1 =>
+          let extras := invClearFactors a ++ invClearFactors b
+          if extras.isEmpty then false
+          else
+            let aw := simplify (expand (clearInvFactors a extras))
+            let bw := simplify (expand (clearInvFactors b extras))
+            if aw == bw || equivNF aw bw v || isZeroExpr (sub aw bw) v then true
+            else if aw == a && bw == b then false
+            else clearLoop n' aw bw
+      clearLoop 8 a0 b0
 
 /-- Check that `diff F v` matches integrand `f`. -/
 def verifyDerivative (F f : Expr) (v : String := "x") : Bool :=
@@ -155,6 +195,166 @@ def tableIntegral (e : Expr) (v : String) : Option Expr :=
     if name == v then
       some (sub (mul (var v) (ln (var v))) (var v))
     else none
+  | _ => none
+
+/-! ### Radical (square-root quadratic) integral table -/
+
+/-- Half as a complex constant. -/
+private def halfC : CplxConst := CplxConst.ofRat ⟨1, 2⟩
+
+/-- Is this `1/2` as a power exponent? -/
+private def isHalf : Expr → Bool
+  | const r =>
+    match CplxConst.toRat? r with
+    | some q => q == ⟨1, 2⟩
+    | none => false
+  | _ => false
+
+/-- Is this `-1/2` as a power exponent? -/
+private def isNegHalf : Expr → Bool
+  | const r =>
+    match CplxConst.toRat? r with
+    | some q => q == ⟨-1, 2⟩
+    | none => false
+  | _ => false
+
+/--
+  Match `x² + a²`, `x² - a²`, or `a² - x²` with rational `a² ≥ 0` (as expression).
+  Returns `(a²_expr, kind)` where kind: 0 = x²+a², 1 = x²−a², 2 = a²−x².
+-/
+def matchQuadUnderSqrt (e : Expr) (v : String) : Option (Expr × Nat) :=
+  let e := simplify e
+  match e with
+  | add a b =>
+    match a, b with
+    | pow (var name) (const r), const c =>
+      if name == v && r == CplxConst.ofInt 2 then
+        match CplxConst.toRat? c with
+        | some q =>
+          if q.num ≥ 0 then some (const c, 0)  -- x² + a²
+          else
+            -- x² + (−a²) = x² − a²
+            some (const (CplxConst.neg c), 1)
+        | none => none
+      else none
+    | const c, pow (var name) (const r) =>
+      if name == v && r == CplxConst.ofInt 2 then
+        match CplxConst.toRat? c with
+        | some q =>
+          if q.num ≥ 0 then some (const c, 0)
+          else some (const (CplxConst.neg c), 1)
+        | none => none
+      else none
+    | pow (var name) (const r), mul (const c) rest =>
+      -- x² + (−1)·a² after simplify of x² − a²
+      if name == v && r == CplxConst.ofInt 2 && c.isNegOne then
+        match rest with
+        | const a2 =>
+          match CplxConst.toRat? a2 with
+          | some q => if q.num > 0 then some (const a2, 1) else none
+          | none => none
+        | _ => none
+      else none
+    | mul (const c) rest, pow (var name) (const r) =>
+      -- (−1)·x² + a² = a² − x²
+      if name == v && r == CplxConst.ofInt 2 && c.isNegOne then
+        match rest with
+        | var name' =>
+          if name' == v then
+            -- only -x², need a² from elsewhere — not this form alone
+            none
+          else none
+        | _ => none
+      else none
+    | const c, mul (const k) (pow (var name) (const r)) =>
+      -- a² + (−1)·x²
+      if name == v && r == CplxConst.ofInt 2 && k.isNegOne then
+        match CplxConst.toRat? c with
+        | some q => if q.num > 0 then some (const c, 2) else none
+        | none => none
+      else none
+    | mul (const k) (pow (var name) (const r)), const c =>
+      -- (−1)·x² + a²
+      if name == v && r == CplxConst.ofInt 2 && k.isNegOne then
+        match CplxConst.toRat? c with
+        | some q => if q.num > 0 then some (const c, 2) else none
+        | none => none
+      else none
+    | _, _ => none
+  | _ => none
+
+/-- √e as expression. -/
+private def sqrtE (e : Expr) : Expr := Taschenrechner.sqrt e
+
+/-- Antiderivative for √(quad) forms. -/
+def radicalSqrtIntegral (base : Expr) (a2 : Expr) (kind : Nat) (v : String) : Option Expr :=
+  let x := var v
+  let s := sqrtE base
+  match kind with
+  | 0 =>
+    -- ∫ √(x²+a²) = x/2 √(x²+a²) + a²/2 ln(x + √(x²+a²))
+    some (simplify (add
+      (mul (const halfC) (mul x s))
+      (mul (const halfC) (mul a2 (ln (add x s))))))
+  | 1 =>
+    -- ∫ √(x²−a²) = x/2 √(x²−a²) − a²/2 ln|x + √(x²−a²)|
+    some (simplify (sub
+      (mul (const halfC) (mul x s))
+      (mul (const halfC) (mul a2 (ln (add x s))))))
+  | 2 =>
+    -- ∫ √(a²−x²) = x/2 √(a²−x²) + a²/2 atan(x/√(a²−x²))
+    some (simplify (add
+      (mul (const halfC) (mul x s))
+      (mul (const halfC) (mul a2 (atan (div x s))))))
+  | _ => none
+
+/-- Antiderivative for 1/√(quad) forms. -/
+def radicalInvSqrtIntegral (base : Expr) (a2 : Expr) (kind : Nat) (v : String) : Option Expr :=
+  let x := var v
+  let s := sqrtE base
+  let _ := a2
+  match kind with
+  | 0 | 1 =>
+    -- ∫ 1/√(x²±a²) = ln|x + √(x²±a²)|
+    some (simplify (ln (add x s)))
+  | 2 =>
+    -- ∫ 1/√(a²−x²) = atan(x/√(a²−x²))  (= arcsin(x/a))
+    some (simplify (atan (div x s)))
+  | _ => none
+
+/--
+  Table for ∫ R(x, √(±x²±a²)) of the common textbook forms:
+  * 1/√(x²+a²), 1/√(x²−a²), 1/√(a²−x²)
+  * √(x²+a²), √(x²−a²), √(a²−x²)
+-/
+partial def radicalIntegral (e : Expr) (v : String) : Option Expr :=
+  let e := simplify e
+  match e with
+  | pow base expn =>
+    if isNegHalf expn then
+      -- 1/√(±x²±a²) — verified via clear-inverse + expand
+      match matchQuadUnderSqrt base v with
+      | some (a2, kind) => radicalInvSqrtIntegral base a2 kind v
+      | none => none
+    else if isHalf expn then
+      -- √(±x²±a²) table forms; only accept if F' checks out
+      match matchQuadUnderSqrt base v with
+      | some (a2, kind) =>
+        match radicalSqrtIntegral base a2 kind v with
+        | some F =>
+          if exprsEquivalent (diff F v) e v then some F else none
+        | none => none
+      | none => none
+    else none
+  | mul (const c) rest =>
+    -- c / √(quad) or c · √(quad)
+    if c.isZero then some zero
+    else
+      match radicalIntegral rest v with
+      | some F => some (simplify (mul (const c) F))
+      | none => none
+  | mul rest (const c) =>
+    radicalIntegral (mul (const c) rest) v
   | _ => none
 
 /-- Power rule: ∫ u^n · u'  and ∫ x^n dx. -/
@@ -337,20 +537,28 @@ where
     | pow (var name) (const r) =>
       if name == v && r == CplxConst.negOne then
         .success (ln (var v)) .heuristic
-      else .failure s!"cannot integrate power {e}"
+      else
+        -- radical powers √(quad), 1/√(quad)
+        match radicalIntegral e v with
+        | some F => .success (simplify F) .heuristic
+        | none => .failure s!"cannot integrate power {e}"
     | _ =>
-      -- Reverse chain rule
-      match tryChainRule e v fuel' with
+      -- Radical table (also non-power spellings after simplify)
+      match radicalIntegral e v with
       | some F => .success (simplify F) .heuristic
       | none =>
-        -- Common composite forms: sin(ax+b), exp(ax), etc.
-        match tryLinearComposite e v with
+        -- Reverse chain rule
+        match tryChainRule e v fuel' with
         | some F => .success (simplify F) .heuristic
         | none =>
-          -- Integration by parts
-          match tryByParts e v fuel' integrateRaw with
+          -- Common composite forms: sin(ax+b), exp(ax), etc.
+          match tryLinearComposite e v with
           | some F => .success (simplify F) .heuristic
-          | none => .failure s!"cannot integrate: {e}"
+          | none =>
+            -- Integration by parts
+            match tryByParts e v fuel' integrateRaw with
+            | some F => .success (simplify F) .heuristic
+            | none => .failure s!"cannot integrate: {e}"
 
   /-- ∫ f(ax+b) dx for elementary f. -/
   tryLinearComposite (e : Expr) (v : String) : Option Expr :=

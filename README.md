@@ -7,6 +7,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
+- **Limits**: finite points (L'Hôpital for rationals), ±∞ (`oo`)
+- **Radical integrals**: √(x²±a²), 1/√(a²−x²), …
 - **Taylor / Maclaurin series**: `taylor`, `series`, `maclaurin`
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
@@ -45,6 +47,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
 | `Taschenrechner.Series` | Taylor / Maclaurin series |
+| `Taschenrechner.Limit` | Symbolic limits (finite, ±∞, L'Hôpital) |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -135,6 +138,24 @@ lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 lake exe taschenrechner 'charpoly([1, 0; 0, 2])'      # → t² − 3t + 2
 lake exe taschenrechner 'eigvals([0, -1; 1, 0])'       # → [-i, i]
 lake exe taschenrechner 'eigenspace([1, 0; 0, 2], 2)' # → [0; 1]
+```
+
+**Limits & radical integrals**
+
+| Form | What it does |
+|------|----------------|
+| `limit(e, a)` / `lim(e, a)` | lim_{x→a} e |
+| `limit(e, x, a)` | lim in free variable `x` |
+| `a = oo` / `-oo` | +∞ / −∞ |
+| `int(1/sqrt(x^2+1))` etc. | Textbook √(±x²±a²) table |
+
+```bash
+lake exe taschenrechner 'limit((x^2-1)/(x-1), 1)'   # → 2  (L'Hôpital / cancel)
+lake exe taschenrechner 'limit(1/x, oo)'            # → 0
+lake exe taschenrechner 'lim((2*x)/(3*x+1), oo)'    # → 2/3
+lake exe taschenrechner 'int(1/sqrt(x^2+1))'        # → ln(x + √(x²+1))
+lake exe taschenrechner 'int(1/sqrt(1-x^2))'        # → atan(x/√(1−x²))
+lake exe taschenrechner 'int(1/sqrt(x^2-1))'        # → ln(x + √(x²−1))
 ```
 
 **Definite integrals & series**

@@ -17,6 +17,7 @@ import Taschenrechner.Eigen
 import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Series
+import Taschenrechner.Limit
 import Taschenrechner.Env
 import Taschenrechner.Parse
 import Taschenrechner.Regression
