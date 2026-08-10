@@ -16,7 +16,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
-- Matrices: RREF, rank, nullspace, general linear solve, **charpoly / eigenvalues**
+- Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
 
 ## Build & run
 
@@ -43,7 +43,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
-| `Taschenrechner.Eigen` | Characteristic polynomial, eigenvalues, eigenspaces |
+| `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, `expm` |
 | `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
@@ -133,18 +133,23 @@ lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]  (3-arg form
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 ```
 
-**Characteristic polynomial & eigenvalues**
+**Characteristic polynomial, diagonalize & expm**
 
 | Form | What it does |
 |------|----------------|
 | `charpoly(A)` / `charpoly(A, t)` | `det(t I − A)` (monic char poly) |
 | `eigvals(A)` / `eigen(A)` / `eig(A)` | Eigenvalues as a 1×k row (rational + quadratic) |
 | `eigenspace(A, λ)` / `eigvec(A, λ)` | Nullspace basis of `A − λI` |
+| `diagonalize(A)` | `[P, D]` with `P⁻¹ A P = D` (when diagonalizable) |
+| `modal(A)` / `diagform(A)` | Just `P` or just `D` |
+| `expm(A)` | `P exp(D) P⁻¹` for diagonalizable `A` |
 
 ```bash
 lake exe taschenrechner 'charpoly([1, 0; 0, 2])'      # → t² − 3t + 2
 lake exe taschenrechner 'eigvals([0, -1; 1, 0])'       # → [-i, i]
 lake exe taschenrechner 'eigenspace([1, 0; 0, 2], 2)' # → [0; 1]
+lake exe taschenrechner 'diagform([1, 0; 0, 2])'       # → diag(1,2) (order may vary)
+lake exe taschenrechner 'expm(zeros(2))'              # → I
 ```
 
 **Limits & radical integrals**

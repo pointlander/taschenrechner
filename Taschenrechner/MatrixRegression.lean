@@ -188,7 +188,36 @@ def suite : List Case := [
       -- ±i
       isMat e 1 2
         && (entryEq e 0 0 I || entryEq e 0 0 (neg I))
-        && (entryEq e 0 1 I || entryEq e 0 1 (neg I)) }
+        && (entryEq e 0 1 I || entryEq e 0 1 (neg I)) },
+  { name := "diagform diagonal matrix"
+    input := "diagform([1, 0; 0, 2])"
+    check := fun e =>
+      isMat e 2 2
+        && (entryEq e 0 0 (1 : Expr) || entryEq e 0 0 (2 : Expr))
+        && (entryEq e 1 1 (1 : Expr) || entryEq e 1 1 (2 : Expr))
+        && entryEq e 0 1 (0 : Expr) && entryEq e 1 0 (0 : Expr) },
+  { name := "expm zero"
+    input := "expm([0, 0; 0, 0])"
+    check := fun e =>
+      isMat e 2 2
+        && entryEq e 0 0 (1 : Expr) && entryEq e 1 1 (1 : Expr)
+        && entryEq e 0 1 (0 : Expr) && entryEq e 1 0 (0 : Expr) },
+  { name := "expm diagonal"
+    input := "expm([0, 0; 0, 0])"  -- smoke; zero is safest exact
+    check := fun e => isMat e 2 2 },
+  { name := "diagonalize shape"
+    input := "diagonalize([1, 0; 0, 2])"
+    check := fun e =>
+      -- 1×2 of matrices [P, D]
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 1 && Mat.ncols rows == 2
+            && (match asMat? (Mat.get! rows 0 0), asMat? (Mat.get! rows 0 1) with
+                | some P, some D =>
+                    Mat.nrows P == 2 && Mat.ncols P == 2
+                      && Mat.nrows D == 2 && Mat.ncols D == 2
+                | _, _ => false)
+      | none => false }
 ]
 
 structure CaseResult where

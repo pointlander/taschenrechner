@@ -306,6 +306,34 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
           pure (simplify (Expr.mat N))
       | none => throw "eigenspace: expected square matrix"
     | none => throw "eigenspace: expected a matrix"
+  | "diagonalize", [e] | "diag", [e] | "diagonalise", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.diagonalize rows |>.toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"diagonalize: {msg}"
+    | none => throw "diagonalize: expected a matrix"
+  | "modal", [e] | "eigenmatrix", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.modalMatrix rows with
+      | .ok P => pure (simplify (Expr.mat P))
+      | .error msg => throw s!"modal: {msg}"
+    | none => throw "modal: expected a matrix"
+  | "diagform", [e] | "diagonalform", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.diagonalForm rows with
+      | .ok D => pure (simplify (Expr.mat D))
+      | .error msg => throw s!"diagform: {msg}"
+    | none => throw "diagform: expected a matrix"
+  | "expm", [e] | "matexp", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.expm rows with
+      | .ok R => pure (simplify (Expr.mat R))
+      | .error msg => throw s!"expm: {msg}"
+    | none => throw "expm: expected a matrix"
   | "solve", [a, b] =>
     match asMat? a, asMat? b with
     | some A, some B =>
@@ -524,6 +552,9 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"{name} expects 1 argument (square matrix), got {args.length}"
   | "eigenspace", _ | "eigenvectors", _ | "eigvec", _ =>
       throw s!"{name} expects 2 arguments (matrix, eigenvalue), got {args.length}"
+  | "diagonalize", _ | "diag", _ | "diagonalise", _ | "modal", _ | "eigenmatrix", _
+  | "diagform", _ | "diagonalform", _ | "expm", _ | "matexp", _ =>
+      throw s!"{name} expects 1 argument (square matrix), got {args.length}"
   | "solve", _ =>
       throw s!"solve expects solve(A,b) | solve(f) | solve(f=0) | solve(lhs=rhs,x) | solve(lhs,rhs,x), got {args.length} args"
   | "coeff", _ =>
@@ -578,6 +609,9 @@ def isBuiltinName (name : String) : Bool :=
     || n == "charpoly" || n == "characteristic"
     || n == "eigvals" || n == "eigenvalues" || n == "eigen" || n == "eig"
     || n == "eigenspace" || n == "eigenvectors" || n == "eigvec"
+    || n == "diagonalize" || n == "diag" || n == "diagonalise" || n == "modal"
+    || n == "eigenmatrix" || n == "diagform" || n == "diagonalform"
+    || n == "expm" || n == "matexp"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
 /-! ### Recursive-descent parsing (environment-aware) -/
@@ -1001,6 +1035,7 @@ def helpText : String :=
                 det inv transpose/tp trace/tr rref rank nullity\n\
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 charpoly(A)  eigvals/eigen/eig(A)  eigenspace(A,λ)\n\
+                diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions)\n\

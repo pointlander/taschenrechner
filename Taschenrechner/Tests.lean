@@ -15,6 +15,7 @@ import Taschenrechner.Solve
 import Taschenrechner.Series
 import Taschenrechner.Eigen
 import Taschenrechner.Limit
+import Taschenrechner.Matrix
 
 namespace Taschenrechner.Tests
 
@@ -672,6 +673,48 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard
   match parse "int(sqrt(x^2+1))" with
   | .ok e => verifyDerivative e (sqrt (x ^ (2 : Expr) + 1)) "x"
+  | _ => false
+
+-- Diagonalize & expm
+#guard
+  let A := #[#[(1 : Expr), (0 : Expr)], #[(0 : Expr), (2 : Expr)]]
+  match Mat.diagonalize A with
+  | .ok P D =>
+      Mat.nrows P == 2 && Mat.ncols D == 2
+        && simplify (Mat.get! D 0 1) == ofInt 0
+  | _ => false
+#guard
+  let Z := #[#[(0 : Expr), (0 : Expr)], #[(0 : Expr), (0 : Expr)]]
+  match Mat.expm Z with
+  | .ok R =>
+      simplify (Mat.get! R 0 0) == ofInt 1
+        && simplify (Mat.get! R 1 1) == ofInt 1
+  | _ => false
+#guard
+  match parse "diagform([3, 0; 0, 5])" with
+  | .ok e =>
+      match asMat? e with
+      | some D =>
+          let a := simplify (Mat.get! D 0 0)
+          let b := simplify (Mat.get! D 1 1)
+          (a == ofInt 3 || a == ofInt 5) && (b == ofInt 3 || b == ofInt 5)
+      | none => false
+  | _ => false
+#guard
+  match parse "expm(zeros(2))" with
+  | .ok e =>
+      match asMat? e with
+      | some R =>
+          simplify (Mat.get! R 0 0) == ofInt 1
+            && simplify (Mat.get! R 1 1) == ofInt 1
+      | none => false
+  | _ => false
+#guard
+  match parse "diagonalize([1, 0; 0, 2])" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows.size == 1 && rows[0]!.size == 2
+      | none => false
   | _ => false
 
 end Taschenrechner.Tests
