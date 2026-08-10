@@ -259,6 +259,18 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
     let e := expand (substEnv env e)
     printExpr e
     pure (0, withAns env e)
+  | .cancel e =>
+    let e := Expr.cancel (substEnv env e)
+    printExpr e
+    pure (0, withAns env e)
+  | .together e =>
+    let e := Expr.together (substEnv env e)
+    printExpr e
+    pure (0, withAns env e)
+  | .normal e =>
+    let e := Expr.normalForm (substEnv env e)
+    printExpr e
+    pure (0, withAns env e)
   | .diff e v =>
     let e := simplify (substEnv env e)
     let d := diff e v

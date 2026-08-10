@@ -7,20 +7,18 @@
 -/
 import Taschenrechner.Simplify
 import Taschenrechner.Matrix
+import Taschenrechner.Normal
 
 namespace Taschenrechner.Mat
 
 open Expr
 
-/-- Simplify an entry. -/
-def simp (e : Expr) : Expr := Expr.simplify e
+/-- Simplify an entry (normal form for more stable pivots). -/
+def simp (e : Expr) : Expr := Expr.normalForm e
 
-/-- Structural/algebraic zero test after simplification. -/
+/-- Algebraic zero test via normal forms (for pivots / elimination). -/
 def isZeroE (e : Expr) : Bool :=
-  let e := simp e
-  match e with
-  | const c => c.isZero
-  | _ => e == Expr.zero
+  Expr.isZeroExpr e
 
 /-- Deep-copy matrix rows. -/
 def clone (rows : Array (Array Expr)) : Array (Array Expr) :=

@@ -3,6 +3,7 @@
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
+import Taschenrechner.Normal
 import Taschenrechner.Diff
 import Taschenrechner.Poly
 import Taschenrechner.RatInt

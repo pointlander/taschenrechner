@@ -3,9 +3,10 @@
 A small **computer algebra system** written in [Lean 4](https://lean-lang.org/), supporting:
 
 - Symbolic expression trees with exact rational coefficients  
-- Algebraic simplification and expansion  
-- Symbolic differentiation (product, chain, power, elementary functions)  
+- Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
+- Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
+- Matrices: RREF, rank, nullspace, general linear solve
 
 ## Build & run
 
@@ -34,6 +35,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
 | `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
+| `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -64,7 +66,21 @@ diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```
 
-Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `help`.
+Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `help`.
+
+**Normal forms**
+
+| Form | What it does |
+|------|----------------|
+| `cancel(e)` | Cancel common factors in products/quotients (integer powers + poly GCD for rationals) |
+| `together(e)` | Put a sum of rationals over a common denominator (`RatFn`) |
+| `nf(e)` / `normal(e)` | `simplify` → `cancel` → `together` → `simplify` |
+
+```bash
+lake exe taschenrechner 'cancel((x^2-1)/(x-1))'   # → 1 + x
+lake exe taschenrechner 'together(1/x + 1/(x+1))' # → (1+2x)/(x+x²)
+lake exe taschenrechner 'nf(1/x + 2/x)'           # → 3/x
+```
 
 ```bash
 lake exe taschenrechner -i

@@ -21,6 +21,7 @@
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
+import Taschenrechner.Normal
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Complex
@@ -192,6 +193,15 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       (Expr.pow (Expr.im e) (2 : Expr))))
   | "simplify", [e] => pure (simplify e)
   | "expand", [e] => pure (expand e)
+  | "cancel", [e] => pure (cancel e)
+  | "together", [e] => pure (together e)
+  | "together", [e, v] => do
+      let v ← asVarName v
+      pure (together e v)
+  | "nf", [e] | "normal", [e] | "normalform", [e] => pure (normalForm e)
+  | "nf", [e, v] | "normal", [e, v] | "normalform", [e, v] => do
+      let v ← asVarName v
+      pure (normalForm e v)
   | "euler", [e] => pure (eulerExpand e)
   | "det", [e] =>
     match asMat? e with
@@ -289,11 +299,11 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       integrateCall e v
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
-  | "simplify", _ | "expand", _ | "euler", _
+  | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
   | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _
   | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
-  | "zeros", _ | "ones", _ | "solve", _ =>
+  | "zeros", _ | "ones", _ | "solve", _ | "together", _ | "nf", _ | "normal", _ | "normalform", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
@@ -313,7 +323,8 @@ def isBuiltinName (name : String) : Bool :=
   let n := name.toLower
   n == "sin" || n == "cos" || n == "tan" || n == "exp" || n == "ln" || n == "log"
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
-    || n == "abs" || n == "simplify" || n == "expand"
+    || n == "abs" || n == "simplify" || n == "expand" || n == "cancel"
+    || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -495,6 +506,9 @@ inductive Command where
   | integrate : Expr → String → Command
   | simplify  : Expr → Command
   | expand    : Expr → Command
+  | cancel    : Expr → Command
+  | together  : Expr → Command
+  | normal    : Expr → Command
   | assign    : String → Expr → Command
   | vars      : Command
   | clearAll  : Command
@@ -506,7 +520,8 @@ inductive Command where
 
 private def isKeyword (k : String) : Bool :=
   k == "diff" || k == "d" || k == "int" || k == "integrate"
-    || k == "simplify" || k == "expand" || k == "help"
+    || k == "simplify" || k == "expand" || k == "cancel" || k == "together"
+    || k == "nf" || k == "normal" || k == "help"
     || k == "vars" || k == "clear" || k == "save" || k == "load"
 
 private def isReservedFun (k : String) : Bool :=
@@ -683,6 +698,15 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
     | some "expand", some rest =>
       let e ← parse rest env
       pure (.expand e)
+    | some "cancel", some rest =>
+      let e ← parse rest env
+      pure (.cancel e)
+    | some "together", some rest =>
+      let e ← parse rest env
+      pure (.together e)
+    | some "nf", some rest | some "normal", some rest =>
+      let e ← parse rest env
+      pure (.normal e)
     | some "help", _ => pure .help
     | some "vars", _ => pure .vars
     | some "clear", none => pure .clearAll
@@ -722,7 +746,8 @@ def helpText : String :=
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
-                simplify(e)  expand(e)  euler(e)\n\
+                simplify(e)  expand(e)  cancel(e)  together(e)\n\
+                nf(e)/normal(e)  euler(e)\n\
   \n\
   Commands:\n\
     <expr>\n\
@@ -737,6 +762,9 @@ def helpText : String :=
     int  <expr> [var]\n\
     simplify <expr>\n\
     expand <expr>\n\
+    cancel <expr>\n\
+    together <expr>\n\
+    nf / normal <expr>\n\
     help\n\
   \n\
   Examples:\n\

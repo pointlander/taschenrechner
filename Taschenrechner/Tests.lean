@@ -9,6 +9,7 @@ import Taschenrechner.Integrate
 import Taschenrechner.Parse
 import Taschenrechner.Risch
 import Taschenrechner.Env
+import Taschenrechner.Normal
 
 namespace Taschenrechner.Tests
 
@@ -284,5 +285,42 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard
   let body := Env.toSession (Env.set Env.empty "A" (ofInt 3))
   body.contains "A := 3"
+
+-- Normal forms
+#guard
+  -- x/x → 1
+  simplify (cancel (x / x)) == (1 : Expr)
+#guard
+  -- 2x/x → 2
+  simplify (cancel (((2 : Expr) * x) / x)) == (2 : Expr)
+#guard
+  -- poly GCD cancel: (x²−1)/(x−1) → x+1
+  equivNF (cancel ((x ^ (2 : Expr) - 1) / (x - 1))) (x + 1)
+#guard
+  -- 1/x + 1/(x+1) together
+  let e := together ((1 : Expr) / x + (1 : Expr) / (x + 1))
+  match RatFn.ofExpr? e "x" with
+  | some r =>
+      -- ( (x+1) + x ) / (x(x+1)) = (2x+1)/(x^2+x)
+      !r.den.isOne && !(r.num.isZero)
+  | none => false
+#guard isZeroExpr (x - x)
+#guard isZeroExpr (((1 : Expr) / x) * x - 1)
+#guard equivNF ((1 : Expr) / x + (1 : Expr) / x) ((2 : Expr) / x)
+#guard
+  match parse "nf(1/x + 2/x)" with
+  | .ok e => equivNF e ((3 : Expr) / x)
+  | _ => false
+#guard
+  match parse "together(1/x + 1/(x+1))" with
+  | .ok e =>
+      match RatFn.ofExpr? e "x" with
+      | some _ => true
+      | none => false
+  | _ => false
+#guard
+  match parse "cancel((x^2-1)/(x-1))" with
+  | .ok e => equivNF e (x + 1)
+  | _ => false
 
 end Taschenrechner.Tests
