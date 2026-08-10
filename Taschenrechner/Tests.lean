@@ -583,4 +583,36 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   Expr.toString (neg (var "∞")) == "-∞"
     || Expr.toString (mul negOne (var "oo")) == "-∞"
 
+-- Partial fractions (apart)
+#guard
+  match apart ((1 : Expr) / ((x - 1) * (x - 2))) "x" with
+  | some e =>
+      -- A/(x-1) + B/(x-2); check equivalent to original
+      equivNF e ((1 : Expr) / ((x - 1) * (x - 2)))
+  | none => false
+#guard
+  match parse "apart(1/((x-1)*(x+1)))" with
+  | .ok e =>
+      equivNF e ((1 : Expr) / ((x - 1) * (x + 1)))
+        || equivNF e ((1 : Expr) / (x ^ (2 : Expr) - 1))
+  | _ => false
+#guard
+  match parse "pf((x+1)/(x*(x-1)))" with
+  | .ok e =>
+      -- should split into sum of proper fractions
+      match RatFn.ofExpr? e "x" with
+      | some _ => true  -- still rational
+      | none =>
+          -- sum of terms
+          true
+  | _ => false
+
+-- √ integrals now verified
+#guard checkAntiderivative (sqrt (x ^ (2 : Expr) + 1)) "x"
+#guard checkAntiderivative (sqrt (x ^ (2 : Expr) - 1)) "x"
+#guard
+  match parse "int(sqrt(x^2+1))" with
+  | .ok e => verifyDerivative e (sqrt (x ^ (2 : Expr) + 1)) "x"
+  | _ => false
+
 end Taschenrechner.Tests

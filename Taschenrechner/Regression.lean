@@ -84,10 +84,12 @@ def suite : List Case := [
   { name := "exp(x)+sin(x)",      integrand := "exp(x)+sin(x)",       expect := .risch },
   { name := "cos(x)-sin(x)",      integrand := "cos(x)-sin(x)",       expect := .risch },
   { name := "x^2*exp(x^3)",       integrand := "x^2*exp(x^3)",        expect := .risch },
-  -- radical table: 1/√(±x²±a²) (heuristic, verified)
+  -- radical table: 1/√ and √ (heuristic, verified)
   { name := "1/sqrt(x^2+1)",      integrand := "1/sqrt(x^2+1)",       expect := .heuristic },
   { name := "1/sqrt(1-x^2)",      integrand := "1/sqrt(1-x^2)",       expect := .heuristic },
-  { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .heuristic }
+  { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .heuristic },
+  { name := "sqrt(x^2+1)",        integrand := "sqrt(x^2+1)",         expect := .heuristic },
+  { name := "sqrt(x^2-1)",        integrand := "sqrt(x^2-1)",         expect := .heuristic }
 ]
 
 /-- Does a result match the expectation? -/

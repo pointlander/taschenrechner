@@ -350,6 +350,11 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "collect", [e, v] => do
       let v ← asVarName v
       pure (collect e v)
+  | "apart", [e] | "pf", [e] | "partialfractions", [e] =>
+      pure (apartOrSimplify e (Expr.primaryVar e))
+  | "apart", [e, v] | "pf", [e, v] | "partialfractions", [e, v] => do
+      let v ← asVarName v
+      pure (apartOrSimplify e v)
   | "coeff", [e, n] =>
     match asNatDim n with
     | some k =>
@@ -458,7 +463,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
   | "zeros", _ | "ones", _ | "together", _ | "nf", _ | "normal", _ | "normalform", _
-  | "roots", _ | "factor", _ | "collect", _ | "charpoly", _ | "characteristic", _ =>
+  | "roots", _ | "factor", _ | "collect", _ | "charpoly", _ | "characteristic", _
+  | "apart", _ | "pf", _ | "partialfractions", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "eigvals", _ | "eigenvalues", _ | "eigen", _ | "eig", _ =>
       throw s!"{name} expects 1 argument (square matrix), got {args.length}"
@@ -502,6 +508,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
+    || n == "apart" || n == "pf" || n == "partialfractions"
     || n == "taylor" || n == "maclaurin" || n == "series"
     || n == "limit" || n == "lim"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
@@ -935,8 +942,8 @@ def helpText : String :=
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 charpoly(A)  eigvals/eigen/eig(A)  eigenspace(A,λ)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
-    algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs,rhs,x)\n\
-                collect(e)  coeff(e,n)  coeff(e,v,n)\n\
+    algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
+                collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\

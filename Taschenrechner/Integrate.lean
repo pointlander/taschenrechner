@@ -126,20 +126,31 @@ def exprsEquivalent (a b : Expr) (v : String := "x") : Bool :=
     if equivNF a1 b1 v || isZeroExpr (sub a1 b1) v then true
     else
       -- Clear inverse powers (√ and other denominators), expand, repeat.
-      -- Proves identities such as d/dx ln(x+√(x²+1)) = 1/√(x²+1).
+      -- Proves identities such as d/dx ln(x+√(x²+1)) = 1/√(x²+1)
+      -- and d/dx (x/2 √(x²+1) + 1/2 ln(...)) = √(x²+1).
       let rec clearLoop (n : Nat) (a b : Expr) : Bool :=
         match n with
         | 0 => false
         | n'+1 =>
           let extras := invClearFactors a ++ invClearFactors b
-          if extras.isEmpty then false
+          -- Always try expand-only step; also clear inverses when present
+          let aw0 := simplify (expand a)
+          let bw0 := simplify (expand b)
+          if aw0 == bw0 || equivNF aw0 bw0 v || isZeroExpr (sub aw0 bw0) v then true
+          else if extras.isEmpty then
+            if aw0 == a && bw0 == b then false
+            else clearLoop n' aw0 bw0
           else
             let aw := simplify (expand (clearInvFactors a extras))
             let bw := simplify (expand (clearInvFactors b extras))
-            if aw == bw || equivNF aw bw v || isZeroExpr (sub aw bw) v then true
+            -- Also prove a − b = 0 after clearing (and with constant weight 2)
+            let dw := simplify (expand (clearInvFactors (sub a b) extras))
+            let dw2 := simplify (expand (mul (ofInt 2) dw))
+            if aw == bw || equivNF aw bw v || isZeroExpr (sub aw bw) v
+                || isZeroExpr dw v || isZeroExpr dw2 v then true
             else if aw == a && bw == b then false
             else clearLoop n' aw bw
-      clearLoop 8 a0 b0
+      clearLoop 12 a0 b0
 
 /-- Check that `diff F v` matches integrand `f`. -/
 def verifyDerivative (F f : Expr) (v : String := "x") : Bool :=
@@ -338,7 +349,7 @@ partial def radicalIntegral (e : Expr) (v : String) : Option Expr :=
       | some (a2, kind) => radicalInvSqrtIntegral base a2 kind v
       | none => none
     else if isHalf expn then
-      -- √(±x²±a²) table forms; only accept if F' checks out
+      -- √(±x²±a²); only if F' checks with the same exprsEquivalent as acceptAntideriv
       match matchQuadUnderSqrt base v with
       | some (a2, kind) =>
         match radicalSqrtIntegral base a2 kind v with

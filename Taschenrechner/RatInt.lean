@@ -281,6 +281,32 @@ def integrateSimpleFactor (A F : Poly) (v : String) : Option Expr :=
   else
     none
 
+/--
+  Partial fraction decomposition of proper `B/C` over the given monic
+  irreducible factors of `C` (distinct; for square-free denominators).
+  Returns list of `(A_i, F_i)` with `B/C = ∑ A_i/F_i` and `deg A_i < deg F_i`.
+-/
+def partialFractions (B C : Poly) (factors : List Poly) : Option (List (Poly × Poly)) :=
+  Id.run do
+    let mut out : List (Poly × Poly) := []
+    for Fi in factors do
+      let Gi := match exactDiv C Fi with | some g => g | none => Poly.zero
+      if Gi.isZero then return none
+      match modInverse Gi Fi with
+      | none => return none
+      | some invG =>
+        out := (strip (modPoly (mul B invG) Fi), monic Fi) :: out
+    pure (some out)
+
+/-- Build `∑ (Poly.toExpr Ai / Poly.toExpr Fi)` in variable `v`. -/
+def partialFractionsToExpr (parts : List (Poly × Poly)) (v : String) : Expr :=
+  parts.foldl (fun acc (Ai, Fi) =>
+    let term :=
+      if Fi.isOne then Poly.toExpr Ai v
+      else if Ai.isZero then Expr.zero
+      else Expr.div (Poly.toExpr Ai v) (Poly.toExpr Fi v)
+    if acc == Expr.zero then term else Expr.add acc term) Expr.zero
+
 /-- Rothstein–Trager for rational residues. -/
 partial def rothsteinTrager (B C : Poly) (v : String) : Option Expr :=
   let B := strip B
@@ -292,7 +318,9 @@ partial def rothsteinTrager (B C : Poly) (v : String) : Option Expr :=
     let roots :=
       (rationalRootCandidates R).filter fun z => (eval R z).isZero
     -- Always try linear factors of C as well
-    let (_c, facs) := factorOverQ C
+    let (_c, facs0) := factorOverQ C
+    let facs := facs0.foldl (fun acc f =>
+      if acc.any (· == f) then acc else acc ++ [f]) []
     Id.run do
       let mut acc : Expr := Expr.zero
       let mut ok := true
@@ -326,18 +354,6 @@ partial def rothsteinTrager (B C : Poly) (v : String) : Option Expr :=
           else ok := false
       if ok then pure (some (Expr.simplify acc)) else pure none
 where
-  partialFractions (B C : Poly) (factors : List Poly) : Option (List (Poly × Poly)) :=
-    Id.run do
-      let mut out : List (Poly × Poly) := []
-      for Fi in factors do
-        let Gi := match exactDiv C Fi with | some g => g | none => Poly.zero
-        if Gi.isZero then return none
-        match modInverse Gi Fi with
-        | none => return none
-        | some invG =>
-          out := (strip (modPoly (mul B invG) Fi), monic Fi) :: out
-      pure (some out)
-
   resultantPolyInZ (B C Cp : Poly) : Poly :=
     let n := max 0 C.deg.toNat
     let degBound := n + 2
@@ -364,7 +380,61 @@ where
         | some invd => add acc (scale (yj * invd) num)
     ) Poly.zero
 
-/-! ### Public API -/
+/-! ### Partial fractions (apart) -/
+
+/--
+  Partial fraction decomposition of a rational expression in `v`.
+
+  Steps: simplify → polynomial division → Hermite (absorb repeated factors into
+  a rational `G`) → PF of the square-free proper remainder when factors are
+  degree ≤ 2 over ℚ.
+-/
+def apart (e : Expr) (v : String := "x") : Option Expr :=
+  match RatFn.ofExpr? e v with
+  | none => none
+  | some r =>
+    let r := RatFn.simplify r
+    if r.den.isZero then none
+    else if r.num.isZero then some Expr.zero
+    else
+      let (Q, R) := divMod (strip r.num) (strip r.den)
+      let polyPart :=
+        if Q.isZero then Expr.zero else Poly.toExpr Q v
+      if R.isZero then some (Expr.simplify polyPart)
+      else
+        let (G, B, C) := hermiteReduce R r.den
+        let gExpr := RatFn.toExpr G v
+        let head :=
+          if polyPart == Expr.zero then gExpr
+          else if gExpr == Expr.zero then polyPart
+          else Expr.add polyPart gExpr
+        if B.isZero then some (Expr.simplify head)
+        else
+          let C := monic (strip C)
+          let (_c, facs) := factorOverQ C
+          -- Deduplicate equal factors (factorOverQ may repeat linears)
+          let facs := facs.foldl (fun acc f =>
+            if acc.any (· == f) then acc else acc ++ [f]) []
+          if facs.isEmpty then
+            some (Expr.simplify (Expr.add head (Expr.div (Poly.toExpr B v) (Poly.toExpr C v))))
+          else if facs.any (fun f => f.deg > 2) then
+            -- leave unsplit remainder
+            some (Expr.simplify (Expr.add head (Expr.div (Poly.toExpr B v) (Poly.toExpr C v))))
+          else
+            match partialFractions B C facs with
+            | some parts =>
+              let pf := partialFractionsToExpr parts v
+              some (Expr.simplify (Expr.add head pf))
+            | none =>
+              some (Expr.simplify (Expr.add head (Expr.div (Poly.toExpr B v) (Poly.toExpr C v))))
+
+/-- `apart` with fallback to simplified input. -/
+def apartOrSimplify (e : Expr) (v : String := "x") : Expr :=
+  match apart e v with
+  | some a => a
+  | none => Expr.simplify e
+
+/-! ### Public integration API -/
 
 /-- ∫ (A/D) dx with A,D ∈ ℚ[x]. -/
 partial def integrateRationalPoly (A D : Poly) (v : String) : Option Expr :=

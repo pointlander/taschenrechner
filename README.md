@@ -10,7 +10,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
 - **Limits**: finite points (L'Hôpital for rationals), ±∞ (`oo`)
-- **Radical integrals**: √(x²±a²), 1/√(a²−x²), …
+- **Radical integrals**: √(x²±a²), 1/√(a²−x²), … (verified)
+- **Partial fractions**: `apart` / `pf`
 - **Taylor / Maclaurin series**: `taylor`, `series`, `maclaurin`
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
@@ -53,7 +54,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
-| `Taschenrechner.RatInt` | Rational function integration (Hermite + Rothstein–Trager) |
+| `Taschenrechner.RatInt` | Rational integration + `apart` (partial fractions) |
 | `Taschenrechner.Risch` | Transcendental Risch (exp/log/trig, non-existence) |
 | `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
 | `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
@@ -162,6 +163,8 @@ lake exe taschenrechner 'lim((2*x)/(3*x+1), oo)'    # → 2/3
 lake exe taschenrechner 'int(1/sqrt(x^2+1))'        # → ln(x + √(x²+1))
 lake exe taschenrechner 'int(1/sqrt(1-x^2))'        # → atan(x/√(1−x²))
 lake exe taschenrechner 'int(1/sqrt(x^2-1))'        # → ln(x + √(x²−1))
+lake exe taschenrechner 'int(sqrt(x^2+1))'          # → ½x√(x²+1) + ½ ln(x+√(x²+1))
+lake exe taschenrechner 'apart(1/((x-1)*(x-2)))'    # → 1/(x-1) − 1/(x-2)  (up to order)
 ```
 
 **Definite integrals & series**
