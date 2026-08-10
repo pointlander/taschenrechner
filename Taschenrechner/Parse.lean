@@ -26,6 +26,7 @@ import Taschenrechner.Eval
 import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
+import Taschenrechner.Series
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
@@ -171,6 +172,12 @@ def integrateCall (e : Expr) (v : String) : Except String Expr :=
   | .success F _ => pure F
   | .notElementary r => throw s!"not elementary: {r}"
   | .failure r => throw s!"integration failed: {r}"
+
+def integrateDefiniteCall (e : Expr) (v : String) (lo hi : Expr) : Except String Expr :=
+  match integrateDefinite e v lo hi with
+  | .success r _ => pure r
+  | .notElementary msg => throw s!"not elementary: {msg}"
+  | .failure msg => throw s!"integration failed: {msg}"
 
 /-- Desugar built-in function / CAS forms. -/
 def applyCall (name : String) (args : List Expr) : Except String Expr := do
@@ -348,10 +355,50 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "int", [e, v] => do
       let v ← asVarName v
       integrateCall e v
+  | "int", [e, lo, hi] =>
+      -- definite ∫_lo^hi e dx
+      integrateDefiniteCall e "x" lo hi
+  | "int", [e, v, lo, hi] => do
+      let v ← asVarName v
+      integrateDefiniteCall e v lo hi
   | "integrate", [e] => integrateCall e "x"
   | "integrate", [e, v] => do
       let v ← asVarName v
       integrateCall e v
+  | "integrate", [e, lo, hi] =>
+      integrateDefiniteCall e "x" lo hi
+  | "integrate", [e, v, lo, hi] => do
+      let v ← asVarName v
+      integrateDefiniteCall e v lo hi
+  | "taylor", [e, n] =>
+      match asNatDim n with
+      | some k => pure (taylor e "x" zero k)
+      | none => throw "taylor: expected non-negative integer order"
+  | "taylor", [e, v, n] => do
+      -- taylor(f, x, n) about 0, or taylor(f, a, n) about a in x if v not a var
+      match asVarName v with
+      | .ok name =>
+        match asNatDim n with
+        | some k => pure (taylor e name zero k)
+        | none => throw "taylor: expected non-negative integer order"
+      | .error _ =>
+        match asNatDim n with
+        | some k => pure (taylor e "x" v k)
+        | none => throw "taylor: expected non-negative integer order"
+  | "taylor", [e, v, a, n] => do
+      let v ← asVarName v
+      match asNatDim n with
+      | some k => pure (taylor e v a k)
+      | none => throw "taylor: expected non-negative integer order"
+  | "maclaurin", [e, n] | "series", [e, n] =>
+      match asNatDim n with
+      | some k => pure (maclaurin e "x" k)
+      | none => throw s!"{name}: expected non-negative integer order"
+  | "maclaurin", [e, v, n] | "series", [e, v, n] => do
+      let v ← asVarName v
+      match asNatDim n with
+      | some k => pure (maclaurin e v k)
+      | none => throw s!"{name}: expected non-negative integer order"
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -365,8 +412,14 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"solve expects solve(A,b) | solve(f) | solve(f,x) | solve(lhs,rhs,x), got {args.length} args"
   | "coeff", _ =>
       throw s!"coeff expects coeff(e, n) or coeff(e, v, n), got {args.length} args"
-  | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
+  | "diff", _ | "d", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
+  | "int", _ | "integrate", _ =>
+      throw s!"{name} expects int(f) | int(f,x) | int(f,a,b) | int(f,x,a,b), got {args.length} args"
+  | "taylor", _ =>
+      throw s!"taylor expects taylor(f,n) | taylor(f,x,n) | taylor(f,a,n) | taylor(f,x,a,n), got {args.length} args"
+  | "maclaurin", _ | "series", _ =>
+      throw s!"{name} expects {name}(f,n) or {name}(f,x,n), got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -391,6 +444,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
+    || n == "taylor" || n == "maclaurin" || n == "series"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -814,6 +868,8 @@ def helpText : String :=
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs,rhs,x)\n\
                 collect(e)  coeff(e,n)  coeff(e,v,n)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
+                int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
+                taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\

@@ -13,6 +13,7 @@ import Taschenrechner.Diff
 import Taschenrechner.Simplify
 import Taschenrechner.Trig
 import Taschenrechner.Normal
+import Taschenrechner.Eval
 import Taschenrechner.Risch
 
 namespace Taschenrechner.Expr
@@ -425,14 +426,19 @@ def integrate? (e : Expr) (v : String := "x") : Option Expr :=
   (integrate e v).get?
 
 /--
-  Definite integral ∫_lo^hi e dv by evaluating the antiderivative
-  (symbolic substitution via `Expr.subst` — no numeric eval of transcendentals).
+  Definite integral ∫_lo^hi e dv via the FTC:
+  compute antiderivative F, then F(hi) − F(lo).
+  Ground results are exact-evaluated over ℚ(i) when possible.
 -/
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with
   | .success F src =>
-    -- Definite value inherits source; verification already done on F.
-    .success (simplify (sub (subst F v hi) (subst F v lo))) src
+    let val := simplify (sub (subst F v hi) (subst F v lo))
+    let val :=
+      match Taschenrechner.eval? val with
+      | some c => const c
+      | none => val
+    .success val src
   | .notElementary r => .notElementary r
   | .failure r => .failure r
 

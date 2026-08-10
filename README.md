@@ -6,6 +6,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
+- **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
+- **Taylor / Maclaurin series**: `taylor`, `series`, `maclaurin`
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
@@ -41,6 +43,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
+| `Taschenrechner.Series` | Taylor / Maclaurin series |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -114,6 +117,23 @@ lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
 lake exe taschenrechner 'solve(x^2-5*x+6, x)'         # → [2, 3]
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
+```
+
+**Definite integrals & series**
+
+| Form | What it does |
+|------|----------------|
+| `int(f, a, b)` | Definite ∫_a^b f(x) dx (FTC) |
+| `int(f, x, a, b)` | Definite in free variable `x` |
+| `taylor(f, n)` | Maclaurin poly of degree ≤ n in `x` |
+| `taylor(f, x, a, n)` | Taylor about `a` |
+| `series(f, n)` / `maclaurin(f, n)` | Same as Maclaurin |
+
+```bash
+lake exe taschenrechner 'int(x^2, 0, 1)'             # → 1/3
+lake exe taschenrechner 'int(sin(x), 0, 0)'           # → 0
+lake exe taschenrechner 'taylor(exp(x), 3)'           # → 1 + x + x²/2 + x³/6
+lake exe taschenrechner 'series(sin(x), 5)'           # → x − x³/6 + x⁵/120
 ```
 
 ```bash

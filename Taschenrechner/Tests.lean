@@ -12,6 +12,7 @@ import Taschenrechner.Env
 import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Solve
+import Taschenrechner.Series
 
 namespace Taschenrechner.Tests
 
@@ -412,5 +413,47 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "coeff(3*x^2+2*x+1, 1)" with
   | .ok e => e == ofInt 2
   | _ => false
+
+-- Definite integrals (FTC) & Taylor series
+#guard
+  match integrateDefinite (x ^ (2 : Expr)) "x" (0 : Expr) (1 : Expr) with
+  | .success r _ => r == ofRat ⟨1, 3⟩
+  | _ => false
+#guard
+  match parse "int(x^2, 0, 1)" with
+  | .ok e => e == ofRat ⟨1, 3⟩
+  | _ => false
+#guard
+  match parse "int(x, x, 0, 2)" with
+  | .ok e => e == ofInt 2
+  | _ => false
+#guard
+  match parse "int(sin(x), 0, 0)" with
+  | .ok e => e == ofInt 0
+  | _ => false
+#guard
+  -- exp Maclaurin order 2: 1 + x + x²/2
+  equivNF (maclaurin (exp x) "x" 2)
+    (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr))
+#guard
+  -- sin Maclaurin order 3: x − x³/6
+  equivNF (maclaurin (sin x) "x" 3)
+    (x - (1 : Expr) / (6 : Expr) * x ^ (3 : Expr))
+#guard
+  match parse "taylor(exp(x), 2)" with
+  | .ok e =>
+      equivNF e (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr))
+  | _ => false
+#guard
+  match parse "series(sin(x), 3)" with
+  | .ok e =>
+      equivNF e (x - (1 : Expr) / (6 : Expr) * x ^ (3 : Expr))
+  | _ => false
+#guard
+  -- Taylor of 1/(1-x) about 0 order 2 ≈ 1 + x + x²
+  equivNF (taylor ((1 : Expr) / (1 - x)) "x" zero 2)
+    (1 + x + x ^ (2 : Expr))
+#guard natFactorial 5 == 120
+#guard natFactorial 0 == 1
 
 end Taschenrechner.Tests
