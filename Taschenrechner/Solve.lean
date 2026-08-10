@@ -10,6 +10,8 @@ import Taschenrechner.Simplify
 import Taschenrechner.Poly
 import Taschenrechner.RatInt
 import Taschenrechner.Normal
+import Taschenrechner.Matrix
+import Taschenrechner.LinAlg
 
 namespace Taschenrechner
 
@@ -324,5 +326,281 @@ def collect (e : Expr) (v : String := "x") : Expr :=
   match collectIn e v with
   | some f => f
   | none => simplify e
+
+/-! ### Linear systems -/
+
+/-- Unit coefficient vector for variable index `i`. -/
+def unitCoeffs (n i : Nat) : Array Expr :=
+  Id.run do
+    let mut a : Array Expr := Array.replicate n zero
+    if i < n then a := a.set! i one
+    pure a
+
+/-- Zero coefficient vector. -/
+def zeroCoeffs (n : Nat) : Array Expr :=
+  Array.replicate n zero
+
+/--
+  Parse `e` as an affine form ∑ cᵢ·vᵢ + k in the given variables.
+  Returns `(coeffs, constant)` so that e = ∑ cᵢ vᵢ + k.
+-/
+def indexOf (name : String) (vars : List String) : Option Nat :=
+  let rec go (i : Nat) : List String → Option Nat
+    | [] => none
+    | v :: rest => if v == name then some i else go (i + 1) rest
+  go 0 vars
+
+partial def affineForm (e : Expr) (vars : List String) : Option (Array Expr × Expr) :=
+  go (simplify e) vars.length
+where
+  go : Expr → Nat → Option (Array Expr × Expr)
+  | add a b, n =>
+    match go a n, go b n with
+    | some (ca, ka), some (cb, kb) =>
+      some (
+        Id.run do
+          let mut out := ca
+          for i in [:n] do
+            out := out.set! i (simplify (add ca[i]! cb[i]!))
+          pure out,
+        simplify (add ka kb))
+    | _, _ => none
+  | mul (const c) rest, n =>
+    match go rest n with
+    | some (cs, k) =>
+      some (cs.map fun ci => simplify (mul (const c) ci), simplify (mul (const c) k))
+    | none => none
+  | mul rest (const c), n => go (mul (const c) rest) n
+  | var name, n =>
+    match indexOf name vars with
+    | some i => some (unitCoeffs n i, zero)
+    | none =>
+      -- treat other free symbols as constant terms
+      some (zeroCoeffs n, var name)
+  | const c, n => some (zeroCoeffs n, const c)
+  | e, n =>
+    if vars.any (fun v => dependsOn e v) then
+      -- product of one var and a coefficient free of all vars
+      match e with
+      | mul a b =>
+        let aDep := vars.any (fun v => dependsOn a v)
+        let bDep := vars.any (fun v => dependsOn b v)
+        if aDep && !bDep then
+          match go a n with
+          | some (cs, k) =>
+            if k == zero then
+              some (cs.map fun ci => simplify (mul ci b), zero)
+            else none
+          | none => none
+        else if bDep && !aDep then
+          match go b n with
+          | some (cs, k) =>
+            if k == zero then
+              some (cs.map fun ci => simplify (mul ci a), zero)
+            else none
+          | none => none
+        else none
+      | _ => none
+    else
+      some (zeroCoeffs n, e)
+
+/-- Collect free variables appearing in any of the expressions, sorted. -/
+def collectVars (es : List Expr) : List String :=
+  es.foldl (fun acc e => (acc ++ freeVars e).eraseDups) []
+    |>.mergeSort (· < ·)
+
+/--
+  Solve a system of linear equations (each entry an equation or residual = 0).
+  Returns a column matrix of solutions in the given variable order
+  (or inferred free variables, sorted alphabetically).
+-/
+def solveLinearSystem (eqs : List Expr) (vars? : Option (List String) := none) :
+    Except String Expr :=
+  if eqs.isEmpty then throw "solve: empty system"
+  else
+    let residuals := eqs.map fun e =>
+      match asEquation? e with
+      | some (a, b) => simplify (sub a b)
+      | none => simplify e
+    let vars :=
+      match vars? with
+      | some vs => vs
+      | none => collectVars residuals
+    if vars.isEmpty then throw "solve: no free variables in system"
+    else
+      let n := vars.length
+      let m := residuals.length
+      let built : Option (Array (Array Expr) × Array (Array Expr)) :=
+        Id.run do
+          let mut rowsA : Array (Array Expr) := Array.empty
+          let mut rowsB : Array (Array Expr) := Array.empty
+          for r in residuals do
+            match affineForm r vars with
+            | none => return none
+            | some (cs, k) =>
+              -- ∑ cᵢ vᵢ + k = 0  →  ∑ cᵢ vᵢ = −k
+              rowsA := rowsA.push cs
+              rowsB := rowsB.push #[simplify (neg k)]
+          pure (some (rowsA, rowsB))
+      match built with
+      | none => throw s!"solve: nonlinear or unsupported equation in system"
+      | some (A, b) =>
+        if Mat.nrows A != m || Mat.ncols A != n then
+          throw "solve: internal shape error"
+        else
+          match Mat.solve A b with
+          | .unique x => pure (simplify (Expr.mat x))
+          | .general x _ => pure (simplify (Expr.mat x))
+          | .inconsistent msg => throw s!"solve: {msg}"
+          | .error msg => throw s!"solve: {msg}"
+
+/-! ### Inequalities (univariate poly, lite) -/
+
+/-- Compare two real rational expressions for ordering (only rational constants). -/
+def ratExprCompare (a b : Expr) : Option Ordering :=
+  match simplify a, simplify b with
+  | const ca, const cb =>
+    match CplxConst.toRat? ca, CplxConst.toRat? cb with
+    | some ra, some rb => some (RatConst.compare ra rb)
+    | _, _ => none
+  | _, _ => none
+
+/-- Sort a list of rational constant expressions ascending. -/
+def sortRatExprs (xs : List Expr) : List Expr :=
+  xs.toArray.qsort (fun a b =>
+    match ratExprCompare a b with
+    | some .lt => true
+    | _ => false) |>.toList
+
+/-- Sign of a poly at a rational test point (after simplify). -/
+def polySignAt (p : Poly) (t : RatConst) : Option Bool :=
+  let v := Poly.eval p t
+  if v.isZero then none
+  else some (v.num > 0)
+
+/-- Midpoint of two rationals (or offset if infinite). -/
+def midPoint (a b : Option RatConst) : RatConst :=
+  match a, b with
+  | none, none => RatConst.zero
+  | none, some r => r - 1  -- left of first root
+  | some r, none => r + 1  -- right of last root
+  | some lo, some hi =>
+    match RatConst.div (lo + hi) (RatConst.ofInt 2) with
+    | some m => m
+    | none => lo
+
+/--
+  Solve univariate poly inequality `residual ? 0` in free var `v`.
+  Returns a matrix of intervals as rows `[lo, hi]`; ±∞ for unbounded ends.
+  Strict vs non-strict only affects whether roots are included (still listed as
+  endpoints; open/closed is indicated by using the same matrix convention:
+  for strict inequalities roots are omitted from the covered set by using
+  open intervals — we encode open ends by still listing the root as an
+  endpoint and documenting; for practicality we include roots for ≤/≥ and
+  exclude for < / > by shrinking to adjacent open rays only when testing.
+
+  Representation: n×2 matrix, each row an interval [lo, hi].
+-/
+def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except String Expr :=
+  let residual := simplify residual
+  match asPolyIn? residual v with
+  | none => throw "solve: inequality must be polynomial/rational in one variable"
+  | some p =>
+    let p := Poly.strip p
+    if p.isZero then
+      -- 0 ? 0
+      match kind with
+      | .eq | .le | .ge => pure (var "all")
+      | .lt | .gt => pure (Expr.mat #[#[]])  -- empty
+    else if p.deg == 0 then
+      let c := Poly.coeff p 0
+      let pos := c.num > 0
+      match kind with
+      | .eq => pure (Expr.mat #[#[]])
+      | .lt => pure (if !pos && !c.isZero then var "all" else Expr.mat #[#[]])
+      | .gt => pure (if pos then var "all" else Expr.mat #[#[]])
+      | .le => pure (if !pos then var "all" else Expr.mat #[#[]])
+      | .ge => pure (if pos || c.isZero then var "all" else Expr.mat #[#[]])
+    else
+      -- Real roots (rational + quadratic); keep only real constant roots
+      let rs := rootsPoly p
+      let realRoots :=
+        rs.filterMap fun r =>
+          match simplify r with
+          | const c =>
+            match CplxConst.toRat? c with
+            | some q => some (ofRat q)
+            | none => none  -- pure imaginary etc.
+          | _ => none  -- symbolic radicals: skip for interval endpoints lite
+      let rootsSorted := sortRatExprs realRoots.eraseDups
+      let rootRats :=
+        rootsSorted.filterMap fun e =>
+          match e with
+          | const c => CplxConst.toRat? c
+          | _ => none
+      -- Build test points: (−∞,r0), (r0,r1), …, (rn,+∞)
+      let n := rootRats.length
+      let intervals : List (Option RatConst × Option RatConst) :=
+        if n == 0 then [(none, none)]
+        else
+          let left := (none, some rootRats[0]!)
+          let right := (some rootRats[n - 1]!, none)
+          let mids :=
+            (List.range (n - 1)).map fun i =>
+              (some rootRats[i]!, some rootRats[i + 1]!)
+          left :: mids ++ [right]
+      -- Which open intervals satisfy the strict relation?
+      let wantZero := kind == .eq || kind == .le || kind == .ge
+      if kind == .eq then
+        let only := rootsSorted.map fun r => #[r, r]
+        pure (simplify (Expr.mat only.toArray))
+      else
+        let rows : List (Array Expr) :=
+          Id.run do
+            let mut rows : List (Array Expr) := []
+            for (lo, hi) in intervals do
+              let t := midPoint lo hi
+              match polySignAt p t with
+              | none => pure ()
+              | some pos =>
+                let ok :=
+                  (pos && (kind == .gt || kind == .ge))
+                    || (!pos && (kind == .lt || kind == .le))
+                if ok then
+                  let loE :=
+                    match lo with
+                    | none => neg (var "∞")
+                    | some r => ofRat r
+                  let hiE :=
+                    match hi with
+                    | none => var "∞"
+                    | some r => ofRat r
+                  rows := rows ++ [#[loE, hiE]]
+            -- Non-strict: include roots not already endpoints of selected intervals
+            -- (isolated roots of ≥/≤, e.g. −(x−1)² ≥ 0 → {1}).
+            if wantZero then
+              for r in rootsSorted do
+                let already :=
+                  rows.any fun row =>
+                    row.size ≥ 2 && (simplify row[0]! == simplify r || simplify row[1]! == simplify r)
+                if !already then
+                  rows := rows ++ [#[r, r]]
+            pure rows
+        if rows.isEmpty then
+          pure (Expr.mat #[#[]])
+        else
+          pure (simplify (Expr.mat rows.toArray))
+
+/-- Dispatch a single relation or residual for solve. -/
+def solveRelation (e : Expr) (v : String) : Except String Expr :=
+  match relationToResidual e with
+  | some (.eq, r) => solveScalarExpr? r v
+  | some (.lt, r) => solveInequality r .lt v
+  | some (.le, r) => solveInequality r .le v
+  | some (.gt, r) => solveInequality r .gt v
+  | some (.ge, r) => solveInequality r .ge v
+  | none =>
+    -- bare expression = 0
+    solveScalarExpr? e v
 
 end Taschenrechner

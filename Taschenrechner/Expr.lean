@@ -231,6 +231,10 @@ inductive Expr where
   | conj  : Expr → Expr
   /-- Equation `lhs = rhs` (for `solve` and display). -/
   | eq    : Expr → Expr → Expr
+  /-- Strict inequality `lhs < rhs`. -/
+  | lt    : Expr → Expr → Expr
+  /-- Non-strict inequality `lhs ≤ rhs`. -/
+  | le    : Expr → Expr → Expr
   /-- Rectangular matrix; rows are arrays of equal length. -/
   | mat   : Array (Array Expr) → Expr
   deriving Repr, Inhabited
@@ -274,7 +278,8 @@ def z : Expr := var "z"
 partial def freeVars : Expr → List String
   | const _ => []
   | var v => [v]
-  | add a b | mul a b | pow a b | eq a b => (freeVars a ++ freeVars b).eraseDups
+  | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
+      (freeVars a ++ freeVars b).eraseDups
   | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => freeVars e
   | mat rows =>
     rows.toList.foldl (fun acc row =>
@@ -285,7 +290,8 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   match e with
   | const _ => false
   | var name => name == v
-  | add a b | mul a b | pow a b | eq a b => dependsOn a v || dependsOn b v
+  | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
+      dependsOn a v || dependsOn b v
   | sin a | cos a | tan a | exp a | ln a | atan a | re a | im a | conj a => dependsOn a v
   | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
@@ -306,6 +312,8 @@ partial def beq : Expr → Expr → Bool
   | im a, im b => beq a b
   | conj a, conj b => beq a b
   | eq a1 b1, eq a2 b2 => beq a1 a2 && beq b1 b2
+  | lt a1 b1, lt a2 b2 => beq a1 a2 && beq b1 b2
+  | le a1 b1, le a2 b2 => beq a1 a2 && beq b1 b2
   | mat a, mat b =>
     a.size == b.size &&
       Id.run do
@@ -339,6 +347,8 @@ partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
   | im a => im (subst a v val)
   | conj a => conj (subst a v val)
   | eq a b => eq (subst a v val) (subst b v val)
+  | lt a b => lt (subst a v val) (subst b v val)
+  | le a b => le (subst a v val) (subst b v val)
   | mat rows => mat (rows.map fun row => row.map fun cell => subst cell v val)
 
 /-- If `e` is an equation `lhs = rhs`, return both sides. -/
@@ -346,11 +356,30 @@ def asEquation? : Expr → Option (Expr × Expr)
   | eq a b => some (a, b)
   | _ => none
 
+/-- Relation kind for equations and inequalities. -/
+inductive RelKind where
+  | eq | lt | le | gt | ge
+  deriving Repr, BEq, DecidableEq, Inhabited
+
+/-- If `e` is a relation, return kind and sides (gt/ge normalized to lt/le swapped). -/
+def asRelation? : Expr → Option (RelKind × Expr × Expr)
+  | eq a b => some (.eq, a, b)
+  | lt a b => some (.lt, a, b)
+  | le a b => some (.le, a, b)
+  | _ => none
+
 /-- Convert equation to `lhs - rhs` (for solving); leave non-equations unchanged. -/
 def equationToZero (e : Expr) : Expr :=
   match e with
   | eq a b => sub a b
   | e => e
+
+/-- Convert any comparison to a residual `lhs - rhs` with a relation kind. -/
+def relationToResidual : Expr → Option (RelKind × Expr)
+  | eq a b => some (.eq, sub a b)
+  | lt a b => some (.lt, sub a b)
+  | le a b => some (.le, sub a b)
+  | _ => none
 
 /-- Apply a list of substitutions left-to-right. -/
 def substMany (e : Expr) (σ : List (String × Expr)) : Expr :=
@@ -398,7 +427,7 @@ partial def termDegree (e : Expr) (v : String) : Int :=
   | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e =>
       -- transcendental: sort after polynomials of same “priority”
       100 + termDegree e v
-  | eq a b => max (termDegree a v) (termDegree b v)
+  | eq a b | lt a b | le a b => max (termDegree a v) (termDegree b v)
   | mat _ => 0
   | add _ _ => 0
 
@@ -467,6 +496,8 @@ partial def toString : Expr → String
   | im e => s!"im({toString e})"
   | conj e => s!"conj({toString e})"
   | eq a b => s!"{toString a} = {toString b}"
+  | lt a b => s!"{toString a} < {toString b}"
+  | le a b => s!"{toString a} ≤ {toString b}"
   | mat rows =>
     let rowStrs := rows.toList.map fun row =>
       String.intercalate ", " (row.toList.map toString)
@@ -474,17 +505,18 @@ partial def toString : Expr → String
 where
   parenMul : Expr → String
     | e@(add _ _) => s!"({toString e})"
-    | e@(eq _ _) => s!"({toString e})"
+    | e@(eq _ _) | e@(lt _ _) | e@(le _ _) => s!"({toString e})"
     | e@(mat _) => s!"({toString e})"
     | e => toString e
   parenPow : Expr → String
-    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(eq _ _) | e@(mat _) => s!"({toString e})"
+    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(eq _ _) | e@(lt _ _) | e@(le _ _)
+    | e@(mat _) => s!"({toString e})"
     | e => toString e
   parenFrac : Expr → String
-    | e@(add _ _) | e@(eq _ _) => s!"({toString e})"
+    | e@(add _ _) | e@(eq _ _) | e@(lt _ _) | e@(le _ _) => s!"({toString e})"
     | e => toString e
   parenSqrt : Expr → String
-    | e@(add _ _) | e@(mul _ _) | e@(eq _ _) => s!"({toString e})"
+    | e@(add _ _) | e@(mul _ _) | e@(eq _ _) | e@(lt _ _) | e@(le _ _) => s!"({toString e})"
     | e => toString e
   /-- Format one summand with optional leading sign (`first` term has no leading +). -/
   formatSummand (first : Bool) (t : Expr) : String :=

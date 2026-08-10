@@ -115,6 +115,8 @@ partial def cancel1 : Expr → Expr
   | im e => im (cancel1 e)
   | conj e => conj (cancel1 e)
   | eq a b => eq (cancel1 a) (cancel1 b)
+  | lt a b => lt (cancel1 a) (cancel1 b)
+  | le a b => le (cancel1 a) (cancel1 b)
   | mat rows => mat (rows.map fun row => row.map cancel1)
   | e => e
 

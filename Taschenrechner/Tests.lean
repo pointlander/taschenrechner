@@ -629,6 +629,41 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some rows => simplify rows[0]![0]! == ofRat ⟨-1, 2⟩
       | none => false
   | _ => false
+-- Linear systems & inequalities (PR M)
+#guard
+  match parse "solve(x+y=1, x-y=3)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 2
+            && simplify (Mat.get! rows 0 0) == ofInt 2
+            && simplify (Mat.get! rows 1 0) == ofInt (-1)
+      | none => false
+  | _ => false
+#guard
+  match parse "x^2 > 1" with
+  | .ok e =>
+      match asRelation? e with
+      | some (.lt, a, b) => simplify a == ofInt 1 && simplify b == x ^ (2 : Expr)
+      | _ => false
+  | _ => false
+#guard
+  match parse "solve(x^2-1>0)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => Mat.nrows rows == 2 && Mat.ncols rows == 2
+      | none => false
+  | _ => false
+#guard
+  match parse "solve(x^2-1<0)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 1
+            && simplify (Mat.get! rows 0 0) == ofInt (-1)
+            && simplify (Mat.get! rows 0 1) == ofInt 1
+      | none => false
+  | _ => false
 #guard
   -- √ and superscripts
   (Expr.toString (sqrt (x ^ (2 : Expr) + 1))).contains "√"

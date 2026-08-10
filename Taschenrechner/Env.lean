@@ -102,6 +102,8 @@ partial def substEnv (env : Env) (e : Expr) : Expr :=
   | im a => im (substEnv env a)
   | conj a => conj (substEnv env a)
   | eq a b => eq (substEnv env a) (substEnv env b)
+  | lt a b => lt (substEnv env a) (substEnv env b)
+  | le a b => le (substEnv env a) (substEnv env b)
   | mat rows => mat (rows.map fun row => row.map (substEnv env))
 
 /-- Names that must not be used as binding targets. -/

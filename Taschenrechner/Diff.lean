@@ -52,6 +52,8 @@ where
     | im a, v => im (diffRaw a v)
     | conj a, v => conj (diffRaw a v)
     | eq a b, v => eq (diffRaw a v) (diffRaw b v)
+    | lt a b, v => lt (diffRaw a v) (diffRaw b v)
+    | le a b, v => le (diffRaw a v) (diffRaw b v)
     | mat rows, v =>
       mat (rows.map (fun row => row.map (fun e => diffRaw e v)))
 

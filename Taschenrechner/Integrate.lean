@@ -105,7 +105,7 @@ partial def invClearFactors : Expr → List Expr
   | pow base e => invClearFactors base ++ invClearFactors e
   | add a b => invClearFactors a ++ invClearFactors b
   | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => invClearFactors e
-  | eq a b => invClearFactors a ++ invClearFactors b
+  | eq a b | lt a b | le a b => invClearFactors a ++ invClearFactors b
   | _ => []
 
 /-- Multiply by clear-factors from `a` and `b` so expand can cancel radicals. -/

@@ -63,6 +63,18 @@ partial def cmpExpr : Expr → Expr → Ordering
     | o => o
   | eq _ _, _ => .lt
   | _, eq _ _ => .gt
+  | lt a1 b1, lt a2 b2 =>
+    match cmpExpr a1 a2 with
+    | .eq => cmpExpr b1 b2
+    | o => o
+  | lt _ _, _ => .lt
+  | _, lt _ _ => .gt
+  | le a1 b1, le a2 b2 =>
+    match cmpExpr a1 a2 with
+    | .eq => cmpExpr b1 b2
+    | o => o
+  | le _ _, _ => .lt
+  | _, le _ _ => .gt
   | mat _, mat _ => .eq  -- order among matrices not refined
   | mat _, _ => .lt
   | _, mat _ => .gt
@@ -305,13 +317,16 @@ partial def simplify1 : Expr → Expr
     let a := simplify1 a
     let b := simplify1 b
     eq a b
+  | lt a b => lt (simplify1 a) (simplify1 b)
+  | le a b => le (simplify1 a) (simplify1 b)
   | mat rows => mat (rows.map (fun row => row.map simplify1))
 where
   /-- Heuristic: expression is real-valued (real vars, real constants, real elementary ops). -/
   isRealValued : Expr → Bool
     | const c => c.isReal
     | var _ => true
-    | add a b | mul a b | pow a b | eq a b => isRealValued a && isRealValued b
+    | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
+        isRealValued a && isRealValued b
     | sin e | cos e | tan e | exp e | ln e | atan e => isRealValued e
     | re _ | im _ => true
     | conj e => isRealValued e
@@ -384,6 +399,8 @@ partial def expand1 : Expr → Expr
   | im e => im (expand1 e)
   | conj e => conj (expand1 e)
   | eq a b => eq (expand1 a) (expand1 b)
+  | lt a b => lt (expand1 a) (expand1 b)
+  | le a b => le (expand1 a) (expand1 b)
   | mat rows => mat (Mat.map rows expand1)
   | e => e
 

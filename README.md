@@ -4,7 +4,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients  
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
-- **Equations** with `=`: `solve(x^2=4, x)`, `solve(2x+1=0)`
+- **Equations & inequalities**: `solve(x^2=4, x)`, **systems** `solve(x+y=1,x-y=3)`, **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
@@ -53,7 +53,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
-| `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
+| `Taschenrechner.Solve` | `factor`, scalar/`system`/`inequality` `solve`, `roots`, `coeff` |
 | `Taschenrechner.Series` | Taylor / Maclaurin series |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
@@ -92,6 +92,8 @@ solve([1, 1; 0, 1], [3; 2])  # → [1; 2]
 solve([1, 2; 2, 4], [3; 6])  # → [3-2·t1; t1]
 solve(x^2=4, x)              # → [2, -2]
 solve(2*x+1=0)               # → [-1/2]
+solve(x+y=1, x-y=3)          # → [2; -1]  (vars alphabetical)
+solve(x^2-1>0)               # → [-∞, -1; 1, ∞]
 charpoly([1, 0; 0, 2])       # → t² − 3·t + 2
 eigvals([1, 0; 0, 2])        # → [1, 2]
 eigenspace([1, 0; 0, 2], 2)  # → [0; 1]
@@ -127,23 +129,31 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `eval(e)` | Exact eval in ℚ(i) when ground; else simplify |
 | `eval(e, v, a)` / `at(e, v, a)` | Substitute then exact-eval if possible |
 
-**Factor & scalar solve**
+**Factor, solve, systems & inequalities**
 
 | Form | What it does |
 |------|----------------|
 | `factor(e[, v])` | Factor poly/rational over ℚ; integers → `[prime, exp; …]` matrix |
 | `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational + quadratic) |
-| `solve(f[, x])` | Same as roots for scalar `f=0`; still `solve(A,b)` for matrices |
+| `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
 | `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
+| `solve(eq1, eq2, …[, x, y, …])` | **Linear system** → column solution (var order explicit or alphabetical) |
+| `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** (`<`, `≤`, `>`, `≥`) → interval matrix `[lo, hi; …]` (±∞) |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
+
+Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Systems require linear equations; inequalities are univariate polynomial (lite: open/closed endpoints share the same `[lo,hi]` display, with isolated roots as `[r,r]` when needed).
 
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
 lake exe taschenrechner 'solve(x^2=4, x)'             # → [2, -2]
 lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → [3, 2]
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]  (3-arg form)
+lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → [2; -1]
+lake exe taschenrechner 'solve(x+y+z=6, x-y=1, y-z=1)' # → [3; 2; 1]
+lake exe taschenrechner 'solve(x^2-1>0)'              # → [-∞, -1; 1, ∞]
+lake exe taschenrechner 'solve(x^2-1<0)'              # → [-1, 1]
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 ```
 

@@ -145,6 +145,8 @@ partial def tidyExpForm : Expr → Expr
   | pow a b => pow (tidyExpForm a) (tidyExpForm b)
   | exp e => exp (tidyExpForm e)
   | eq a b => eq (tidyExpForm a) (tidyExpForm b)
+  | lt a b => lt (tidyExpForm a) (tidyExpForm b)
+  | le a b => le (tidyExpForm a) (tidyExpForm b)
   | sin e => sin (tidyExpForm e)
   | cos e => cos (tidyExpForm e)
   | tan e => tan (tidyExpForm e)
@@ -178,6 +180,8 @@ partial def expandDivExp (e : Expr) : Expr :=
     let t := tidyExpForm (mul a b)
     if t == e then e else expandDivExp t
   | eq a b => eq (expandDivExp a) (expandDivExp b)
+  | lt a b => lt (expandDivExp a) (expandDivExp b)
+  | le a b => le (expandDivExp a) (expandDivExp b)
   | e => tidyExpForm e
 
 def tidyODESol (e : Expr) : Expr :=

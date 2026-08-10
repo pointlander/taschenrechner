@@ -47,7 +47,7 @@ inductive Token where
   | num   : Int → Token
   | ident : String → Token
   | plus | minus | star | slash | caret | middot
-  | eq
+  | eq | lt | le | gt | ge
   | lparen | rparen | comma
   | lbracket | rbracket | semicolon
   | eof
@@ -63,6 +63,10 @@ def Token.toString : Token → String
   | .caret => "^"
   | .middot => "·"
   | .eq => "="
+  | .lt => "<"
+  | .le => "≤"
+  | .gt => ">"
+  | .ge => "≥"
   | .lparen => "("
   | .rparen => ")"
   | .comma => ","
@@ -139,6 +143,18 @@ def tokenize (input : String) : Except String (Array Token) := do
       | '^' => out := out.push .caret; i := i + 1
       | '·' => out := out.push .middot; i := i + 1
       | '=' => out := out.push .eq; i := i + 1
+      | '<' =>
+        if i + 1 < len && cs[i + 1]! == '=' then
+          out := out.push .le; i := i + 2
+        else
+          out := out.push .lt; i := i + 1
+      | '>' =>
+        if i + 1 < len && cs[i + 1]! == '=' then
+          out := out.push .ge; i := i + 2
+        else
+          out := out.push .gt; i := i + 1
+      | '≤' => out := out.push .le; i := i + 1
+      | '≥' => out := out.push .ge; i := i + 1
       | '(' => out := out.push .lparen; i := i + 1
       | ')' => out := out.push .rparen; i := i + 1
       | ',' => out := out.push .comma; i := i + 1
@@ -339,35 +355,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | .ok R => pure (simplify (Expr.mat R))
       | .error msg => throw s!"expm: {msg}"
     | none => throw "expm: expected a matrix"
-  | "solve", [a, b] =>
-    match asMat? a, asMat? b with
-    | some A, some B =>
-      match Mat.solve A B with
-      | .unique x => pure (simplify (Expr.mat x))
-      | .general x _k => pure (simplify (Expr.mat x))
-      | .inconsistent msg => throw s!"solve: {msg}"
-      | .error msg => throw s!"solve: {msg}"
-    | _, _ =>
-      -- scalar: solve(f, x) or solve(lhs=rhs, x)
-      let v ← asVarName b
-      let f := equationToZero a
-      match solveScalarExpr? f v with
-      | .ok e => pure e
-      | .error msg => throw s!"solve: {msg}"
-  | "solve", [e] =>
-    -- scalar: solve(f) or solve(lhs=rhs) in primary free variable
-    let f := equationToZero e
-    let v := Expr.primaryVar f
-    match solveScalarExpr? f v with
-    | .ok r => pure r
-    | .error msg => throw s!"solve: {msg}"
-  | "solve", [lhs, rhs, v] =>
-    -- scalar: solve(lhs, rhs, x) means lhs = rhs
-    -- (also works if lhs is already an equation — ignore)
-    let v ← asVarName v
-    match solveEqExpr? lhs rhs v with
-    | .ok e => pure e
-    | .error msg => throw s!"solve: {msg}"
+  | "solve", args => do
+      solveDispatch args
   | "roots", [e] =>
     let v := Expr.primaryVar e
     pure (Expr.mat #[(roots e v).toArray])
@@ -594,8 +583,6 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "diagonalize", _ | "diag", _ | "diagonalise", _ | "modal", _ | "eigenmatrix", _
   | "diagform", _ | "diagonalform", _ | "expm", _ | "matexp", _ =>
       throw s!"{name} expects 1 argument (square matrix), got {args.length}"
-  | "solve", _ =>
-      throw s!"solve expects solve(A,b) | solve(f) | solve(f=0) | solve(lhs=rhs,x) | solve(lhs,rhs,x), got {args.length} args"
   | "coeff", _ =>
       throw s!"coeff expects coeff(e, n) or coeff(e, v, n), got {args.length} args"
   | "diff", _ | "d", _ =>
@@ -630,6 +617,92 @@ where
         if q.den == 1 && q.num ≥ 0 then some q.num.toNat else none
       | none => none
     | _ => none
+  /-- Is this a bare variable name? -/
+  isVar : Expr → Bool
+    | .var _ => true
+    | _ => false
+  /-- Equation or inequality relation? -/
+  isRel : Expr → Bool
+    | .eq _ _ | .lt _ _ | .le _ _ => true
+    | _ => false
+  /-- Dispatch solve for all arities. -/
+  solveDispatch (args : List Expr) : Except String Expr := do
+    match args with
+    | [] => throw "solve: expected arguments"
+    | [e] =>
+      -- scalar equation/inequality/residual in primary free var
+      let v := Expr.primaryVar (match relationToResidual e with
+        | some (_, r) => r
+        | none => e)
+      solveRelation e v
+    | [a, b] =>
+      match asMat? a, asMat? b with
+      | some A, some B =>
+        match Mat.solve A B with
+        | .unique x => pure (simplify (Expr.mat x))
+        | .general x _k => pure (simplify (Expr.mat x))
+        | .inconsistent msg => throw s!"solve: {msg}"
+        | .error msg => throw s!"solve: {msg}"
+      | _, _ =>
+        if isVar b then
+          let v ← asVarName b
+          solveRelation a v
+        else if isRel a && isRel b then
+          -- 2-equation system
+          solveLinearSystem [a, b] none
+        else
+          -- treat as two residuals of a system, or lhs,rhs without var
+          solveLinearSystem [a, b] none
+    | [lhs, rhs, v] =>
+      if isVar v && !isRel lhs then
+        -- solve(lhs, rhs, x) equation
+        let v ← asVarName v
+        solveEqExpr? lhs rhs v
+      else if isRel lhs && isRel rhs && isVar v then
+        -- solve(eq1, eq2, x) — underdetermined naming, still 2 eqs
+        let _ ← asVarName v
+        solveLinearSystem [lhs, rhs] none
+      else
+        -- 3-equation system (or mix)
+        solveLinearSystem [lhs, rhs, v] none
+    | args =>
+      -- Peel trailing variable names from the argument list.
+      let (eqs, varNames) :=
+        Id.run do
+          let mut es := args
+          let mut vs : List String := []
+          let mut done := false
+          while !done && !es.isEmpty do
+            match es.getLast? with
+            | some e =>
+              if isVar e then
+                match asVarName e with
+                | .ok name =>
+                  vs := name :: vs
+                  es := es.dropLast
+                | .error _ => done := true
+              else done := true
+            | none => done := true
+          pure (es, vs)
+      if eqs.isEmpty then throw "solve: no equations in system"
+      else if eqs.length == 1 && varNames.length == 1 then
+        solveRelation eqs[0]! varNames[0]!
+      else if eqs.all isRel || eqs.length ≥ 2 then
+        let vars? := if varNames.isEmpty then none else some varNames
+        -- inequalities in multi-eq not supported
+        if eqs.any fun e =>
+            match e with
+            | .lt _ _ | .le _ _ => true
+            | _ => false
+        then
+          if eqs.length == 1 then
+            solveRelation eqs[0]! (varNames.headD (Expr.primaryVar eqs[0]!))
+          else
+            throw "solve: systems of inequalities are not supported"
+        else
+          solveLinearSystem eqs vars?
+      else
+        solveLinearSystem eqs (if varNames.isEmpty then none else some varNames)
 
 /-- Known callables that consume `(...)`; bare vars juxtapose: `x(x+1)` = `x*(x+1)`. -/
 def isBuiltinName (name : String) : Bool :=
@@ -662,13 +735,25 @@ def isBuiltinName (name : String) : Bool :=
 
 mutual
 
-/-- Lowest precedence: optional equation `lhs = rhs`. -/
+/-- Lowest precedence: optional relation `lhs (=|<|>|<=|>=) rhs`. -/
 partial def parseExpr (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   let (lhs, p) ← parseSum env p
   match p.peek with
   | .eq =>
     let (rhs, p) ← parseSum env p.advance
     pure (Expr.eq lhs rhs, p)
+  | .lt =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.lt lhs rhs, p)
+  | .le =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.le lhs rhs, p)
+  | .gt =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.lt rhs lhs, p)  -- a > b → b < a
+  | .ge =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.le rhs lhs, p)  -- a ≥ b → b ≤ a
   | _ => pure (lhs, p)
 
 partial def parseSum (env : Env) (p : Parser) : Except String (Expr × Parser) := do
@@ -1071,8 +1156,9 @@ def helpText : String :=
   Expressions:\n\
     numbers     0, 42, -3\n\
     variables   x, y, theta\n\
-    ops         +  -  *  /  ^  ·  =   and juxtaposition (2x, sin(x)cos(x))\n\
+    ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
+    inequalities  x^2-1>0  → solve(…) returns interval matrix [lo,hi;…]\n\
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
@@ -1082,6 +1168,7 @@ def helpText : String :=
                 diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
+                solve(eq1,eq2,…) linear systems; solve(a>b) inequalities\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
@@ -1116,6 +1203,8 @@ def helpText : String :=
     x^2 + 3*x + 1\n\
     A := [1, 2; 3, 4]; det(A)\n\
     b := [5; 11]; solve(A, b)\n\
+    solve(x+y=1, x-y=3)\n\
+    solve(x^2-1>0)\n\
     ans\n\
     save session.tr\n\
     load session.tr\n\

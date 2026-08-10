@@ -51,7 +51,7 @@ partial def matchComplexLinear (e : Expr) : Option (Expr × Expr) :=
   | re _ | im _ | conj _ | sin _ | cos _ | tan _ | atan _ | ln _ | exp _ | var _ | pow _ _ =>
     -- treat as real
     some (e, zero)
-  | eq _ _ => none
+  | eq _ _ | lt _ _ | le _ _ => none
   | mat _ => none
   | _ => some (e, zero)
 
@@ -75,6 +75,8 @@ partial def eulerExpand1 (e : Expr) : Expr :=
   | im a => im (eulerExpand1 a)
   | conj a => conj (eulerExpand1 a)
   | eq a b => eq (eulerExpand1 a) (eulerExpand1 b)
+  | lt a b => lt (eulerExpand1 a) (eulerExpand1 b)
+  | le a b => le (eulerExpand1 a) (eulerExpand1 b)
   | mat rows => mat (rows.map (fun row => row.map eulerExpand1))
   | exp a =>
     let a := eulerExpand1 a
