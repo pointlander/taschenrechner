@@ -107,7 +107,60 @@ def suite : List Case := [
     input := "dsolve(yp + y = 0)"
     check := fun e =>
       let s := Expr.toString e
-      s.contains "exp(-" }
+      s.contains "exp(-" },
+  -- PR O: second-order const-coeff + linear systems
+  { name := "y'' + y = 0 harmonic"
+    input := "dsolve(y'' + y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2"
+        && (Expr.toString e).contains "sin"
+        && (Expr.toString e).contains "cos" },
+  { name := "ypp alias for y''"
+    input := "dsolve(ypp - y = 0)"
+    check := fun e =>
+      isEqY e && (Expr.toString e).contains "exp" },
+  { name := "repeated root (D−1)²y=0"
+    input := "dsolve(y'' + 2*yp + y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "x"
+        && (Expr.toString e).contains "exp" },
+  { name := "distinct real roots"
+    input := "dsolve(y'' - 3*yp + 2*y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2" },
+  { name := "nonhomogeneous y''+y=1"
+    input := "dsolve(y'' + y = 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1"
+            && equivNF
+                (simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "x" (0:Expr)))
+                (1:Expr)
+      | none => false },
+  { name := "2nd-order IC y(0)=1, y'(0)=0"
+    input := "dsolve(y'' + y = 0, 0, 1, 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && !dependsOn r "C2"
+            && equivNF (simplify (subst r "x" (0:Expr))) (1:Expr)
+      | none => false },
+  { name := "linear system diagonal"
+    input := "dsolve([1, 0; 0, 2])"
+    check := fun e =>
+      match asNamedSolution? e with
+      | some pairs =>
+          pairs.length == 2
+            && pairs.any (fun p => p.1 == "y1" && dependsOn p.2 "C1")
+            && pairs.any (fun p => p.1 == "y2" && dependsOn p.2 "C2")
+      | none =>
+          (prettySolution e).contains "y1" && (prettySolution e).contains "exp" },
+  { name := "linear system with IC"
+    input := "dsolve([1, 0; 0, 2], [3; 4])"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y1" && s.contains "y2" && !s.contains "C1" }
 ]
 
 structure CaseResult where
@@ -154,6 +207,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 10
+#guard suite.length ≥ 18
 
 end Taschenrechner.SumODERegression

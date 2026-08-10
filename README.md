@@ -17,7 +17,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
-- **Finite sums** `sum` (Faulhaber + geometric) and **first-order ODEs** `dsolve`
+- **Finite sums** `sum` (Faulhaber + geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff, linear systems via `expm`)
 
 ## Build & run
 
@@ -57,7 +57,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Series` | Taylor / Maclaurin series |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
-| `Taschenrechner.ODE` | First-order `dsolve` (linear + separable; `yp` = y′) |
+| `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -178,19 +178,22 @@ lake exe taschenrechner 'diagform([1, 0; 0, 2])'       # → diag(1,2) (order ma
 lake exe taschenrechner 'expm(zeros(2))'              # → I
 ```
 
-**Finite sums & first-order ODEs**
+**Finite sums & ODEs**
 
 | Form | What it does |
 |------|----------------|
 | `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber / geometric; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
-| `dsolve(eq)` | First-order ODE; use **`y'`** or **`yp`** for y′ |
+| `dsolve(eq)` | 1st-order (`y'`/`yp`) or 2nd-order const-coeff (`y''`/`ypp`) |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
-| `dsolve(eq, x0, y0)` | With initial condition y(x0)=y0 |
-| `dsolve(eq, y, x, x0, y0)` | Full IC form |
-| `C` | Arbitrary constant (eliminated when an IC is given) |
+| `dsolve(eq, x0, y0)` | IC y(x0)=y0 (first-order) |
+| `dsolve(eq, x0, y0, yp0)` | ICs y(x0)=y0, y′(x0)=yp0 (second-order) |
+| `dsolve(eq, y, x, x0, y0[, yp0])` | Full IC form |
+| `dsolve(A)` | Linear system **Y′ = A Y** → `yᵢ = (Φ(x)·C)ᵢ`, Φ=expm(A x) |
+| `dsolve(A, Y0)` | System with Y(0)=Y0 |
+| `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
 
-Linear: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Answers use `C·exp(…)` form.
+Linear 1st-order: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Systems require diagonalizable A.
 
 ```bash
 lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
@@ -199,6 +202,10 @@ lake exe taschenrechner 'dsolve(y'\'' + y = 0)'         # → y = C·exp(-x)
 lake exe taschenrechner 'dsolve(y'\'' + y = x)'         # → y = C·exp(-x) + x − 1
 lake exe taschenrechner 'dsolve(yp + y = 0, 0, 1)'     # → y = exp(-x)
 lake exe taschenrechner 'dsolve(yp = x*y)'             # → y = C·exp(x²/2)
+lake exe taschenrechner "dsolve(y'' + y = 0)"          # → y = C1·cos(x) + C2·sin(x)
+lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)
+lake exe taschenrechner 'dsolve([1,0;0,2])'            # → y1 = C1·exp(x), y2 = C2·exp(2x)
+lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 = 4·exp(2x)
 ```
 
 **Limits & radical integrals**

@@ -841,5 +841,33 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "sum(k^2, k, 1, 5)" with
   | .ok e => simplify e == ofInt 55
   | _ => false
+-- PR O: second-order ODE & linear systems
+#guard
+  match parse "dsolve(y'' + y = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && dependsOn r "C1" && dependsOn r "C2"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(y'' + y = 0, 0, 1, 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && simplify (subst r "x" (0:Expr)) == ofInt 1
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve([1, 0; 0, 2])" with
+  | .ok e =>
+      (prettySolution e).contains "y1" && (prettySolution e).contains "exp"
+  | _ => false
+#guard
+  match parse "dsolve([1, 0; 0, 2], [3; 4])" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "3" && s.contains "4" && !s.contains "C1"
+  | _ => false
 
 end Taschenrechner.Tests

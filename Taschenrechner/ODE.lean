@@ -1,8 +1,10 @@
 /-
-  First-order ordinary differential equations.
+  Ordinary differential equations.
 
-  * Linear:  y' + P(x) y = Q(x)   → integrating factor
-  * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx  (when both integrate)
+  * First-order linear:  y' + P(x) y = Q(x)   → integrating factor
+  * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
+  * Second-order constant-coeff: a y'' + b y' + c y = g  (g constant)
+  * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via diagonalization)
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -11,6 +13,8 @@ import Taschenrechner.Integrate
 import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Solve
+import Taschenrechner.Matrix
+import Taschenrechner.Eigen
 
 namespace Taschenrechner
 
@@ -20,21 +24,35 @@ open Taschenrechner.Expr (flattenMul)
 /-- Arbitrary constant of integration in ODE solutions. -/
 def odeC : Expr := var "C"
 
+/-- Named free constants C1, C2, … (1-based). -/
+def odeCi (i : Nat) : Expr :=
+  var s!"C{i + 1}"
+
 /--
   Represent y' as the free variable `yp` (or `y'` / `dy`) by convention, and y as `y`.
 
   * Dependent unknown is `y` (function of `x`)
-  * Its derivative is free var `yp`  (aliases `y'`, `dy`)
-  * Example: `dsolve(yp + P*y = Q, y, x)`
+  * First derivative: `yp` / `y'` / `dy`
+  * Second derivative: `ypp` / `y''` / `d2y`
+  * Example: `dsolve(yp + P*y = Q, y, x)`, `dsolve(y'' + y = 0)`
 -/
 def ypName : String := "yp"
+def yppName : String := "ypp"
 
 private def isYpName (name : String) : Bool :=
   name == ypName || name == "y'" || name == "dy"
 
+private def isYppName (name : String) : Bool :=
+  name == yppName || name == "y''" || name == "d2y"
+
+private def dependsOnYFamily (e : Expr) (y : String) : Bool :=
+  dependsOn e y || dependsOn e ypName || dependsOn e "y'" || dependsOn e "dy"
+    || dependsOn e yppName || dependsOn e "y''" || dependsOn e "d2y"
+
 /-- Collect coefficient of `yp` and of `y` in a linear expression in those symbols. -/
 partial def linearFormInY (e : Expr) (y : String) (_x : String) : Option (Expr × Expr × Expr) :=
   -- Returns (A, B, C) for A*yp + B*y + C = 0 with A,B,C independent of y, yp
+  -- Fails (none) if a second derivative appears.
   let e := simplify e
   go e
 where
@@ -51,7 +69,8 @@ where
     | none => none
   | mul rest (const c) => go (mul (const c) rest)
   | var name =>
-    if isYpName name then
+    if isYppName name then none
+    else if isYpName name then
       some (one, zero, zero)
     else if name == y then
       some (zero, one, zero)
@@ -59,12 +78,11 @@ where
       some (zero, zero, var name)
   | const c => some (zero, zero, const c)
   | e =>
-    if dependsOn e y || dependsOn e ypName || dependsOn e "y'" || dependsOn e "dy" then
-      -- try product: c(x)*y or c(x)*yp
+    if dependsOnYFamily e y then
       match e with
       | mul a b =>
-        let aY := dependsOn a y || dependsOn a ypName || dependsOn a "y'" || dependsOn a "dy"
-        let bY := dependsOn b y || dependsOn b ypName || dependsOn b "y'" || dependsOn b "dy"
+        let aY := dependsOnYFamily a y
+        let bY := dependsOnYFamily b y
         if aY && !bY then
           match go a with
           | some (aa, bb, cc) =>
@@ -84,10 +102,84 @@ where
     else
       some (zero, zero, e)
 
+/--
+  Linear form in y'', y', y:
+  returns `(A, B, C, D)` for `A·y'' + B·y' + C·y + D = 0`.
+-/
+partial def linearFormInY2 (e : Expr) (y : String) : Option (Expr × Expr × Expr × Expr) :=
+  let e := simplify e
+  go e
+where
+  go : Expr → Option (Expr × Expr × Expr × Expr)
+  | add a b =>
+    match go a, go b with
+    | some (a1, b1, c1, d1), some (a2, b2, c2, d2) =>
+      some (
+        simplify (add a1 a2), simplify (add b1 b2),
+        simplify (add c1 c2), simplify (add d1 d2))
+    | _, _ => none
+  | mul (const c) rest =>
+    match go rest with
+    | some (a, b, c0, d0) =>
+      some (
+        simplify (mul (const c) a), simplify (mul (const c) b),
+        simplify (mul (const c) c0), simplify (mul (const c) d0))
+    | none => none
+  | mul rest (const c) => go (mul (const c) rest)
+  | var name =>
+    if isYppName name then some (one, zero, zero, zero)
+    else if isYpName name then some (zero, one, zero, zero)
+    else if name == y then some (zero, zero, one, zero)
+    else some (zero, zero, zero, var name)
+  | const c => some (zero, zero, zero, const c)
+  | e =>
+    if dependsOnYFamily e y then
+      match e with
+      | mul a b =>
+        let aY := dependsOnYFamily a y
+        let bY := dependsOnYFamily b y
+        if aY && !bY then
+          match go a with
+          | some (aa, bb, cc, dd) =>
+            if dd == zero then
+              some (
+                simplify (mul aa b), simplify (mul bb b),
+                simplify (mul cc b), zero)
+            else none
+          | none => none
+        else if bY && !aY then
+          match go b with
+          | some (aa, bb, cc, dd) =>
+            if dd == zero then
+              some (
+                simplify (mul aa a), simplify (mul bb a),
+                simplify (mul cc a), zero)
+            else none
+          | none => none
+        else none
+      | _ => none
+    else
+      some (zero, zero, zero, e)
+
 /-- Rewrite equation to residual A*yp + B*y + C (= 0). -/
 def odeResidual (e : Expr) (y x : String) : Option (Expr × Expr × Expr) :=
   let e := equationToZero (simplify e)
   linearFormInY e y x
+
+/-- Residual A y'' + B y' + C y + D = 0. -/
+def odeResidual2 (e : Expr) (y : String) : Option (Expr × Expr × Expr × Expr) :=
+  let e := equationToZero (simplify e)
+  linearFormInY2 e y
+
+/-- Expression is a rational constant (no free symbols of interest). -/
+def asRatConstExpr? (e : Expr) : Option RatConst :=
+  match simplify e with
+  | const c => CplxConst.toRat? c
+  | _ => none
+
+/-- True if `e` does not depend on any of the listed names. -/
+def indepOf (e : Expr) (names : List String) : Bool :=
+  names.all (fun v => !dependsOn e v)
 
 /-! ### Exponential tidy (C/exp(f) → C·exp(−f), etc.) -/
 
@@ -319,30 +411,284 @@ def applyIC (sol : Expr) (y x : String) (x0 y0 : Expr) : Except String Expr :=
       | .empty => throw "dsolve IC: inconsistent initial condition"
       | .unsupported msg => throw s!"dsolve IC: {msg}"
 
+/-! ### Second-order constant-coefficient -/
+
+/-- Decompose expression into real/imag rational parts when possible. -/
+def asComplexParts? (e : Expr) : Option (RatConst × RatConst) :=
+  match simplify e with
+  | const c => some (c.re, c.im)
+  | e =>
+    -- Ground complex via re/im if both fold to rationals
+    match simplify (re e), simplify (im e) with
+    | const a, const b =>
+      if a.im.isZero && b.im.isZero then some (a.re, b.re) else none
+    | _, _ => none
+
 /--
-  Solve a first-order ODE residual / equation for unknown `y(x)`.
-  Tries linear integrating-factor form first, then separable.
+  Build real fundamental solutions for two characteristic roots.
+  Returns basis functions of `x`.
+-/
+def constCoeffBasis2 (r1 r2 : Expr) (x : String) : List Expr :=
+  let xv := var x
+  let r1 := simplify r1
+  let r2 := simplify r2
+  if r1 == r2 then
+    [exp (mul r1 xv), mul xv (exp (mul r1 xv))]
+  else
+    match asComplexParts? r1, asComplexParts? r2 with
+    | some (a1, b1), some (a2, b2) =>
+      -- Conjugate pair: a±bi
+      if a1 == a2 && b1 == RatConst.neg b2 && !b1.isZero then
+        let alpha := ofRat a1
+        let beta := ofRat (if b1.num < 0 then RatConst.neg b1 else b1)
+        let e := exp (mul alpha xv)
+        if a1.isZero then
+          [cos (mul beta xv), sin (mul beta xv)]
+        else
+          [mul e (cos (mul beta xv)), mul e (sin (mul beta xv))]
+      else if a1 == a2 && b2 == RatConst.neg b1 && !b2.isZero then
+        let alpha := ofRat a1
+        let beta := ofRat (if b2.num < 0 then RatConst.neg b2 else b2)
+        let e := exp (mul alpha xv)
+        if a1.isZero then
+          [cos (mul beta xv), sin (mul beta xv)]
+        else
+          [mul e (cos (mul beta xv)), mul e (sin (mul beta xv))]
+      else
+        [exp (mul r1 xv), exp (mul r2 xv)]
+    | _, _ =>
+      [exp (mul r1 xv), exp (mul r2 xv)]
+
+/-- Particular solution for constant RHS: A y''+B y'+C y = G (G const). -/
+def particularConst (A B C G : RatConst) (x : String) : Except String Expr :=
+  if !C.isZero then
+    match RatConst.div G C with
+    | some k => pure (ofRat k)
+    | none => throw "dsolve: division by zero in particular solution"
+  else if !B.isZero then
+    match RatConst.div G B with
+    | some k => pure (mul (ofRat k) (var x))
+    | none => throw "dsolve: division by zero in particular solution"
+  else if !A.isZero then
+    match RatConst.div G A with
+    | some k =>
+      match RatConst.div k (RatConst.ofInt 2) with
+      | some k2 => pure (mul (ofRat k2) (pow (var x) (ofInt 2)))
+      | none => throw "dsolve: internal error"
+    | none => throw "dsolve: division by zero in particular solution"
+  else
+    throw "dsolve: degenerate second-order equation (A=B=C=0)"
+
+/--
+  Solve constant-coefficient second-order ODE:
+  `A y'' + B y' + C y + D = 0` with A,B,C,D rational constants, A ≠ 0.
+  Homogeneous (D=0) or constant forcing (−D).
+-/
+def dsolveConstCoeff2 (A B C D : Expr) (y x : String) : Except String Expr := do
+  match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C, asRatConstExpr? D with
+  | some a, some b, some c, some d =>
+    if a.isZero then
+      throw "dsolve: not second-order (coefficient of y'' is zero)"
+    else
+      let roots := quadraticRoots a b c
+      if roots.isEmpty then
+        throw "dsolve: could not solve characteristic equation"
+      else
+        let r1 := roots[0]!
+        let r2 := if roots.length == 1 then roots[0]! else roots[1]!
+        match constCoeffBasis2 r1 r2 x with
+        | [u1, u2] =>
+          let yh := simplify (add (mul (odeCi 0) u1) (mul (odeCi 1) u2))
+          if d.isZero then
+            pure (tidyODESol (eq (var y) yh))
+          else
+            let G := RatConst.neg d
+            let yp ← particularConst a b c G x
+            pure (tidyODESol (eq (var y) (simplify (add yh yp))))
+        | _ => throw "dsolve: expected 2 basis functions"
+  | _, _, _, _ =>
+    throw "dsolve: second-order solver requires constant rational coefficients"
+
+/-- Try second-order constant-coeff path when y'' is present with constant coeffs. -/
+def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
+  match odeResidual2 e y with
+  | none => none
+  | some (A, B, C, D) =>
+    let A := simplify A
+    if A == zero then none
+    else
+      match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C, asRatConstExpr? D with
+      | some a, some _, some _, some _ =>
+        if a.isZero then none
+        else some (dsolveConstCoeff2 A B C D y x)
+      | _, _, _, _ => none
+
+/-! ### Linear systems Y' = A Y via expm -/
+
+/--
+  Fundamental matrix Φ(x) = expm(A x) = P · exp(D x) · P⁻¹
+  for constant diagonalizable A. Diagonalize A (not A·x) so eigenvalues stay constant.
+-/
+def fundamentalMatrix (A : Array (Array Expr)) (x : String) : Except String (Array (Array Expr)) :=
+  match Mat.diagonalize A with
+  | .defective msg => throw s!"dsolve: {msg}"
+  | .error msg => throw s!"dsolve: {msg}"
+  | .ok P D =>
+    let xv := var x
+    match Mat.mapDiagonal D (fun lam => simplify (exp (mul (simplify lam) xv))) with
+    | none => throw "dsolve: bad diagonal in fundamental matrix"
+    | some eDx =>
+      let eDx := Mat.simpMat eDx
+      match Mat.inv P with
+      | none => throw "dsolve: modal matrix P is singular"
+      | some Pinv =>
+        let Pinv := Mat.simpMat Pinv
+        match Mat.mul P eDx with
+        | none => throw "dsolve: P·exp(Dx) shape error"
+        | some Pe =>
+          match Mat.mul Pe Pinv with
+          | none => throw "dsolve: Φ shape error"
+          | some Phi => pure (Mat.simpMat Phi)
+
+/-- Pack a solution column as named equations `y1 = …`, `y2 = …`. -/
+def packYEqs (Y : Array (Array Expr)) : Expr :=
+  let n := Mat.nrows Y
+  let eqs : Array (Array Expr) :=
+    Id.run do
+      let mut out : Array (Array Expr) := Array.empty
+      for i in [:n] do
+        let yi := var s!"y{i + 1}"
+        let val := simplify (Mat.get! Y i 0)
+        out := out.push #[eq yi val]
+      pure out
+  simplify (Expr.mat eqs)
+
+/--
+  Solve the homogeneous linear system `Y' = A Y`.
+  Returns named equations `yᵢ = (expm(A x) · C)ᵢ` with free constants `C1…Cn`.
+-/
+def dsolveLinSys (A : Array (Array Expr)) (x : String := "x") : Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "dsolve: system matrix must be square and non-empty"
+  else do
+    let Phi ← fundamentalMatrix A x
+    let Ccol : Array (Array Expr) :=
+      Id.run do
+        let mut rows : Array (Array Expr) := Array.empty
+        for i in [:n] do
+          rows := rows.push #[odeCi i]
+        pure rows
+    match Mat.mul Phi Ccol with
+    | none => throw "dsolve: Φ·C shape error"
+    | some Y => pure (packYEqs Y)
+
+/-- Solve Y' = A Y with initial condition Y(0) = Y0 (column or row). -/
+def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : String := "x") :
+    Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "dsolve: system matrix must be square"
+  else
+    let y0col : Option (Array (Array Expr)) :=
+      if Mat.nrows Y0 == n && Mat.ncols Y0 == 1 then some Y0
+      else if Mat.nrows Y0 == 1 && Mat.ncols Y0 == n then some (Mat.transpose Y0)
+      else if Mat.nrows Y0 == n && Mat.ncols Y0 == n && n == 1 then some Y0
+      else none
+    match y0col with
+    | none => throw s!"dsolve: initial vector must be {n}×1 (or 1×{n})"
+    | some y0 => do
+      let Phi ← fundamentalMatrix A x
+      match Mat.mul Phi y0 with
+      | none => throw "dsolve: Φ·Y0 shape error"
+      | some Y => pure (packYEqs Y)
+
+/--
+  Solve an ODE for unknown `y(x)`.
+
+  Order of attempts:
+  1. Second-order constant-coefficient (`y''` / `ypp`)
+  2. First-order linear (integrating factor)
+  3. Separable first-order
 -/
 def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Expr :=
-  match odeResidual e y x with
-  | none => throw "dsolve: expected linear form in y' and y (use y' or yp for the derivative)"
-  | some (A, B, C) =>
-    -- Prefer linear if B may depend only on x
-    if !dependsOn B y && !dependsOn A y && !dependsOn C y then
-      match dsolveLinear A B C y x with
-      | .ok sol => pure (tidyODESol sol)
-      | .error _ =>
-        match dsolveSeparable A B C y x with
-        | .ok sol => pure (tidyODESol sol)
-        | .error e => throw e
-    else
-      match dsolveSeparable A B C y x with
-      | .ok sol => pure (tidyODESol sol)
-      | .error e => throw e
+  -- Matrix argument → linear system Y' = A Y
+  match asMat? (simplify e) with
+  | some A => dsolveLinSys A x
+  | none =>
+    match dsolveSecondOrder? e y x with
+    | some (.ok sol) => pure (tidyODESol sol)
+    | some (.error err) =>
+      -- Fall through to first-order only if not clearly second-order
+      match odeResidual e y x with
+      | some _ =>
+        -- first-order form also parses; try it
+        match odeResidual e y x with
+        | none => throw err
+        | some (A, B, C) =>
+          if !dependsOn B y && !dependsOn A y && !dependsOn C y then
+            match dsolveLinear A B C y x with
+            | .ok sol => pure (tidyODESol sol)
+            | .error _ =>
+              match dsolveSeparable A B C y x with
+              | .ok sol => pure (tidyODESol sol)
+              | .error e2 => throw s!"{err}; also: {e2}"
+          else
+            match dsolveSeparable A B C y x with
+            | .ok sol => pure (tidyODESol sol)
+            | .error e2 => throw s!"{err}; also: {e2}"
+      | none => throw err
+    | none =>
+      match odeResidual e y x with
+      | none =>
+        throw "dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y"
+      | some (A, B, C) =>
+        if !dependsOn B y && !dependsOn A y && !dependsOn C y then
+          match dsolveLinear A B C y x with
+          | .ok sol => pure (tidyODESol sol)
+          | .error _ =>
+            match dsolveSeparable A B C y x with
+            | .ok sol => pure (tidyODESol sol)
+            | .error e => throw e
+        else
+          match dsolveSeparable A B C y x with
+          | .ok sol => pure (tidyODESol sol)
+          | .error e => throw e
 
 /-- Solve ODE then apply y(x0)=y0. -/
 def dsolveIC (e : Expr) (y x : String) (x0 y0 : Expr) : Except String Expr := do
   let sol ← dsolve e y x
   applyIC sol y x x0 y0
+
+/--
+  Apply two ICs y(x0)=y0, y'(x0)=yp0 to a second-order solution `y = f(x,C1,C2)`.
+-/
+def applyIC2 (sol : Expr) (y x : String) (x0 y0 yp0 : Expr) : Except String Expr :=
+  match asEquation? sol with
+  | none => throw "dsolve IC: expected explicit solution y = …"
+  | some (lhs, rhs) =>
+    if lhs != var y then throw "dsolve IC: expected y = …"
+    else
+      let fx0 := simplify (subst rhs x x0)
+      let fpx := diff rhs x
+      let fpx0 := simplify (subst fpx x x0)
+      -- Solve the linear system in C1, C2:
+      -- f(x0) = y0, f'(x0) = yp0
+      -- Build two residuals and use solveLinearSystem
+      let eq1 := eq fx0 y0
+      let eq2 := eq fpx0 yp0
+      match solveLinearSystem [eq1, eq2] (some ["C1", "C2"]) with
+      | .error msg => throw s!"dsolve IC: {msg}"
+      | .ok named =>
+        match namedGet? named "C1", namedGet? named "C2" with
+        | some c1, some c2 =>
+          let rhs' := simplify (subst (subst rhs "C1" c1) "C2" c2)
+          pure (tidyODESol (eq (var y) rhs'))
+        | _, _ => throw "dsolve IC: could not extract C1, C2"
+
+/-- Second-order IC: y(x0)=y0, y'(x0)=yp0. -/
+def dsolveIC2 (e : Expr) (y x : String) (x0 y0 yp0 : Expr) : Except String Expr := do
+  let sol ← dsolve e y x
+  applyIC2 sol y x x0 y0 yp0
 
 end Taschenrechner

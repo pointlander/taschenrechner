@@ -549,23 +549,34 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | .error _, .error _ =>
         throw "sum: expected a free index variable (sum(expr, k, lo, hi) or sum(k, lo, hi, expr))"
   | "dsolve", [e] =>
-      dsolve e "y" "x"
-  | "dsolve", [e, y] => do
-      let y ← asVarName y
-      dsolve e y "x"
+      -- scalar ODE, or square matrix A for Y' = A Y
+      match asMat? e with
+      | some A => dsolveLinSys A "x"
+      | none => dsolve e "y" "x"
+  | "dsolve", [e, a] => do
+      match asMat? e, asMat? a with
+      | some A, some Y0 => dsolveLinSysIC A Y0 "x"
+      | _, _ =>
+        let y ← asVarName a
+        dsolve e y "x"
   | "dsolve", [e, a, b] => do
       -- dsolve(eq, y, x)  OR  dsolve(eq, x0, y0) for y(x0)=y0
       match asVarName a, asVarName b with
       | .ok y, .ok x => dsolve e y x
       | _, _ => dsolveIC e "y" "x" a b
-  | "dsolve", [e, y, a, b] => do
-      -- Convention for 4 args: dsolve(eq, y, x0, y0) with independent var x
-      let y ← asVarName y
-      dsolveIC e y "x" a b
+  | "dsolve", [e, a, b, c] => do
+      -- dsolve(eq, y, x0, y0)  OR  dsolve(eq, x0, y0, yp0) second-order IC
+      match asVarName a with
+      | .ok y => dsolveIC e y "x" b c
+      | .error _ => dsolveIC2 e "y" "x" a b c
   | "dsolve", [e, y, x, x0, y0] => do
       let y ← asVarName y
       let x ← asVarName x
       dsolveIC e y x x0 y0
+  | "dsolve", [e, y, x, x0, y0, yp0] => do
+      let y ← asVarName y
+      let x ← asVarName x
+      dsolveIC2 e y x x0 y0 yp0
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -602,7 +613,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "sum", _ =>
       throw s!"sum expects sum(expr, k, lo, hi) or sum(k, lo, hi, expr), got {args.length} args"
   | "dsolve", _ =>
-      throw s!"dsolve expects dsolve(eq) | dsolve(eq,y,x) | dsolve(eq,x0,y0) | dsolve(eq,y,x,x0,y0) (y' or yp), got {args.length} args"
+      throw s!"dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(eq,x0,y0)|dsolve(eq,x0,y0,yp0)|… (y'/yp/y''/ypp), got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -1175,8 +1186,9 @@ def helpText : String :=
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
-                sum(expr, k, lo, hi)  dsolve(eq)  (y' or yp; C = const)\n\
-                dsolve(eq, x0, y0)  dsolve(eq, y, x, x0, y0)  initial conditions\n\
+                sum(expr, k, lo, hi)  dsolve(eq)  (y'/yp; y''/ypp; C/C1/C2)\n\
+                dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(A)  Y'=A Y via expm\n\
+                dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
