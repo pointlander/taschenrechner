@@ -4,6 +4,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients  
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
+- **Equations** with `=`: `solve(x^2=4, x)`, `solve(2x+1=0)`
+- Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
@@ -73,7 +75,9 @@ rref([1, 2; 2, 4])   # reduced row echelon form
 nullspace([1, 2; 2, 4])      # → [-2; 1]
 solve([1, 1; 0, 1], [3; 2])  # → [1; 2]
 solve([1, 2; 2, 4], [3; 6])  # → [3-2·t1; t1]
-charpoly([1, 0; 0, 2])       # → t² − 3t + 2
+solve(x^2=4, x)              # → [2, -2]
+solve(2*x+1=0)               # → [-1/2]
+charpoly([1, 0; 0, 2])       # → t² − 3·t + 2
 eigvals([1, 0; 0, 2])        # → [1, 2]
 eigenspace([1, 0; 0, 2], 2)  # → [0; 1]
 [1, 2; 3, 4]*eye(2)  # matrix product
@@ -115,14 +119,16 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `factor(e[, v])` | Factor poly/rational over ℚ; integers → `[prime, exp; …]` matrix |
 | `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational + quadratic) |
 | `solve(f[, x])` | Same as roots for scalar `f=0`; still `solve(A,b)` for matrices |
-| `solve(lhs, rhs, x)` | Solve `lhs = rhs` |
+| `solve(lhs=rhs[, x])` | Equation form (preferred) |
+| `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
 
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
-lake exe taschenrechner 'solve(x^2-5*x+6, x)'         # → [2, 3]
-lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]
+lake exe taschenrechner 'solve(x^2=4, x)'             # → [2, -2]
+lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → [3, 2]
+lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]  (3-arg form)
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 ```
 

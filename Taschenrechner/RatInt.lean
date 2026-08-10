@@ -85,7 +85,7 @@ where
             if rb.num.isZero then none
             else some (simplify ⟨powNat rb.den k, powNat rb.num k⟩)
   | .pow _ _ => none
-  | .sin _ | .cos _ | .tan _ | .exp _ | .ln _ | .atan _ | .re _ | .im _ | .conj _ | .mat _ => none
+  | .sin _ | .cos _ | .tan _ | .exp _ | .ln _ | .atan _ | .re _ | .im _ | .conj _ | .eq _ _ | .mat _ => none
 
 end RatFn
 

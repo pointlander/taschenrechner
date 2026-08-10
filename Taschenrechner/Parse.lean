@@ -45,6 +45,7 @@ inductive Token where
   | num   : Int → Token
   | ident : String → Token
   | plus | minus | star | slash | caret | middot
+  | eq
   | lparen | rparen | comma
   | lbracket | rbracket | semicolon
   | eof
@@ -59,6 +60,7 @@ def Token.toString : Token → String
   | .slash => "/"
   | .caret => "^"
   | .middot => "·"
+  | .eq => "="
   | .lparen => "("
   | .rparen => ")"
   | .comma => ","
@@ -131,6 +133,7 @@ def tokenize (input : String) : Except String (Array Token) := do
       | '/' => out := out.push .slash; i := i + 1
       | '^' => out := out.push .caret; i := i + 1
       | '·' => out := out.push .middot; i := i + 1
+      | '=' => out := out.push .eq; i := i + 1
       | '(' => out := out.push .lparen; i := i + 1
       | ')' => out := out.push .rparen; i := i + 1
       | ',' => out := out.push .comma; i := i + 1
@@ -312,19 +315,22 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | .inconsistent msg => throw s!"solve: {msg}"
       | .error msg => throw s!"solve: {msg}"
     | _, _ =>
-      -- scalar: solve(f, x) means f = 0
+      -- scalar: solve(f, x) or solve(lhs=rhs, x)
       let v ← asVarName b
-      match solveScalarExpr? a v with
+      let f := equationToZero a
+      match solveScalarExpr? f v with
       | .ok e => pure e
       | .error msg => throw s!"solve: {msg}"
   | "solve", [e] =>
-    -- scalar: solve(f) in primary free variable
-    let v := Expr.primaryVar e
-    match solveScalarExpr? e v with
+    -- scalar: solve(f) or solve(lhs=rhs) in primary free variable
+    let f := equationToZero e
+    let v := Expr.primaryVar f
+    match solveScalarExpr? f v with
     | .ok r => pure r
     | .error msg => throw s!"solve: {msg}"
   | "solve", [lhs, rhs, v] =>
     -- scalar: solve(lhs, rhs, x) means lhs = rhs
+    -- (also works if lhs is already an equation — ignore)
     let v ← asVarName v
     match solveEqExpr? lhs rhs v with
     | .ok e => pure e
@@ -459,7 +465,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "eigenspace", _ | "eigenvectors", _ | "eigvec", _ =>
       throw s!"{name} expects 2 arguments (matrix, eigenvalue), got {args.length}"
   | "solve", _ =>
-      throw s!"solve expects solve(A,b) | solve(f) | solve(f,x) | solve(lhs,rhs,x), got {args.length} args"
+      throw s!"solve expects solve(A,b) | solve(f) | solve(f=0) | solve(lhs=rhs,x) | solve(lhs,rhs,x), got {args.length} args"
   | "coeff", _ =>
       throw s!"coeff expects coeff(e, n) or coeff(e, v, n), got {args.length} args"
   | "diff", _ | "d", _ =>
@@ -511,8 +517,14 @@ def isBuiltinName (name : String) : Bool :=
 
 mutual
 
-partial def parseExpr (env : Env) (p : Parser) : Except String (Expr × Parser) :=
-  parseSum env p
+/-- Lowest precedence: optional equation `lhs = rhs`. -/
+partial def parseExpr (env : Env) (p : Parser) : Except String (Expr × Parser) := do
+  let (lhs, p) ← parseSum env p
+  match p.peek with
+  | .eq =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.eq lhs rhs, p)
+  | _ => pure (lhs, p)
 
 partial def parseSum (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   let (lhs, p) ← parseProduct env p
@@ -914,7 +926,8 @@ def helpText : String :=
   Expressions:\n\
     numbers     0, 42, -3\n\
     variables   x, y, theta\n\
-    ops         +  -  *  /  ^  ·   and juxtaposition (2x, sin(x)cos(x))\n\
+    ops         +  -  *  /  ^  ·  =   and juxtaposition (2x, sin(x)cos(x))\n\
+    equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\

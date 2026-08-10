@@ -229,6 +229,8 @@ inductive Expr where
   | re    : Expr → Expr
   | im    : Expr → Expr
   | conj  : Expr → Expr
+  /-- Equation `lhs = rhs` (for `solve` and display). -/
+  | eq    : Expr → Expr → Expr
   /-- Rectangular matrix; rows are arrays of equal length. -/
   | mat   : Array (Array Expr) → Expr
   deriving Repr, Inhabited
@@ -272,7 +274,7 @@ def z : Expr := var "z"
 partial def freeVars : Expr → List String
   | const _ => []
   | var v => [v]
-  | add a b | mul a b | pow a b => (freeVars a ++ freeVars b).eraseDups
+  | add a b | mul a b | pow a b | eq a b => (freeVars a ++ freeVars b).eraseDups
   | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => freeVars e
   | mat rows =>
     rows.toList.foldl (fun acc row =>
@@ -283,7 +285,7 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   match e with
   | const _ => false
   | var name => name == v
-  | add a b | mul a b | pow a b => dependsOn a v || dependsOn b v
+  | add a b | mul a b | pow a b | eq a b => dependsOn a v || dependsOn b v
   | sin a | cos a | tan a | exp a | ln a | atan a | re a | im a | conj a => dependsOn a v
   | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
@@ -303,6 +305,7 @@ partial def beq : Expr → Expr → Bool
   | re a, re b => beq a b
   | im a, im b => beq a b
   | conj a, conj b => beq a b
+  | eq a1 b1, eq a2 b2 => beq a1 a2 && beq b1 b2
   | mat a, mat b =>
     a.size == b.size &&
       Id.run do
@@ -335,18 +338,69 @@ partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
   | re a => re (subst a v val)
   | im a => im (subst a v val)
   | conj a => conj (subst a v val)
+  | eq a b => eq (subst a v val) (subst b v val)
   | mat rows => mat (rows.map fun row => row.map fun cell => subst cell v val)
+
+/-- If `e` is an equation `lhs = rhs`, return both sides. -/
+def asEquation? : Expr → Option (Expr × Expr)
+  | eq a b => some (a, b)
+  | _ => none
+
+/-- Convert equation to `lhs - rhs` (for solving); leave non-equations unchanged. -/
+def equationToZero (e : Expr) : Expr :=
+  match e with
+  | eq a b => sub a b
+  | e => e
 
 /-- Apply a list of substitutions left-to-right. -/
 def substMany (e : Expr) (σ : List (String × Expr)) : Expr :=
   σ.foldl (fun acc pair => subst acc pair.1 pair.2) e
 
-/-! ### Pretty-printing (fraction-aware) -/
+/-! ### Pretty-printing (fraction-aware, degree-sorted, √ / ∞) -/
 
 /-- Local product flatten (no dependency on Simplify). -/
 partial def flattenMulLocal : Expr → List Expr
   | mul a b => flattenMulLocal a ++ flattenMulLocal b
   | e => [e]
+
+/-- Local sum flatten. -/
+partial def flattenAddLocal : Expr → List Expr
+  | add a b => flattenAddLocal a ++ flattenAddLocal b
+  | e => [e]
+
+/-- Infinity-like variable names. -/
+def isInfName (v : String) : Bool :=
+  let n := v.toLower
+  n == "oo" || n == "inf" || n == "infty" || n == "infinity" || v == "∞"
+
+/-- Prefer free var `x`, else `t`, else first free var (for degree sorting). -/
+def printPrimaryVar (e : Expr) : String :=
+  if dependsOn e "x" then "x"
+  else if dependsOn e "t" then "t"
+  else match freeVars e with
+    | v :: _ => v
+    | [] => "x"
+
+/-- Total degree of a monomial-like term in free variable `v` (heuristic). -/
+partial def termDegree (e : Expr) (v : String) : Int :=
+  match e with
+  | const _ => 0
+  | var name => if name == v then 1 else 0
+  | mul a b => termDegree a v + termDegree b v
+  | pow base (const r) =>
+    match CplxConst.toRat? r with
+    | some q =>
+      if q.den == 1 then termDegree base v * q.num
+      else if q == ⟨1, 2⟩ || q == ⟨-1, 2⟩ then termDegree base v  -- treat √ as deg 1 of base
+      else termDegree base v
+    | none => termDegree base v
+  | pow base _ => termDegree base v
+  | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e =>
+      -- transcendental: sort after polynomials of same “priority”
+      100 + termDegree e v
+  | eq a b => max (termDegree a v) (termDegree b v)
+  | mat _ => 0
+  | add _ _ => 0
 
 /--
   Split a product into constant coefficient, numerator factors, and
@@ -372,30 +426,35 @@ partial def splitProduct (e : Expr) : CplxConst × List Expr × List Expr :=
             else
               let t := if k == -1 then base else pow base (ofInt (-k))
               go rest c nums (dens ++ [t])
+          else if q == ⟨-1, 2⟩ then
+            -- 1/√base
+            go rest c nums (dens ++ [pow base (const (CplxConst.ofRat ⟨1, 2⟩))])
           else go rest c (nums ++ [f]) dens
         | none => go rest c (nums ++ [f]) dens
       | _ => go rest c (nums ++ [f]) dens
   go (flattenMulLocal e) CplxConst.one [] []
 
-/-- Pretty-printer with fraction notation and minimal parentheses. -/
+/-- Unicode superscript for small natural exponents. -/
+def superscriptNat : Nat → String
+  | 0 => "⁰"
+  | 1 => "¹"
+  | 2 => "²"
+  | 3 => "³"
+  | 4 => "⁴"
+  | 5 => "⁵"
+  | 6 => "⁶"
+  | 7 => "⁷"
+  | 8 => "⁸"
+  | 9 => "⁹"
+  | n =>
+    if n < 10 then "?"
+    else superscriptNat (n / 10) ++ superscriptNat (n % 10)
+
+/-- Pretty-printer with fractions, √, degree-sorted sums, and ∞. -/
 partial def toString : Expr → String
   | const c => CplxConst.toString c
-  | var v => v
-  | add a b =>
-    let bs := match b with
-      | mul (const r) e =>
-        if r.isNegOne then s!" - {toString e}"
-        else if r.isReal && r.re.num < 0 then
-          s!" - {toString (mul (const (CplxConst.neg r)) e)}"
-        else s!" + {toString b}"
-      | const r =>
-        if r.isReal && r.re.num < 0 then
-          s!" - {CplxConst.toString (CplxConst.neg r)}"
-        else if !r.isReal && r.re.isZero && r.im.num < 0 then
-          s!" - {CplxConst.toString (CplxConst.neg r)}"
-        else s!" + {toString b}"
-      | _ => s!" + {toString b}"
-    s!"{toString a}{bs}"
+  | var v => if isInfName v then "∞" else v
+  | add a b => prettySum (add a b)
   | mul a b => prettyProduct (mul a b)
   | pow a b => prettyPow a b
   | sin e => s!"sin({toString e})"
@@ -407,6 +466,7 @@ partial def toString : Expr → String
   | re e => s!"re({toString e})"
   | im e => s!"im({toString e})"
   | conj e => s!"conj({toString e})"
+  | eq a b => s!"{toString a} = {toString b}"
   | mat rows =>
     let rowStrs := rows.toList.map fun row =>
       String.intercalate ", " (row.toList.map toString)
@@ -414,14 +474,54 @@ partial def toString : Expr → String
 where
   parenMul : Expr → String
     | e@(add _ _) => s!"({toString e})"
+    | e@(eq _ _) => s!"({toString e})"
     | e@(mat _) => s!"({toString e})"
     | e => toString e
   parenPow : Expr → String
-    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(mat _) => s!"({toString e})"
+    | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(eq _ _) | e@(mat _) => s!"({toString e})"
     | e => toString e
   parenFrac : Expr → String
-    | e@(add _ _) => s!"({toString e})"
+    | e@(add _ _) | e@(eq _ _) => s!"({toString e})"
     | e => toString e
+  parenSqrt : Expr → String
+    | e@(add _ _) | e@(mul _ _) | e@(eq _ _) => s!"({toString e})"
+    | e => toString e
+  /-- Format one summand with optional leading sign (`first` term has no leading +). -/
+  formatSummand (first : Bool) (t : Expr) : String :=
+    match t with
+    | mul (const r) e =>
+      if r.isNegOne then
+        if first then s!"-{toString e}" else s!" - {toString e}"
+      else if r.isReal && r.re.num < 0 then
+        let body := toString (mul (const (CplxConst.neg r)) e)
+        if first then s!"-{body}" else s!" - {body}"
+      else if first then toString t
+      else s!" + {toString t}"
+    | const r =>
+      if r.isReal && r.re.num < 0 then
+        let s := CplxConst.toString (CplxConst.neg r)
+        if first then s!"-{s}" else s!" - {s}"
+      else if !r.isReal && r.re.isZero && r.im.num < 0 then
+        let s := CplxConst.toString (CplxConst.neg r)
+        if first then s!"-{s}" else s!" - {s}"
+      else if first then toString t
+      else s!" + {toString t}"
+    | _ => if first then toString t else s!" + {toString t}"
+  prettySum (e : Expr) : String :=
+    let v := printPrimaryVar e
+    let terms := flattenAddLocal e
+    -- Degree descending (standard poly form: t² − 3t + 2)
+    let terms := terms.toArray.qsort (fun a b =>
+      let da := termDegree a v
+      let db := termDegree b v
+      if da != db then da > db
+      else
+        -- stable-ish: shorter string first
+        (toString a).length < (toString b).length) |>.toList
+    match terms with
+    | [] => "0"
+    | t :: ts =>
+      ts.foldl (fun acc u => acc ++ formatSummand false u) (formatSummand true t)
   /-- Join product factors with middle-dot (no denominator). -/
   joinMul (coeff : CplxConst) (parts : List Expr) : String :=
     if coeff.isZero then "0"
@@ -434,13 +534,21 @@ where
       if parts.isEmpty then
         CplxConst.toString coeff
       else if coeff.isOne then body
-      else if coeff.isNegOne then s!"-({body})"
+      else if coeff.isNegOne then s!"-{parenMul (foldMulParts parts)}"
       else if coeff.isPureI then s!"i·{body}"
       else s!"{CplxConst.toString coeff}·{body}"
   foldMulParts : List Expr → Expr
     | [] => one
     | p :: ps => ps.foldl mul p
   prettyProduct (e : Expr) : String :=
+    -- (−1)·∞ → −∞
+    match e with
+    | mul (const r) (var v) =>
+      if r.isNegOne && isInfName v then "-∞"
+      else if r.isReal && r.re.num < 0 && isInfName v then "-∞"
+      else defaultProd e
+    | _ => defaultProd e
+  defaultProd (e : Expr) : String :=
     let (c, nums, dens) := splitProduct e
     if dens.isEmpty then
       joinMul c nums
@@ -451,7 +559,6 @@ where
         else if nums.isEmpty then const c
         else mul (const c) (foldMulParts nums)
       let denE := foldMulParts dens
-      -- Prefer compact forms: 1/x, 3/x, (1+2x)/(x+x²)
       let numS :=
         if match numE with | const k => k.isOne | _ => false then "1"
         else parenFrac numE
@@ -462,11 +569,21 @@ where
     | const r =>
       match CplxConst.toRat? r with
       | some q =>
-        if q.den == 1 && q.num < 0 then
+        if q == ⟨1, 2⟩ then
+          s!"√{parenSqrt a}"
+        else if q == ⟨-1, 2⟩ then
+          s!"1/√{parenSqrt a}"
+        else if q.den == 1 && q.num < 0 then
           let k := -q.num
           let den := if k == 1 then a else pow a (ofInt k)
           s!"1/{parenFrac den}"
         else if q.den == 1 && q.num == 0 then "1"
+        else if q.den == 1 && q.num ≥ 2 && q.num ≤ 9 then
+          -- x², x³, … for simple bases
+          match a with
+          | var _ | const _ => s!"{toString a}{superscriptNat q.num.toNat}"
+          | _ => s!"{parenPow a}{superscriptNat q.num.toNat}"
+        else if q.den == 1 && q.num == 1 then toString a
         else s!"{parenPow a}^{parenPow b}"
       | none => s!"{parenPow a}^{parenPow b}"
     | _ => s!"{parenPow a}^{parenPow b}"

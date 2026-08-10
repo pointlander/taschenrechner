@@ -542,4 +542,45 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => verifyDerivative e (1 / sqrt (x ^ (2 : Expr) + 1)) "x"
   | _ => false
 
+-- Equations (`=`) and pretty-print v2
+#guard
+  match parse "x^2 = 4" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => simplify l == x ^ (2 : Expr) && r == ofInt 4
+      | none => false
+  | _ => false
+#guard
+  match parse "solve(x^2=4, x)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          rows[0]!.size == 2
+            && rows[0]!.toList.any (· == ofInt 2)
+            && rows[0]!.toList.any (· == ofInt (-2))
+      | none => false
+  | _ => false
+#guard
+  match parse "solve(2*x+1=0)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => simplify rows[0]![0]! == ofRat ⟨-1, 2⟩
+      | none => false
+  | _ => false
+#guard
+  -- √ and superscripts
+  (Expr.toString (sqrt (x ^ (2 : Expr) + 1))).contains "√"
+#guard
+  (Expr.toString (x ^ (2 : Expr))).contains "²"
+    || Expr.toString (x ^ (2 : Expr)) == "x²"
+#guard
+  -- degree-sorted charpoly-like poly
+  let p := (var "t") ^ (2 : Expr) - (3 : Expr) * var "t" + (2 : Expr)
+  let s := Expr.toString (simplify p)
+  -- leading term should involve t² / t^2 before the constant
+  s.startsWith "t" || s.startsWith "t²" || s.startsWith "t^"
+#guard
+  Expr.toString (neg (var "∞")) == "-∞"
+    || Expr.toString (mul negOne (var "oo")) == "-∞"
+
 end Taschenrechner.Tests
