@@ -17,6 +17,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
+- **Finite sums** `sum` (Faulhaber + geometric) and **first-order ODEs** `dsolve`
 
 ## Build & run
 
@@ -51,6 +52,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
 | `Taschenrechner.Series` | Taylor / Maclaurin series |
 | `Taschenrechner.Limit` | Symbolic limits (finite, ±∞, L'Hôpital) |
+| `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
+| `Taschenrechner.ODE` | First-order `dsolve` (linear + separable) |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -150,6 +153,27 @@ lake exe taschenrechner 'eigvals([0, -1; 1, 0])'       # → [-i, i]
 lake exe taschenrechner 'eigenspace([1, 0; 0, 2], 2)' # → [0; 1]
 lake exe taschenrechner 'diagform([1, 0; 0, 2])'       # → diag(1,2) (order may vary)
 lake exe taschenrechner 'expm(zeros(2))'              # → I
+```
+
+**Finite sums & first-order ODEs**
+
+| Form | What it does |
+|------|----------------|
+| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (poly via Faulhaber, or geometric r^k) |
+| `sum(k, lo, hi, expr)` | Same, index-first order |
+| `dsolve(eq)` | First-order ODE; use **`yp`** for y′ (default y,x) |
+| `dsolve(eq, y, x)` | Specify unknown and independent variable |
+| `C` | Arbitrary constant in the solution |
+
+Linear form: `yp + P(x)*y = Q(x)`. Separable: `yp = f(x)*g(y)`.
+
+```bash
+lake exe taschenrechner 'sum(k, 1, n, k)'           # → n(n+1)/2
+lake exe taschenrechner 'sum(k^2, k, 1, n)'         # → n(n+1)(2n+1)/6
+lake exe taschenrechner 'sum(k, 0, n, 2^k)'         # → 2^{n+1}−1
+lake exe taschenrechner 'dsolve(yp + y = 0)'        # → y = C/exp(x)  (= C e^{-x})
+lake exe taschenrechner 'dsolve(yp + y = x)'        # → y = x − 1 + C e^{-x}
+lake exe taschenrechner 'dsolve(yp = x*y)'          # → ln|y| = x²/2 + C  (or explicit)
 ```
 
 **Limits & radical integrals**

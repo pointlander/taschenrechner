@@ -28,6 +28,8 @@ import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Series
 import Taschenrechner.Limit
+import Taschenrechner.Sum
+import Taschenrechner.ODE
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
@@ -538,6 +540,31 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       match (classifyAt e v a).toExpr? with
       | .ok r => pure r
       | .error msg => throw s!"classify: {msg}"
+  | "sum", [a, b, c, d] => do
+      -- sum(expr, k, lo, hi) or sum(k, lo, hi, expr)
+      match asVarName a, asVarName b with
+      | .ok k, .error _ =>
+        -- sum(k, lo, hi, body)
+        sumFiniteExpr d k b c
+      | .error _, .ok k =>
+        -- sum(body, k, lo, hi)
+        sumFiniteExpr a k c d
+      | .ok k1, .ok k2 =>
+        -- both variables: prefer sum(k, lo, hi, body) if d depends on k1
+        if dependsOn d k1 then sumFiniteExpr d k1 b c
+        else if dependsOn a k2 then sumFiniteExpr a k2 c d
+        else sumFiniteExpr d k1 b c
+      | .error _, .error _ =>
+        throw "sum: expected a free index variable (sum(expr, k, lo, hi) or sum(k, lo, hi, expr))"
+  | "dsolve", [e] =>
+      dsolve e "y" "x"
+  | "dsolve", [e, y] => do
+      let y ← asVarName y
+      dsolve e y "x"
+  | "dsolve", [e, y, x] => do
+      let y ← asVarName y
+      let x ← asVarName x
+      dsolve e y x
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -573,6 +600,10 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"{name} expects 2 or 3 arguments, got {args.length}"
   | "poleorder", _ | "ord", _ | "classify", _ | "singularity", _ =>
       throw s!"{name} expects 2 or 3 arguments, got {args.length}"
+  | "sum", _ =>
+      throw s!"sum expects sum(expr, k, lo, hi) or sum(k, lo, hi, expr), got {args.length} args"
+  | "dsolve", _ =>
+      throw s!"dsolve expects dsolve(eq) | dsolve(eq, y) | dsolve(eq, y, x) [use yp for y'], got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -602,6 +633,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "limit" || n == "lim" || n == "limleft" || n == "limitleft"
     || n == "limright" || n == "limitright" || n == "poleorder" || n == "ord"
     || n == "classify" || n == "singularity"
+    || n == "sum" || n == "dsolve"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -1044,6 +1076,7 @@ def helpText : String :=
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
+                sum(expr, k, lo, hi)  dsolve(eq)  (yp = y'; C = const)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\

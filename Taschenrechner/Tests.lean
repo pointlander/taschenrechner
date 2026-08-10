@@ -16,6 +16,8 @@ import Taschenrechner.Series
 import Taschenrechner.Eigen
 import Taschenrechner.Limit
 import Taschenrechner.Matrix
+import Taschenrechner.Sum
+import Taschenrechner.ODE
 
 namespace Taschenrechner.Tests
 
@@ -714,6 +716,60 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       match asMat? e with
       | some rows => rows.size == 1 && rows[0]!.size == 2
+      | none => false
+  | _ => false
+
+-- Finite sums
+#guard
+  match sumFinite (var "k") "k" (1 : Expr) (var "n") with
+  | some s =>
+      equivNF s (div (mul (var "n") (add (var "n") one)) (ofInt 2))
+  | none => false
+#guard
+  match sumFinite ((var "k") ^ (2 : Expr)) "k" (1 : Expr) (var "n") with
+  | some s => dependsOn s "n"
+  | none => false
+#guard
+  match parse "sum(k, 1, n, k)" with
+  | .ok e =>
+      equivNF e (div (mul (var "n") (add (var "n") one)) (ofInt 2))
+  | _ => false
+#guard
+  match parse "sum(k^2, k, 1, n)" with
+  | .ok e => dependsOn e "n"
+  | _ => false
+#guard
+  match parse "sum(k, 0, n, 2^k)" with
+  | .ok e => dependsOn e "n"
+  | _ => false
+
+-- First-order ODEs (yp = y')
+#guard
+  match dsolve (eq (add (var "yp") (var "y")) (0 : Expr)) "y" "x" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => l == var "y" && dependsOn r "C"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp + y = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, _) => l == var "y"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp + y = x)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => l == var "y" && dependsOn r "x"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp = x*y)" with
+  | .ok e =>
+      match asEquation? e with
+      | some _ => true
       | none => false
   | _ => false
 
