@@ -29,12 +29,17 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
-lake exe taschenrechner --regression           # 40-case integration suite
-lake exe taschenrechner --matrix-regression    # RREF / solve suite
-lake exe taschenrechner -i                     # REPL with bindings
+
+# Domain regression suites (also run as compile-time #guards)
+lake exe taschenrechner --regression            # integration (~45 cases)
+lake exe taschenrechner --matrix-regression     # matrices / eigen
+lake exe taschenrechner --limit-regression      # limits / poles
+lake exe taschenrechner --solve-regression      # factor / solve / apart
+lake exe taschenrechner --sum-ode-regression    # sums / dsolve
+lake exe taschenrechner --all-regression        # every suite + summary
 ```
 
-Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the library).
+Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regression.lean` module.
 
 ## Library overview
 
@@ -45,15 +50,14 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
 | `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, `expm` |
-| `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
 | `Taschenrechner.Series` | Taylor / Maclaurin series |
-| `Taschenrechner.Limit` | Symbolic limits (finite, ±∞, L'Hôpital) |
+| `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
-| `Taschenrechner.ODE` | First-order `dsolve` (linear + separable) |
+| `Taschenrechner.ODE` | First-order `dsolve` (linear + separable; `yp` = y′) |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -61,7 +65,14 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Risch` | Transcendental Risch (exp/log/trig, non-existence) |
 | `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
 | `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
-| `Taschenrechner.Regression` | 40-case integration regression suite |
+| `Taschenrechner.Env` | REPL bindings, `ans`, session save/load |
+| **Regression modules** | |
+| `…Regression` | Integration (`--regression`) |
+| `…MatrixRegression` | Matrices / eigen (`--matrix-regression`) |
+| `…LimitRegression` | Limits / poles (`--limit-regression`) |
+| `…SolveRegression` | Factor / solve / apart (`--solve-regression`) |
+| `…SumODERegression` | Sums / ODEs (`--sum-ode-regression`) |
+| `…AllRegression` | Master runner (`--all-regression`) |
 
 ## Expression language
 
@@ -89,7 +100,7 @@ diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```
 
-Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `help`.
+Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `sum`, `dsolve`, `limit`/`limleft`/`limright`, `apart`, `help`.
 
 **Normal forms**
 

@@ -1,0 +1,130 @@
+/-
+  Finite-sum and first-order ODE regression suite.
+
+  Run at compile time via `#guard` and from the CLI with
+  `lake exe taschenrechner --sum-ode-regression`.
+-/
+import Taschenrechner.Parse
+import Taschenrechner.Simplify
+import Taschenrechner.Normal
+import Taschenrechner.Sum
+import Taschenrechner.ODE
+import Taschenrechner.Diff
+import Taschenrechner.Expr
+
+namespace Taschenrechner.SumODERegression
+
+open Taschenrechner
+open Taschenrechner.Expr
+open Taschenrechner.Parse
+
+structure Case where
+  name  : String
+  input : String
+  check : Expr → Bool
+
+def parseE (s : String) : Option Expr :=
+  match parse s with
+  | .ok e => some (simplify e)
+  | .error _ => none
+
+def isEqY (e : Expr) : Bool :=
+  match asEquation? e with
+  | some (l, _) => l == var "y"
+  | none => false
+
+def suite : List Case := [
+  { name := "sum k = n(n+1)/2"
+    input := "sum(k, 1, n, k)"
+    check := fun e =>
+      equivNF e (div (mul (var "n") (add (var "n") one)) (ofInt 2)) },
+  { name := "sum k² Faulhaber"
+    input := "sum(k^2, k, 1, n)"
+    check := fun e => dependsOn e "n" },
+  { name := "sum k³"
+    input := "sum(k^3, k, 1, n)"
+    check := fun e =>
+      equivNF e (pow (div (mul (var "n") (add (var "n") one)) (ofInt 2)) (ofInt 2)) },
+  { name := "sum constants"
+    input := "sum(k, 1, n, 1)"
+    check := fun e => equivNF e (var "n") },
+  { name := "geometric 2^k"
+    input := "sum(k, 0, n, 2^k)"
+    check := fun e => dependsOn e "n" },
+  { name := "sum index-first form"
+    input := "sum(k, 1, n, k+1)"
+    check := fun e => dependsOn e "n" },
+  { name := "dsolve yp+y=0"
+    input := "dsolve(yp + y = 0)"
+    check := fun e => isEqY e && dependsOn e "C" },
+  { name := "dsolve yp+y=x"
+    input := "dsolve(yp + y = x)"
+    check := fun e => isEqY e && dependsOn e "x" && dependsOn e "C" },
+  { name := "dsolve yp= x*y separable"
+    input := "dsolve(yp = x*y)"
+    check := fun e =>
+      match asEquation? e with
+      | some _ => true
+      | none => false },
+  { name := "dsolve yp-2*y=0"
+    input := "dsolve(yp - 2*y = 0)"
+    check := fun e => isEqY e && dependsOn e "C" },
+  { name := "dsolve with explicit y,x"
+    input := "dsolve(yp + y = 0, y, x)"
+    check := fun e => isEqY e },
+  -- Property: closed form for sum k matches known poly after subst n↦5
+  { name := "sum k at n=5 equals 15"
+    input := "subst(sum(k, 1, n, k), n, 5)"
+    check := fun e => simplify e == ofInt 15 },
+  { name := "sum k² at n=3 equals 14"
+    input := "subst(sum(k^2, k, 1, n), n, 3)"
+    check := fun e => simplify e == ofInt 14 }
+]
+
+structure CaseResult where
+  name   : String
+  passed : Bool
+  detail : String
+  deriving Repr
+
+def runCase (c : Case) : CaseResult :=
+  match parseE c.input with
+  | none => { name := c.name, passed := false, detail := "parse/eval failed" }
+  | some e =>
+    let ok := c.check e
+    { name := c.name
+      passed := ok
+      detail := if ok then s!"ok → {e}" else s!"check failed → {e}" }
+
+def runSuite (cases : List Case := suite) : List CaseResult :=
+  cases.map runCase
+
+def allPassed (results : List CaseResult := runSuite) : Bool :=
+  results.all (·.passed)
+
+def passCount (results : List CaseResult) : Nat :=
+  results.filter (·.passed) |>.length
+
+def formatReport (results : List CaseResult) : String :=
+  let total := results.length
+  let n := passCount results
+  let lines :=
+    results.map fun r =>
+      let mark := if r.passed then "✓" else "✗"
+      s!"  {mark}  {r.name}: {r.detail}"
+  String.intercalate "\n" (s!"Sum/ODE regression: {n}/{total} passed" :: lines)
+
+def runSuiteIO : IO UInt32 := do
+  let results := runSuite
+  IO.println (formatReport results)
+  if allPassed results then
+    IO.println "All sum/ODE regression cases passed."
+    pure 0
+  else
+    IO.println "Sum/ODE regression failures detected."
+    pure 1
+
+#guard allPassed (runSuite suite)
+#guard suite.length ≥ 10
+
+end Taschenrechner.SumODERegression

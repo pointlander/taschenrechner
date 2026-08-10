@@ -24,3 +24,7 @@ import Taschenrechner.Env
 import Taschenrechner.Parse
 import Taschenrechner.Regression
 import Taschenrechner.MatrixRegression
+import Taschenrechner.LimitRegression
+import Taschenrechner.SolveRegression
+import Taschenrechner.SumODERegression
+import Taschenrechner.AllRegression

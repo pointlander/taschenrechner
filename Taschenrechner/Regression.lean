@@ -1,8 +1,9 @@
 /-
-  Integration regression suite (40 cases).
+  Integration regression suite (polynomials, Risch, trig, radicals, …).
 
   Each case records an integrand string (parsed) and an expected outcome.
   Run at compile time via `#guard` and from the CLI with `--regression`.
+  Full cross-domain run: `--all-regression`.
 -/
 import Taschenrechner.Integrate
 import Taschenrechner.Parse
@@ -35,7 +36,7 @@ structure Case where
   expect    : Expect
   deriving Repr
 
-/-- The canonical 40-case suite. -/
+/-- Canonical integration suite (45 cases including radical table). -/
 def suite : List Case := [
   -- 1–5: polynomials / rationals (Risch)
   { name := "poly x^2",           integrand := "x^2",                 expect := .risch },

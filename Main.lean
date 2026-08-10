@@ -168,8 +168,10 @@ def runDemo : IO Unit := do
     IO.println s!"  {if ok then "✓" else "✗"}  ∫ {label}  →  F' = f  is {ok}"
   IO.println ""
 
-  IO.println "── Regression suite ─────────────────────────"
-  IO.println (Regression.formatReport (Regression.runSuite))
+  IO.println "── Integration regression (summary) ─────────"
+  let intR := Regression.runSuite
+  IO.println s!"  {Regression.passCount intR}/{intR.length} integration cases"
+  IO.println "  Full report:  lake exe taschenrechner --all-regression"
   IO.println ""
   IO.println "Done.  Try:  lake exe taschenrechner -i"
   IO.println "       A := [1, 2; 3, 4]   then   det(A)"
@@ -331,8 +333,12 @@ def usage : String :=
   "  taschenrechner <expr-or-cmd>    evaluate one expression/command\n" ++
   "  taschenrechner -c <cmd>         same as above\n" ++
   "  taschenrechner -i               interactive REPL (with bindings)\n" ++
-  "  taschenrechner --regression     run 40-case integration suite\n" ++
-  "  taschenrechner --matrix-regression  run matrix RREF/solve suite\n" ++
+  "  taschenrechner --regression     integration suite (~45 cases)\n" ++
+  "  taschenrechner --matrix-regression   matrix / eigen suite\n" ++
+  "  taschenrechner --limit-regression    limits / poles\n" ++
+  "  taschenrechner --solve-regression    factor / solve / apart\n" ++
+  "  taschenrechner --sum-ode-regression  sums / first-order ODEs\n" ++
+  "  taschenrechner --all-regression      every domain suite\n" ++
   "  taschenrechner --help           language help\n" ++
   "\n" ++
   "REPL:\n" ++
@@ -345,6 +351,8 @@ def usage : String :=
   "  taschenrechner 'x^2 + 2x + 1'\n" ++
   "  taschenrechner 'diff sin(x^2)'\n" ++
   "  taschenrechner 'int x*exp(x)'\n" ++
+  "  taschenrechner 'sum(k, 1, n, k)'\n" ++
+  "  taschenrechner 'dsolve(yp + y = 0)'\n" ++
   "  taschenrechner 'A := eye(2); det(A)'"
 
 def main (args : List String) : IO UInt32 := do
@@ -362,6 +370,14 @@ def main (args : List String) : IO UInt32 := do
     Regression.runSuiteIO
   | ["--matrix-regression"] | ["--mat-regression"] | ["-mr"] =>
     MatrixRegression.runSuiteIO
+  | ["--limit-regression"] | ["-lr"] =>
+    LimitRegression.runSuiteIO
+  | ["--solve-regression"] | ["-sr"] =>
+    SolveRegression.runSuiteIO
+  | ["--sum-ode-regression"] | ["--ode-regression"] | ["-sor"] =>
+    SumODERegression.runSuiteIO
+  | ["--all-regression"] | ["-ar"] | ["--regressions"] =>
+    AllRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
     IO.println "Taschenrechner REPL  (help | vars | clear | save | load | quit)"
     IO.println "  name := expr   |   stmt; stmt   |   ans   |   save/load file"
@@ -376,7 +392,11 @@ def main (args : List String) : IO UInt32 := do
   | cmd :: rest =>
     if cmd == "-i" || cmd == "--repl" || cmd == "-h" || cmd == "--help"
         || cmd == "--usage" || cmd == "-c" || cmd == "--regression" || cmd == "-r"
-        || cmd == "--matrix-regression" || cmd == "--mat-regression" || cmd == "-mr" then
+        || cmd == "--matrix-regression" || cmd == "--mat-regression" || cmd == "-mr"
+        || cmd == "--limit-regression" || cmd == "-lr"
+        || cmd == "--solve-regression" || cmd == "-sr"
+        || cmd == "--sum-ode-regression" || cmd == "--ode-regression" || cmd == "-sor"
+        || cmd == "--all-regression" || cmd == "-ar" || cmd == "--regressions" then
       IO.eprintln s!"unknown option usage: {cmd}"
       IO.eprintln usage
       pure 2
