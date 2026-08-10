@@ -499,13 +499,15 @@ inductive Command where
   | vars      : Command
   | clearAll  : Command
   | clearOne  : String → Command
+  | save      : String → Command
+  | load      : String → Command
   | help      : Command
   deriving Repr
 
 private def isKeyword (k : String) : Bool :=
   k == "diff" || k == "d" || k == "int" || k == "integrate"
     || k == "simplify" || k == "expand" || k == "help"
-    || k == "vars" || k == "clear"
+    || k == "vars" || k == "clear" || k == "save" || k == "load"
 
 private def isReservedFun (k : String) : Bool :=
   k == "sin" || k == "cos" || k == "tan" || k == "exp"
@@ -599,6 +601,33 @@ partial def splitAssign (s : String) : Option (String × String) :=
     else some (left, right)
 
 /--
+  Split a line into statements on top-level `;`
+  (does not split inside `()` or `[]`, so matrix `[1,2;3,4]` is safe).
+-/
+partial def splitStatements (s : String) : List String :=
+  let cs := s.toList.toArray
+  Id.run do
+    let mut parts : List String := []
+    let mut start : Nat := 0
+    let mut depth : Nat := 0
+    let mut i : Nat := 0
+    while i < cs.size do
+      let c := cs[i]!
+      match c with
+      | '(' | '[' => depth := depth + 1
+      | ')' | ']' => depth := if depth = 0 then 0 else depth - 1
+      | ';' =>
+        if depth == 0 then
+          let part := strTrim (charsToString (cs.toList.drop start |>.take (i - start)))
+          if !part.isEmpty then parts := parts ++ [part]
+          start := i + 1
+      | _ => pure ()
+      i := i + 1
+    let tail := strTrim (charsToString (cs.toList.drop start))
+    if !tail.isEmpty then parts := parts ++ [tail]
+    pure parts
+
+/--
   Parse a calculator command line.
 
   Supports assignment (`name := expr`), `vars`, `clear`, calculus commands,
@@ -620,6 +649,14 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
     if name.isEmpty then pure .clearAll
     else if isBindingName name then pure (.clearOne name)
     else throw s!"clear: invalid name '{name}'"
+  else if lower.startsWith "save " then
+    let path := strTrim (charsToString (trimmed.toList.drop 5))
+    if path.isEmpty then throw "save: missing file path"
+    else pure (.save path)
+  else if lower.startsWith "load " then
+    let path := strTrim (charsToString (trimmed.toList.drop 5))
+    if path.isEmpty then throw "load: missing file path"
+    else pure (.load path)
   else if let some (lhs, rhs) := splitAssign trimmed then
     if !isBindingName lhs then
       throw s!"invalid assignment target '{lhs}'"
@@ -654,6 +691,16 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
       if name.isEmpty then pure .clearAll
       else if isBindingName name then pure (.clearOne name)
       else throw s!"clear: invalid name '{name}'"
+    | some "save", some path =>
+      let path := strTrim path
+      if path.isEmpty then throw "save: missing file path"
+      else pure (.save path)
+    | some "load", some path =>
+      let path := strTrim path
+      if path.isEmpty then throw "load: missing file path"
+      else pure (.load path)
+    | some "save", none | some "load", none =>
+      throw s!"command '{kw.getD "?"}' needs a file path"
     | some kw, none =>
       throw s!"command '{kw}' needs an expression"
     | _, _ =>
@@ -680,8 +727,12 @@ def helpText : String :=
   Commands:\n\
     <expr>\n\
     name := <expr>          bind a session variable\n\
+    ans                     last result (auto-updated)\n\
+    stmt; stmt; ...         multiple statements per line\n\
     vars                    list bindings\n\
     clear [name]            clear all or one binding\n\
+    save <file>             write session bindings to file\n\
+    load <file>             restore session from file\n\
     diff <expr> [var]       (default var: x)\n\
     int  <expr> [var]\n\
     simplify <expr>\n\
@@ -690,14 +741,14 @@ def helpText : String :=
   \n\
   Examples:\n\
     x^2 + 3*x + 1\n\
-    A := [1, 2; 3, 4]\n\
-    det(A)\n\
-    b := [5; 6]\n\
-    solve(A, b)\n\
+    A := [1, 2; 3, 4]; det(A)\n\
+    b := [5; 11]; solve(A, b)\n\
+    ans\n\
+    save session.tr\n\
+    load session.tr\n\
     vars\n\
     clear A\n\
     diff sin(x^2)\n\
-    int x*exp(x)\n\
-    int(1/x, x)"
+    int x*exp(x)"
 
 end Taschenrechner.Parse

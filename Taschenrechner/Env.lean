@@ -59,6 +59,23 @@ def format (env : Env) : String :=
         | none => none
     String.intercalate "\n" lines
 
+/-- Update the special `ans` binding (last result). -/
+def setAns (env : Env) (value : Expr) : Env :=
+  env.set "ans" value
+
+/--
+  Serialize environment to a reloadable session file body.
+  Format: lines `name := <expr>` (printable form), `#` comments allowed on load.
+-/
+def toSession (env : Env) : String :=
+  let header := "# taschenrechner session v1\n"
+  let lines :=
+    env.names.filterMap fun n =>
+      match env.get? n with
+      | some e => some s!"{n} := {e}"
+      | none => none
+  header ++ String.intercalate "\n" lines ++ "\n"
+
 end Env
 
 /--
@@ -89,9 +106,11 @@ partial def substEnv (env : Env) (e : Expr) : Expr :=
 /-- Names that must not be used as binding targets. -/
 def isForbiddenBinding (name : String) : Bool :=
   let n := name.toLower
+  -- `ans` is allowed (user may assign; REPL also auto-updates it)
   n == "i" || n == "help" || n == "vars" || n == "clear" || n == "quit"
     || n == "exit" || n == "diff" || n == "int" || n == "integrate"
     || n == "simplify" || n == "expand" || n == "euler"
+    || n == "save" || n == "load"
 
 /-- Valid identifier for a binding name. -/
 def isBindingName (name : String) : Bool :=

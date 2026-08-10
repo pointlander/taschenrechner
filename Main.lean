@@ -174,6 +174,16 @@ def runDemo : IO Unit := do
   IO.println "Done.  Try:  lake exe taschenrechner -i"
   IO.println "       A := [1, 2; 3, 4]   then   det(A)"
 
+/-- Record a successful value as `ans`. -/
+def withAns (env : Env) (val : Expr) : Env :=
+  Env.setAns env val
+
+/-- Trim whitespace (used by load and REPL). -/
+def trimLine (s : String) : String :=
+  String.ofList (s.toList.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
+    |>.reverse.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
+    |>.reverse)
+
 /-- Run a command under `env`; returns exit code and updated environment. -/
 def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
   match cmd with
@@ -193,6 +203,41 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
     else
       IO.eprintln s!"clear: '{name}' is not bound"
       pure (1, env)
+  | .save path =>
+    try
+      IO.FS.writeFile path (Env.toSession env)
+      IO.println s!"(saved {env.size} binding(s) to {path})"
+      pure (0, env)
+    catch e =>
+      IO.eprintln s!"save failed: {e}"
+      pure (1, env)
+  | .load path =>
+    try
+      let text ← IO.FS.readFile path
+      let mut env' := Env.empty
+      let mut nLoaded : Nat := 0
+      for raw in text.splitOn "\n" do
+        let line := trimLine raw
+        if line.isEmpty then pure ()
+        else if line.startsWith "#" then pure ()
+        else
+          match parseCommand line env' with
+          | .ok (.assign name rhs) =>
+            match envAssign env' name rhs with
+            | .ok (e, _) =>
+              env' := e
+              nLoaded := nLoaded + 1
+            | .error err =>
+              throw (IO.userError s!"load {path}: {err} (while binding {name})")
+          | .ok _ =>
+            throw (IO.userError s!"load {path}: expected assignment, got: {line}")
+          | .error err =>
+            throw (IO.userError s!"load {path}: {err} (line: {line})")
+      IO.println s!"(loaded {nLoaded} binding(s) from {path})"
+      pure (0, env')
+    catch e =>
+      IO.eprintln s!"load failed: {e}"
+      pure (1, env)
   | .assign name rhs =>
     match envAssign env name rhs with
     | .error err =>
@@ -201,24 +246,24 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
     | .ok (env', val) =>
       IO.print s!"{name} := "
       printExpr val
-      pure (0, env')
+      pure (0, withAns env' val)
   | .expr e =>
     let e := simplify (substEnv env e)
     printExpr e
-    pure (0, env)
+    pure (0, withAns env e)
   | .simplify e =>
     let e := simplify (substEnv env e)
     printExpr e
-    pure (0, env)
+    pure (0, withAns env e)
   | .expand e =>
     let e := expand (substEnv env e)
     printExpr e
-    pure (0, env)
+    pure (0, withAns env e)
   | .diff e v =>
     let e := simplify (substEnv env e)
     let d := diff e v
     IO.println s!"d/d{v} ({e})  =  {d}"
-    pure (0, env)
+    pure (0, withAns env d)
   | .integrate e v =>
     let e := simplify (substEnv env e)
     match integrate e v with
@@ -226,7 +271,7 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
       IO.println s!"∫ ({e}) d{v}  =  {F}  + C"
       IO.println s!"source: {src}  verified: {verifyDerivative F e v}"
       IO.println s!"check: d/d{v} = {diff F v}"
-      pure (0, env)
+      pure (0, withAns env F)
     | .notElementary r =>
       IO.eprintln s!"not elementary: {r}"
       pure (1, env)
@@ -234,18 +279,28 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
       IO.eprintln s!"integration failed: {r}"
       pure (1, env)
 
-def runLine (env : Env) (line : String) : IO (UInt32 × Env) := do
-  match parseCommand line env with
+/-- Run one statement (no `;` splitting). -/
+def runStatement (env : Env) (stmt : String) : IO (UInt32 × Env) := do
+  match parseCommand stmt env with
   | .ok cmd => runCommand env cmd
   | .error err =>
     IO.eprintln s!"parse error: {err}"
     pure (1, env)
 
-/-- Read-eval-print loop with session bindings. -/
-private def trimLine (s : String) : String :=
-  String.ofList (s.toList.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
-    |>.reverse.dropWhile (fun c => c == ' ' || c == '\t' || c == '\n' || c == '\r')
-    |>.reverse)
+/-- Run a line, possibly with multiple top-level `;`-separated statements. -/
+def runLine (env : Env) (line : String) : IO (UInt32 × Env) := do
+  let stmts := splitStatements line
+  if stmts.isEmpty then
+    pure (0, env)
+  else
+    let mut env := env
+    let mut code : UInt32 := 0
+    for stmt in stmts do
+      let (c, env') ← runStatement env stmt
+      env := env'
+      code := c
+      -- continue after errors so later stmts still see prior successful binds
+    pure (code, env)
 
 partial def repl (env : Env) : IO Unit := do
   IO.print "taschenrechner> "
@@ -268,17 +323,17 @@ def usage : String :=
   "  taschenrechner --matrix-regression  run matrix RREF/solve suite\n" ++
   "  taschenrechner --help           language help\n" ++
   "\n" ++
-  "REPL bindings:\n" ++
-  "  A := [1, 2; 3, 4]\n" ++
-  "  det(A)\n" ++
-  "  vars\n" ++
-  "  clear A\n" ++
+  "REPL:\n" ++
+  "  A := [1, 2; 3, 4]; det(A)\n" ++
+  "  ans                   last result\n" ++
+  "  vars | clear [name]\n" ++
+  "  save file.tr | load file.tr\n" ++
   "\n" ++
   "Examples:\n" ++
   "  taschenrechner 'x^2 + 2x + 1'\n" ++
   "  taschenrechner 'diff sin(x^2)'\n" ++
   "  taschenrechner 'int x*exp(x)'\n" ++
-  "  taschenrechner 'diff(cos(2*x), x)'"
+  "  taschenrechner 'A := eye(2); det(A)'"
 
 def main (args : List String) : IO UInt32 := do
   match args with
@@ -296,8 +351,8 @@ def main (args : List String) : IO UInt32 := do
   | ["--matrix-regression"] | ["--mat-regression"] | ["-mr"] =>
     MatrixRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
-    IO.println "Taschenrechner REPL  (help | vars | clear | quit)"
-    IO.println "  Bindings:  name := expr"
+    IO.println "Taschenrechner REPL  (help | vars | clear | save | load | quit)"
+    IO.println "  name := expr   |   stmt; stmt   |   ans   |   save/load file"
     repl Env.empty
     pure 0
   | ["-c", cmd] =>

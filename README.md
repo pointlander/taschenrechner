@@ -68,11 +68,13 @@ Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `
 
 ```bash
 lake exe taschenrechner -i
-taschenrechner> A := [1, 2; 3, 4]
-taschenrechner> b := [5; 11]
+taschenrechner> A := [1, 2; 3, 4]; b := [5; 11]
 taschenrechner> solve(A, b)
+taschenrechner> ans
+taschenrechner> save session.tr
+taschenrechner> clear
+taschenrechner> load session.tr
 taschenrechner> vars
-taschenrechner> clear A
 ```
 
 ## Quick examples

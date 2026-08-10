@@ -260,4 +260,29 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .error _ => true
   | .ok _ => false
 
+-- Multi-statement split (matrix `;` stays intact)
+#guard
+  let parts := splitStatements "A := [1, 2; 3, 4]; det(A)"
+  parts.length == 2
+    && parts[0]! == "A := [1, 2; 3, 4]"
+    && parts[1]! == "det(A)"
+#guard
+  splitStatements "1+2" == ["1+2"]
+#guard
+  match parseCommand "save foo.tr" with
+  | .ok (.save "foo.tr") => true
+  | _ => false
+#guard
+  match parseCommand "load foo.tr" with
+  | .ok (.load "foo.tr") => true
+  | _ => false
+#guard
+  let env := Env.setAns Env.empty (ofInt 7)
+  match env.get? "ans" with
+  | some e => simplify e == ofInt 7
+  | none => false
+#guard
+  let body := Env.toSession (Env.set Env.empty "A" (ofInt 3))
+  body.contains "A := 3"
+
 end Taschenrechner.Tests
