@@ -4,6 +4,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients  
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
+- **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
+- Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, general linear solve
@@ -36,6 +38,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.MatrixRegression` | Matrix regression suite (`--matrix-regression`) |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
+| `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -80,7 +83,18 @@ Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `
 lake exe taschenrechner 'cancel((x^2-1)/(x-1))'   # → 1 + x
 lake exe taschenrechner 'together(1/x + 1/(x+1))' # → (1+2x)/(x+x²)
 lake exe taschenrechner 'nf(1/x + 2/x)'           # → 3/x
+lake exe taschenrechner 'subst(x^2+1, x, 3)'      # → 10
+lake exe taschenrechner 'eval(x^2+1, x, 4)'       # → 17
+lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 ```
+
+**Substitution & evaluation**
+
+| Form | What it does |
+|------|----------------|
+| `subst(e, v, a)` / `subs(...)` | Replace free `v` by `a`, then simplify |
+| `eval(e)` | Exact eval in ℚ(i) when ground; else simplify |
+| `eval(e, v, a)` / `at(e, v, a)` | Substitute then exact-eval if possible |
 
 ```bash
 lake exe taschenrechner -i

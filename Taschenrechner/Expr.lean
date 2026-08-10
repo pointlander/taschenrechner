@@ -316,7 +316,68 @@ partial def beq : Expr → Expr → Bool
 
 instance : BEq Expr where beq := beq
 
-/-- Pretty-printer with minimal parentheses. -/
+/-! ### Substitution -/
+
+/-- Replace free occurrences of variable `v` by `val`. -/
+partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
+  match e with
+  | const c => const c
+  | var name => if name == v then val else var name
+  | add a b => add (subst a v val) (subst b v val)
+  | mul a b => mul (subst a v val) (subst b v val)
+  | pow a b => pow (subst a v val) (subst b v val)
+  | sin a => sin (subst a v val)
+  | cos a => cos (subst a v val)
+  | tan a => tan (subst a v val)
+  | exp a => exp (subst a v val)
+  | ln a => ln (subst a v val)
+  | atan a => atan (subst a v val)
+  | re a => re (subst a v val)
+  | im a => im (subst a v val)
+  | conj a => conj (subst a v val)
+  | mat rows => mat (rows.map fun row => row.map fun cell => subst cell v val)
+
+/-- Apply a list of substitutions left-to-right. -/
+def substMany (e : Expr) (σ : List (String × Expr)) : Expr :=
+  σ.foldl (fun acc pair => subst acc pair.1 pair.2) e
+
+/-! ### Pretty-printing (fraction-aware) -/
+
+/-- Local product flatten (no dependency on Simplify). -/
+partial def flattenMulLocal : Expr → List Expr
+  | mul a b => flattenMulLocal a ++ flattenMulLocal b
+  | e => [e]
+
+/--
+  Split a product into constant coefficient, numerator factors, and
+  denominator factors (from negative integer powers).
+-/
+partial def splitProduct (e : Expr) : CplxConst × List Expr × List Expr :=
+  let rec go (fs : List Expr) (c : CplxConst) (nums dens : List Expr) :
+      CplxConst × List Expr × List Expr :=
+    match fs with
+    | [] => (c, nums, dens)
+    | f :: rest =>
+      match f with
+      | const k => go rest (c * k) nums dens
+      | pow base (const r) =>
+        match CplxConst.toRat? r with
+        | some q =>
+          if q.den == 1 then
+            let k := q.num
+            if k == 0 then go rest c nums dens
+            else if k > 0 then
+              let t := if k == 1 then base else pow base (ofInt k)
+              go rest c (nums ++ [t]) dens
+            else
+              let t := if k == -1 then base else pow base (ofInt (-k))
+              go rest c nums (dens ++ [t])
+          else go rest c (nums ++ [f]) dens
+        | none => go rest c (nums ++ [f]) dens
+      | _ => go rest c (nums ++ [f]) dens
+  go (flattenMulLocal e) CplxConst.one [] []
+
+/-- Pretty-printer with fraction notation and minimal parentheses. -/
 partial def toString : Expr → String
   | const c => CplxConst.toString c
   | var v => v
@@ -335,15 +396,8 @@ partial def toString : Expr → String
         else s!" + {toString b}"
       | _ => s!" + {toString b}"
     s!"{toString a}{bs}"
-  | mul a b =>
-    match a, b with
-    | const r, e =>
-      if r.isNegOne then s!"-({toString e})"
-      else if r.isOne then toString e
-      else if r.isPureI then s!"i·{parenMul e}"
-      else s!"{toString a}·{parenMul e}"
-    | _, _ => s!"{parenMul a}·{parenMul b}"
-  | pow a b => s!"{parenPow a}^{parenPow b}"
+  | mul a b => prettyProduct (mul a b)
+  | pow a b => prettyPow a b
   | sin e => s!"sin({toString e})"
   | cos e => s!"cos({toString e})"
   | tan e => s!"tan({toString e})"
@@ -365,6 +419,57 @@ where
   parenPow : Expr → String
     | e@(add _ _) | e@(mul _ _) | e@(pow _ _) | e@(mat _) => s!"({toString e})"
     | e => toString e
+  parenFrac : Expr → String
+    | e@(add _ _) => s!"({toString e})"
+    | e => toString e
+  /-- Join product factors with middle-dot (no denominator). -/
+  joinMul (coeff : CplxConst) (parts : List Expr) : String :=
+    if coeff.isZero then "0"
+    else
+      let body :=
+        match parts with
+        | [] => ""
+        | p :: ps =>
+          ps.foldl (fun acc t => s!"{acc}·{parenMul t}") (parenMul p)
+      if parts.isEmpty then
+        CplxConst.toString coeff
+      else if coeff.isOne then body
+      else if coeff.isNegOne then s!"-({body})"
+      else if coeff.isPureI then s!"i·{body}"
+      else s!"{CplxConst.toString coeff}·{body}"
+  foldMulParts : List Expr → Expr
+    | [] => one
+    | p :: ps => ps.foldl mul p
+  prettyProduct (e : Expr) : String :=
+    let (c, nums, dens) := splitProduct e
+    if dens.isEmpty then
+      joinMul c nums
+    else
+      let numE :=
+        if c.isOne && nums.isEmpty then one
+        else if c.isOne then foldMulParts nums
+        else if nums.isEmpty then const c
+        else mul (const c) (foldMulParts nums)
+      let denE := foldMulParts dens
+      -- Prefer compact forms: 1/x, 3/x, (1+2x)/(x+x²)
+      let numS :=
+        if match numE with | const k => k.isOne | _ => false then "1"
+        else parenFrac numE
+      let denS := parenFrac denE
+      s!"{numS}/{denS}"
+  prettyPow (a b : Expr) : String :=
+    match b with
+    | const r =>
+      match CplxConst.toRat? r with
+      | some q =>
+        if q.den == 1 && q.num < 0 then
+          let k := -q.num
+          let den := if k == 1 then a else pow a (ofInt k)
+          s!"1/{parenFrac den}"
+        else if q.den == 1 && q.num == 0 then "1"
+        else s!"{parenPow a}^{parenPow b}"
+      | none => s!"{parenPow a}^{parenPow b}"
+    | _ => s!"{parenPow a}^{parenPow b}"
 
 instance : ToString Expr where
   toString := toString

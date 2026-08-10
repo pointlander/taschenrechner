@@ -426,28 +426,8 @@ def integrate? (e : Expr) (v : String := "x") : Option Expr :=
 
 /--
   Definite integral ∫_lo^hi e dv by evaluating the antiderivative
-  (symbolic substitution only — no numeric eval of transcendentals).
+  (symbolic substitution via `Expr.subst` — no numeric eval of transcendentals).
 -/
-partial def subst (e : Expr) (v : String) (value : Expr) : Expr :=
-  simplify (go e)
-where
-  go : Expr → Expr
-    | const r => const r
-    | var name => if name == v then value else var name
-    | add a b => add (go a) (go b)
-    | mul a b => mul (go a) (go b)
-    | pow a b => pow (go a) (go b)
-    | sin a => sin (go a)
-    | cos a => cos (go a)
-    | tan a => tan (go a)
-    | exp a => exp (go a)
-    | ln a => ln (go a)
-    | atan a => atan (go a)
-    | re a => re (go a)
-    | im a => im (go a)
-    | conj a => conj (go a)
-    | mat rows => mat (rows.map (fun row => row.map go))
-
 def integrateDefinite (e : Expr) (v : String) (lo hi : Expr) : IntegrateResult :=
   match integrate e v with
   | .success F src =>

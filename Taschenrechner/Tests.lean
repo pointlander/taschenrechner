@@ -10,6 +10,7 @@ import Taschenrechner.Parse
 import Taschenrechner.Risch
 import Taschenrechner.Env
 import Taschenrechner.Normal
+import Taschenrechner.Eval
 
 namespace Taschenrechner.Tests
 
@@ -322,5 +323,36 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "cancel((x^2-1)/(x-1))" with
   | .ok e => equivNF e (x + 1)
   | _ => false
+
+-- Substitution & evaluation
+#guard simplify (subst (x ^ (2 : Expr) + 1) "x" (ofInt 3)) == ofInt 10
+#guard
+  match evalAt? (x ^ (2 : Expr) + (2 : Expr) * x + 1) "x" (CplxConst.ofInt 2) with
+  | some c => c == CplxConst.ofInt 9
+  | none => false
+#guard
+  match eval? (simplify ((2 : Expr) + (3 : Expr) * I)) with
+  | some c => c.re == RatConst.ofInt 2 && c.im == RatConst.ofInt 3
+  | none => false
+#guard
+  match parse "subst(x^2+1, x, 3)" with
+  | .ok e => e == ofInt 10
+  | _ => false
+#guard
+  match parse "eval(2+3*i)" with
+  | .ok e => e == ofCplx ⟨RatConst.ofInt 2, RatConst.ofInt 3⟩
+  | _ => false
+#guard
+  match parse "eval(x^2+1, x, 4)" with
+  | .ok e => e == ofInt 17
+  | _ => false
+#guard
+  -- fraction pretty-print: 1/x and 3/x
+  Expr.toString ((1 : Expr) / x) == "1/x"
+#guard Expr.toString (((3 : Expr) / x)) == "3/x"
+#guard
+  -- (x^2-1)/(x-1) after cancel prints without ·x^-1
+  let s := Expr.toString (cancel ((x ^ (2 : Expr) - 1) / (x - 1)))
+  s == "1 + x" || s == "x + 1"
 
 end Taschenrechner.Tests

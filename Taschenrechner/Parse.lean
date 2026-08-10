@@ -22,6 +22,7 @@
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Normal
+import Taschenrechner.Eval
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Complex
@@ -202,6 +203,13 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "nf", [e, v] | "normal", [e, v] | "normalform", [e, v] => do
       let v ← asVarName v
       pure (normalForm e v)
+  | "subst", [e, v, val] | "subs", [e, v, val] => do
+      let v ← asVarName v
+      pure (simplify (subst e v val))
+  | "eval", [e] => pure (evalOrSimplify e)
+  | "eval", [e, v, val] | "at", [e, v, val] => do
+      let v ← asVarName v
+      pure (evalAtOrSimplify e v val)
   | "euler", [e] => pure (eulerExpand e)
   | "det", [e] =>
     match asMat? e with
@@ -307,6 +315,10 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
+  | "subst", _ | "subs", _ =>
+      throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
+  | "eval", _ | "at", _ =>
+      throw s!"{name} expects 1 or 3 arguments: eval(expr) or eval(expr, var, value), got {args.length}"
   | _, _ =>
       throw s!"unknown function '{name}'"
 where
@@ -325,6 +337,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
+    || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -748,6 +761,7 @@ def helpText : String :=
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
+                subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
   \n\
   Commands:\n\
     <expr>\n\
