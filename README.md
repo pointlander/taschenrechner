@@ -5,6 +5,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic expression trees with exact rational coefficients  
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
+- **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
@@ -39,6 +40,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` (built with the lib
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
+| `Taschenrechner.Solve` | `factor`, scalar `solve`/`roots`, `coeff`, `collect` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -95,6 +97,24 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `subst(e, v, a)` / `subs(...)` | Replace free `v` by `a`, then simplify |
 | `eval(e)` | Exact eval in ℚ(i) when ground; else simplify |
 | `eval(e, v, a)` / `at(e, v, a)` | Substitute then exact-eval if possible |
+
+**Factor & scalar solve**
+
+| Form | What it does |
+|------|----------------|
+| `factor(e[, v])` | Factor poly/rational over ℚ; integers → `[prime, exp; …]` matrix |
+| `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational + quadratic) |
+| `solve(f[, x])` | Same as roots for scalar `f=0`; still `solve(A,b)` for matrices |
+| `solve(lhs, rhs, x)` | Solve `lhs = rhs` |
+| `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
+| `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
+
+```bash
+lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
+lake exe taschenrechner 'solve(x^2-5*x+6, x)'         # → [2, 3]
+lake exe taschenrechner 'solve(x^2, 4, x)'            # → [2, -2]
+lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
+```
 
 ```bash
 lake exe taschenrechner -i

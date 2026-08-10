@@ -23,6 +23,7 @@ import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Normal
 import Taschenrechner.Eval
+import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
 import Taschenrechner.Complex
@@ -267,8 +268,54 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | .general x _k => pure (simplify (Expr.mat x))
       | .inconsistent msg => throw s!"solve: {msg}"
       | .error msg => throw s!"solve: {msg}"
-    | none, _ => throw "solve: first argument must be a matrix A"
-    | _, none => throw "solve: second argument must be a matrix/vector b"
+    | _, _ =>
+      -- scalar: solve(f, x) means f = 0
+      let v ← asVarName b
+      match solveScalarExpr? a v with
+      | .ok e => pure e
+      | .error msg => throw s!"solve: {msg}"
+  | "solve", [e] =>
+    -- scalar: solve(f) in primary free variable
+    let v := Expr.primaryVar e
+    match solveScalarExpr? e v with
+    | .ok r => pure r
+    | .error msg => throw s!"solve: {msg}"
+  | "solve", [lhs, rhs, v] =>
+    -- scalar: solve(lhs, rhs, x) means lhs = rhs
+    let v ← asVarName v
+    match solveEqExpr? lhs rhs v with
+    | .ok e => pure e
+    | .error msg => throw s!"solve: {msg}"
+  | "roots", [e] =>
+    let v := Expr.primaryVar e
+    pure (Expr.mat #[(roots e v).toArray])
+  | "roots", [e, v] => do
+      let v ← asVarName v
+      pure (Expr.mat #[(roots e v).toArray])
+  | "factor", [e] =>
+    pure (factor e (Expr.primaryVar e))
+  | "factor", [e, v] => do
+      let v ← asVarName v
+      pure (factor e v)
+  | "collect", [e] => pure (collect e (Expr.primaryVar e))
+  | "collect", [e, v] => do
+      let v ← asVarName v
+      pure (collect e v)
+  | "coeff", [e, n] =>
+    match asNatDim n with
+    | some k =>
+      match coeffOf e (Expr.primaryVar e) k with
+      | some c => pure c
+      | none => throw "coeff: expression is not polynomial/rational in its free variable"
+    | none => throw "coeff: expected non-negative integer degree"
+  | "coeff", [e, v, n] => do
+      let v ← asVarName v
+      match asNatDim n with
+      | some k =>
+        match coeffOf e v k with
+        | some c => pure c
+        | none => throw s!"coeff: expression is not polynomial/rational in {v}"
+      | none => throw "coeff: expected non-negative integer degree"
   | "eye", [e] =>
     match asNatDim e with
     | some n => pure (Expr.mat (Mat.eye n))
@@ -311,8 +358,13 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _
   | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
       throw s!"{name} expects 1 argument, got {args.length}"
-  | "zeros", _ | "ones", _ | "solve", _ | "together", _ | "nf", _ | "normal", _ | "normalform", _ =>
+  | "zeros", _ | "ones", _ | "together", _ | "nf", _ | "normal", _ | "normalform", _
+  | "roots", _ | "factor", _ | "collect", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
+  | "solve", _ =>
+      throw s!"solve expects solve(A,b) | solve(f) | solve(f,x) | solve(lhs,rhs,x), got {args.length} args"
+  | "coeff", _ =>
+      throw s!"coeff expects coeff(e, n) or coeff(e, v, n), got {args.length} args"
   | "diff", _ | "d", _ | "int", _ | "integrate", _ =>
       throw s!"{name} expects 1 or 2 arguments, got {args.length}"
   | "subst", _ | "subs", _ =>
@@ -338,6 +390,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "abs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
+    || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -758,6 +811,8 @@ def helpText : String :=
                 det inv transpose/tp trace/tr rref rank nullity\n\
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
+    algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs,rhs,x)\n\
+                collect(e)  coeff(e,n)  coeff(e,v,n)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\

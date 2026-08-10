@@ -11,6 +11,7 @@ import Taschenrechner.Risch
 import Taschenrechner.Env
 import Taschenrechner.Normal
 import Taschenrechner.Eval
+import Taschenrechner.Solve
 
 namespace Taschenrechner.Tests
 
@@ -354,5 +355,62 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   -- (x^2-1)/(x-1) after cancel prints without ·x^-1
   let s := Expr.toString (cancel ((x ^ (2 : Expr) - 1) / (x - 1)))
   s == "1 + x" || s == "x + 1"
+
+-- Factor & scalar solve
+#guard
+  match factorIn (x ^ (2 : Expr) - 1) "x" with
+  | some f =>
+      -- (x−1)(x+1) up to order
+      equivNF f ((x - 1) * (x + 1))
+  | none => false
+#guard
+  match solveScalar (x ^ (2 : Expr) - (5 : Expr) * x + 6) "x" with
+  | .solutions rs =>
+      rs.length == 2 && rs.any (· == ofInt 2) && rs.any (· == ofInt 3)
+  | _ => false
+#guard
+  match solveScalar ((2 : Expr) * x + 1) "x" with
+  | .solutions rs => rs == [ofRat ⟨-1, 2⟩]
+  | _ => false
+#guard
+  match solveEq (x ^ (2 : Expr)) (4 : Expr) "x" with
+  | .solutions rs => rs.any (· == ofInt 2) && rs.any (· == ofInt (-2))
+  | _ => false
+#guard
+  match coeffOf ((3 : Expr) * x ^ (2 : Expr) + (2 : Expr) * x + 1) "x" 2 with
+  | some c => c == ofInt 3
+  | none => false
+#guard
+  match parse "solve(x^2-5*x+6, x)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          rows.size == 1 && rows[0]!.size == 2
+      | none => false
+  | _ => false
+#guard
+  match parse "factor(x^2-1)" with
+  | .ok e => equivNF e ((x - 1) * (x + 1))
+  | _ => false
+#guard
+  match parse "roots(x^2-1)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows[0]!.size == 2
+      | none => false
+  | _ => false
+#guard
+  match parse "solve([1, 1; 0, 1], [3; 2])" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          rows.size == 2 && simplify rows[0]![0]! == ofInt 1
+            && simplify rows[1]![0]! == ofInt 2
+      | none => false
+  | _ => false
+#guard
+  match parse "coeff(3*x^2+2*x+1, 1)" with
+  | .ok e => e == ofInt 2
+  | _ => false
 
 end Taschenrechner.Tests
