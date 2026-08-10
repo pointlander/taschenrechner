@@ -533,6 +533,65 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => e == ofRat ⟨2, 3⟩
   | _ => false
 
+-- One-sided limits & poles
+#guard
+  match limit ((1 : Expr) / x) "x" (.finite (0 : Expr)) .right with
+  | .infinity true => true
+  | _ => false
+#guard
+  match limit ((1 : Expr) / x) "x" (.finite (0 : Expr)) .left with
+  | .infinity false => true
+  | _ => false
+#guard
+  match limit ((1 : Expr) / x) "x" (.finite (0 : Expr)) .both with
+  | .undetermined _ => true
+  | _ => false
+#guard
+  match limit ((1 : Expr) / (x ^ (2 : Expr))) "x" (.finite (0 : Expr)) .both with
+  | .infinity true => true  -- 1/x² → +∞ both sides
+  | _ => false
+#guard
+  match poleOrder? ((1 : Expr) / x) "x" (0 : Expr) with
+  | some 1 => true
+  | _ => false
+#guard
+  match poleOrder? ((1 : Expr) / (x ^ (2 : Expr))) "x" (0 : Expr) with
+  | some 2 => true
+  | _ => false
+#guard
+  match poleOrder? ((x ^ (2 : Expr) - 1) / (x - 1)) "x" (1 : Expr) with
+  | none => true  -- removable
+  | _ => false
+#guard
+  match classifyAt ((1 : Expr) / x) "x" (0 : Expr) with
+  | .pole 1 _ _ => true
+  | _ => false
+#guard
+  match classifyAt ((x - 1) / (x - 1)) "x" (1 : Expr) with
+  | .removable r => r == ofInt 1
+  | .continuous r => r == ofInt 1
+  | _ => false
+#guard
+  match parse "limright(1/x, 0)" with
+  | .ok e => e == var "∞"
+  | _ => false
+#guard
+  match parse "limleft(1/x, 0)" with
+  | .ok e => e == neg (var "∞") || e == mul negOne (var "∞")
+  | _ => false
+#guard
+  match parse "poleorder(1/x^2, 0)" with
+  | .ok e => e == ofInt 2
+  | _ => false
+#guard
+  match parse "limit(1/x, 0, 1)" with
+  | .ok e => e == var "∞"
+  | _ => false
+#guard
+  match parse "limit(1/x, 0, -1)" with
+  | .ok e => e == neg (var "∞") || e == mul negOne (var "∞")
+  | _ => false
+
 -- Radical integrals 1/√(·)
 #guard checkAntiderivative (1 / sqrt (x ^ (2 : Expr) + 1)) "x"
 #guard checkAntiderivative (1 / sqrt (1 - x ^ (2 : Expr))) "x"

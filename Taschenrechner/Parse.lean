@@ -446,16 +446,70 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       match asNatDim n with
       | some k => pure (maclaurin e v k)
       | none => throw s!"{name}: expected non-negative integer order"
-  | "limit", [e, v, a] | "lim", [e, v, a] => do
-      let v ← asVarName v
-      match (limitAt e v a).toExpr? with
-      | .ok r => pure r
-      | .error msg => throw s!"limit: {msg}"
   | "limit", [e, a] | "lim", [e, a] =>
-      -- default variable x
+      -- default variable x, two-sided
       match (limitAt e "x" a).toExpr? with
       | .ok r => pure r
       | .error msg => throw s!"limit: {msg}"
+  | "limit", [e, v, a] | "lim", [e, v, a] => do
+      -- limit(e, x, a) two-sided, or limit(e, a, side) with default x
+      match asVarName v with
+      | .ok name =>
+        match (limitAt e name a).toExpr? with
+        | .ok r => pure r
+        | .error msg => throw s!"limit: {msg}"
+      | .error _ =>
+        match LimitSide.ofExpr? a with
+        | some side =>
+          -- limit(e, point, side) — second arg was point, third was side
+          match (limitAt e "x" v side).toExpr? with
+          | .ok r => pure r
+          | .error msg => throw s!"limit: {msg}"
+        | none =>
+          let v ← asVarName v
+          match (limitAt e v a).toExpr? with
+          | .ok r => pure r
+          | .error msg => throw s!"limit: {msg}"
+  | "limit", [e, v, a, sideE] | "lim", [e, v, a, sideE] => do
+      let v ← asVarName v
+      match LimitSide.ofExpr? sideE with
+      | some side =>
+        match (limitAt e v a side).toExpr? with
+        | .ok r => pure r
+        | .error msg => throw s!"limit: {msg}"
+      | none => throw "limit: side must be 1/right or -1/left"
+  | "limleft", [e, a] | "limitleft", [e, a] =>
+      match (limitLeft e "x" a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
+  | "limleft", [e, v, a] | "limitleft", [e, v, a] => do
+      let v ← asVarName v
+      match (limitLeft e v a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
+  | "limright", [e, a] | "limitright", [e, a] =>
+      match (limitRight e "x" a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
+  | "limright", [e, v, a] | "limitright", [e, v, a] => do
+      let v ← asVarName v
+      match (limitRight e v a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"limit: {msg}"
+  | "poleorder", [e, a] | "ord", [e, a] =>
+      pure (poleOrderExpr e "x" a)
+  | "poleorder", [e, v, a] | "ord", [e, v, a] => do
+      let v ← asVarName v
+      pure (poleOrderExpr e v a)
+  | "classify", [e, a] | "singularity", [e, a] =>
+      match (classifyAt e "x" a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"classify: {msg}"
+  | "classify", [e, v, a] | "singularity", [e, v, a] => do
+      let v ← asVarName v
+      match (classifyAt e v a).toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"classify: {msg}"
   | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -483,7 +537,11 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "maclaurin", _ | "series", _ =>
       throw s!"{name} expects {name}(f,n) or {name}(f,x,n), got {args.length} args"
   | "limit", _ | "lim", _ =>
-      throw s!"{name} expects limit(e, a) or limit(e, x, a) [a may be oo], got {args.length} args"
+      throw s!"{name} expects limit(e,a) | limit(e,x,a) | limit(e,a,side) | limit(e,x,a,side), got {args.length} args"
+  | "limleft", _ | "limitleft", _ | "limright", _ | "limitright", _ =>
+      throw s!"{name} expects 2 or 3 arguments, got {args.length}"
+  | "poleorder", _ | "ord", _ | "classify", _ | "singularity", _ =>
+      throw s!"{name} expects 2 or 3 arguments, got {args.length}"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -510,7 +568,9 @@ def isBuiltinName (name : String) : Bool :=
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
     || n == "apart" || n == "pf" || n == "partialfractions"
     || n == "taylor" || n == "maclaurin" || n == "series"
-    || n == "limit" || n == "lim"
+    || n == "limit" || n == "lim" || n == "limleft" || n == "limitleft"
+    || n == "limright" || n == "limitright" || n == "poleorder" || n == "ord"
+    || n == "classify" || n == "singularity"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -947,7 +1007,8 @@ def helpText : String :=
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
-                limit(e, a)  limit(e, x, a)  lim(...)   (a = oo for ±∞)\n\
+                limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
+                poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\

@@ -9,7 +9,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
-- **Limits**: finite points (L'Hôpital for rationals), ±∞ (`oo`)
+- **Limits**: two-sided & one-sided, ±∞ (`oo`), pole order / `classify`
 - **Radical integrals**: √(x²±a²), 1/√(a²−x²), … (verified)
 - **Partial fractions**: `apart` / `pf`
 - **Taylor / Maclaurin series**: `taylor`, `series`, `maclaurin`
@@ -151,20 +151,23 @@ lake exe taschenrechner 'eigenspace([1, 0; 0, 2], 2)' # → [0; 1]
 
 | Form | What it does |
 |------|----------------|
-| `limit(e, a)` / `lim(e, a)` | lim_{x→a} e |
-| `limit(e, x, a)` | lim in free variable `x` |
+| `limit(e, a)` / `lim(e, a)` | two-sided lim_{x→a} e |
+| `limit(e, x, a)` | free variable `x` |
+| `limit(e, a, 1)` / `limright(e, a)` | right-hand limit a⁺ |
+| `limit(e, a, -1)` / `limleft(e, a)` | left-hand limit a⁻ |
+| `poleorder(e, a)` | order of pole at `a` (0 if not a pole) |
+| `classify(e, a)` | removable / continuous / pole `[k, lim-, lim+]` |
 | `a = oo` / `-oo` | +∞ / −∞ |
-| `int(1/sqrt(x^2+1))` etc. | Textbook √(±x²±a²) table |
 
 ```bash
-lake exe taschenrechner 'limit((x^2-1)/(x-1), 1)'   # → 2  (L'Hôpital / cancel)
+lake exe taschenrechner 'limit((x^2-1)/(x-1), 1)'   # → 2  (removable)
+lake exe taschenrechner 'limright(1/x, 0)'           # → +∞
+lake exe taschenrechner 'limleft(1/x, 0)'            # → -∞
+lake exe taschenrechner 'poleorder(1/x^2, 0)'        # → 2
+lake exe taschenrechner 'classify(1/x, 0)'           # → [1, -∞, +∞]
 lake exe taschenrechner 'limit(1/x, oo)'            # → 0
-lake exe taschenrechner 'lim((2*x)/(3*x+1), oo)'    # → 2/3
 lake exe taschenrechner 'int(1/sqrt(x^2+1))'        # → ln(x + √(x²+1))
-lake exe taschenrechner 'int(1/sqrt(1-x^2))'        # → atan(x/√(1−x²))
-lake exe taschenrechner 'int(1/sqrt(x^2-1))'        # → ln(x + √(x²−1))
-lake exe taschenrechner 'int(sqrt(x^2+1))'          # → ½x√(x²+1) + ½ ln(x+√(x²+1))
-lake exe taschenrechner 'apart(1/((x-1)*(x-2)))'    # → 1/(x-1) − 1/(x-2)  (up to order)
+lake exe taschenrechner 'apart(1/((x-1)*(x-2)))'    # → 1/(x-2) − 1/(x-1)
 ```
 
 **Definite integrals & series**
