@@ -682,6 +682,19 @@ def parseEq (s : String) (expected : Expr) : Bool :=
         && namedGet? e "y" == some (ofInt (-1))
   | _ => false
 #guard
+  match parse "solve(x^2+y^2=1, x+y=1)" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "x = 1" && s.contains "y = 0"
+        && s.contains "x = 0" && s.contains "y = 1"
+  | _ => false
+#guard
+  match parse "solve(y=x^2, x+y=2)" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "x = 1" && s.contains "y = 1"
+  | _ => false
+#guard
   match parse "x^2 > 1" with
   | .ok e =>
       match asRelation? e with

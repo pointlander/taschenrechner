@@ -8,6 +8,7 @@
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Poly
+import Taschenrechner.BiPoly
 import Taschenrechner.RatInt
 import Taschenrechner.Normal
 import Taschenrechner.Matrix
@@ -470,6 +471,179 @@ def solveLinearSystem (eqs : List Expr) (vars? : Option (List String) := none) :
           | .inconsistent msg => throw s!"solve: {msg}"
           | .error msg => throw s!"solve: {msg}"
 
+/-! ### Bivariate nonlinear systems (resultant elimination) -/
+
+/-- Residual expression as equation or bare. -/
+def asResidual (e : Expr) : Expr :=
+  match asEquation? e with
+  | some (a, b) => simplify (sub a b)
+  | none => simplify e
+
+/--
+  Try to solve one residual that is linear in `v` for `v`.
+  Returns `v = expr` rhs free of `v`, or none.
+-/
+def solveLinearInVar? (residual : Expr) (v : String) : Option Expr :=
+  -- residual = A*v + B = 0 with A,B free of v → v = -B/A
+  match affineForm residual [v] with
+  | some (cs, k) =>
+    if cs.size == 1 then
+      let A := simplify cs[0]!
+      let B := simplify k
+      if dependsOn A v then none
+      else if isZeroExpr A "x" || A == zero then none
+      else some (simplify (neg (div B A)))
+    else none
+  | none => none
+
+/--
+  Substitution path: if one equation is linear in a variable, solve and plug in.
+  Returns list of solutions as association lists.
+-/
+def solveBySubstitution (r1 r2 : Expr) (x y : String) :
+    Option (List (List (String × Expr))) :=
+  let tryLinear (lin other : Expr) (linVar otherVar : String) :
+      Option (List (List (String × Expr))) :=
+    match solveLinearInVar? lin linVar with
+    | none => none
+    | some rhs =>
+      let other' := simplify (subst other linVar rhs)
+      match solveScalar other' otherVar with
+      | .solutions vals =>
+        some (vals.map fun ov =>
+          let lv := simplify (subst rhs otherVar ov)
+          if linVar ≤ otherVar then
+            [(linVar, lv), (otherVar, ov)]
+          else
+            [(otherVar, ov), (linVar, lv)])
+      | .all => none
+      | .empty => some []
+      | .unsupported _ => none
+  -- Prefer solving for y when an equation is linear in y
+  match tryLinear r1 r2 y x with
+  | some s => some s
+  | none =>
+    match tryLinear r2 r1 y x with
+    | some s => some s
+    | none =>
+      match tryLinear r1 r2 x y with
+      | some s => some s
+      | none => tryLinear r2 r1 x y
+
+/--
+  Resultant elimination: treat residuals as polys in (main, sec),
+  compute Res_main(f,g) as poly in sec, root it, back-solve for main.
+-/
+def solveByResultant (r1 r2 : Expr) (main sec : String) :
+    Option (List (List (String × Expr))) :=
+  match BiPoly.ofExpr? r1 main sec, BiPoly.ofExpr? r2 main sec with
+  | some f, some g =>
+    let R := BiPoly.resultantMain f g
+    let R := Poly.strip R
+    if R.isZero then none  -- common component / dependent
+    else
+      let secRoots := rootsPoly R  -- List Expr
+      Id.run do
+        let mut sols : List (List (String × Expr)) := []
+        for sv in secRoots do
+          match simplify sv with
+          | const c =>
+            match CplxConst.toRat? c with
+            | none => pure ()  -- skip non-rational secondary roots for now
+            | some x0 =>
+              -- Specialize f,g at secondary = x0 → polys in main
+              let fy := BiPoly.evalSecondary f x0
+              let gy := BiPoly.evalSecondary g x0
+              -- Prefer roots of the lower-degree specialized poly
+              let py :=
+                if fy.isZero then gy
+                else if gy.isZero then fy
+                else if fy.deg ≤ gy.deg then fy else gy
+              let mainRoots := rootsPoly py
+              -- Also try gcd if both nonzero
+              let mainRoots :=
+                if !fy.isZero && !gy.isZero then
+                  let h := Poly.gcd fy gy
+                  if h.deg ≥ 1 then rootsPoly h else mainRoots
+                else mainRoots
+              for mv in mainRoots do
+                match simplify mv with
+                | const mc =>
+                  match CplxConst.toRat? mc with
+                  | some y0 =>
+                    -- Verify both residuals vanish
+                    let r1v := simplify (subst (subst r1 main (ofRat y0)) sec (ofRat x0))
+                    let r2v := simplify (subst (subst r2 main (ofRat y0)) sec (ofRat x0))
+                    if (isZeroExpr r1v "x" || r1v == zero)
+                        && (isZeroExpr r2v "x" || r2v == zero) then
+                      -- Order by variable name for stable display
+                      let pair :=
+                        if main ≤ sec then
+                          [(main, ofRat y0), (sec, ofRat x0)]
+                        else
+                          [(sec, ofRat x0), (main, ofRat y0)]
+                      if !sols.any (fun s => s == pair) then
+                        sols := sols ++ [pair]
+                  | none => pure ()
+                | _ => pure ()  -- symbolic main root: keep if ground enough
+          | _ => pure ()
+        pure (some sols)
+  | _, _ => none
+
+/-- Pack a list of association-list solutions into a matrix of equations.
+    One row per solution: `[x = a, y = b]`. -/
+def packSolutions (sols : List (List (String × Expr))) : Expr :=
+  if sols.isEmpty then Expr.mat #[#[] ]
+  else
+    let rows : Array (Array Expr) :=
+      (sols.map fun pairs =>
+        pairs.toArray.map fun (name, val) => eq (var name) (simplify val)).toArray
+    simplify (Expr.mat rows)
+
+/--
+  Solve a 2×2 algebraic system (linear or polynomial) in two variables.
+  Tries: linear RREF → substitution (linear-in-one-var) → resultant elimination.
+-/
+def solveBivariate (e1 e2 : Expr) (vars? : Option (List String) := none) :
+    Except String Expr :=
+  let r1 := asResidual e1
+  let r2 := asResidual e2
+  let vars :=
+    match vars? with
+    | some vs => vs
+    | none => collectVars [r1, r2]
+  if vars.length != 2 then
+    throw s!"solve: bivariate solver expects 2 free variables, got {vars}"
+  else
+    let x := vars[0]!
+    let y := vars[1]!
+    -- 1) Linear
+    match solveLinearSystem [e1, e2] (some vars) with
+    | .ok sol => pure sol
+    | .error _ =>
+      -- 2) Substitution
+      match solveBySubstitution r1 r2 x y with
+      | some sols => pure (packSolutions sols)
+      | none =>
+        -- 3) Resultant: eliminate y then x (try both orders)
+        match solveByResultant r1 r2 y x with
+        | some sols => pure (packSolutions sols)
+        | none =>
+          match solveByResultant r1 r2 x y with
+          | some sols => pure (packSolutions sols)
+          | none =>
+            throw "solve: could not solve nonlinear system (need polynomial eqs in 2 vars)"
+
+/--
+  General multi-equation system: linear when possible; 2-eq polynomial via resultant.
+-/
+def solveSystem (eqs : List Expr) (vars? : Option (List String) := none) :
+    Except String Expr :=
+  if eqs.length == 2 then
+    solveBivariate eqs[0]! eqs[1]! vars?
+  else
+    solveLinearSystem eqs vars?
+
 /-! ### Inequalities (univariate poly) + interval merge -/
 
 /-- Compare two real rational expressions for ordering (only rational constants). -/
@@ -720,11 +894,18 @@ def prettySolution (e : Expr) : String :=
     let nc := Mat.ncols rows
     if nr == 1 && nc == 0 then "∅"
     else if nr == 0 then "∅"
-    else if nc == 1 && nr ≥ 1 && rows.all (fun r =>
-        match r[0]! with | eq _ _ => true | _ => false) then
-      -- Named system solution
-      let parts := rows.toList.map fun r => Expr.toString r[0]!
-      String.intercalate ", " parts
+    else if nr ≥ 1 && rows.all (fun r =>
+        r.size ≥ 1 && r.all (fun c => match c with | eq _ _ => true | _ => false)) then
+      -- Named system solution(s): one row per solution
+      if nc == 1 then
+        let parts := rows.toList.map fun r => Expr.toString r[0]!
+        String.intercalate ", " parts
+      else
+        -- Multiple solutions: {x=…, y=…}, {x=…, y=…}
+        let blocks := rows.toList.map fun r =>
+          let parts := r.toList.map fun c => Expr.toString c
+          s!"\{{String.intercalate ", " parts}}"
+        String.intercalate ", " blocks
     else if nc == 4 && nr ≥ 1 then
       -- Interval set (n×4: lo, hi, loClosed, hiClosed)
       let parsed := rows.toList.filterMap parseIntervalRow?

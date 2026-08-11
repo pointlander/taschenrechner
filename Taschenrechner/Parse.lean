@@ -727,23 +727,23 @@ where
           let v ← asVarName b
           solveRelation a v
         else if isRel a && isRel b then
-          -- 2-equation system
-          solveLinearSystem [a, b] none
+          -- 2-equation system (linear or bivariate polynomial)
+          solveSystem [a, b] none
         else
-          -- treat as two residuals of a system, or lhs,rhs without var
-          solveLinearSystem [a, b] none
+          -- two residuals of a system, or lhs,rhs without var
+          solveSystem [a, b] none
     | [lhs, rhs, v] =>
       if isVar v && !isRel lhs then
         -- solve(lhs, rhs, x) equation
         let v ← asVarName v
         solveEqExpr? lhs rhs v
       else if isRel lhs && isRel rhs && isVar v then
-        -- solve(eq1, eq2, x) — underdetermined naming, still 2 eqs
+        -- solve(eq1, eq2, x) — still 2 eqs (var hint optional)
         let _ ← asVarName v
-        solveLinearSystem [lhs, rhs] none
+        solveSystem [lhs, rhs] none
       else
         -- 3-equation system (or mix)
-        solveLinearSystem [lhs, rhs, v] none
+        solveSystem [lhs, rhs, v] none
     | args =>
       -- Peel trailing variable names from the argument list.
       let (eqs, varNames) :=
@@ -779,9 +779,9 @@ where
           else
             throw "solve: systems of inequalities are not supported"
         else
-          solveLinearSystem eqs vars?
+          solveSystem eqs vars?
       else
-        solveLinearSystem eqs (if varNames.isEmpty then none else some varNames)
+        solveSystem eqs (if varNames.isEmpty then none else some varNames)
 
 /-- Known callables that consume `(...)`; bare vars juxtapose: `x(x+1)` = `x*(x+1)`. -/
 def isBuiltinName (name : String) : Bool :=
@@ -1249,7 +1249,7 @@ def helpText : String :=
                 diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
-                solve(eq1,eq2,…) → x=…,y=…;  solve(a>b) → intervals\n\
+                solve(eq1,eq2) linear or 2-var poly (resultant); solve(a>b) intervals\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\

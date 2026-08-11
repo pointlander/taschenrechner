@@ -193,7 +193,34 @@ def suite : List Case := [
     input := "solve(x^2=4, x)"
     check := fun e =>
       let s := prettySolution e
-      s.contains "2" && s.contains "-2" && (s.contains "{" || true) }
+      s.contains "2" && s.contains "-2" && (s.contains "{" || true) },
+  -- PR R: bivariate nonlinear systems
+  { name := "circle ∩ line"
+    input := "solve(x^2+y^2=1, x+y=1)"
+    check := fun e =>
+      let s := prettySolution e
+      -- solutions (1,0) and (0,1)
+      s.contains "x = 1" && s.contains "y = 0"
+        && s.contains "x = 0" && s.contains "y = 1" },
+  { name := "parabola ∩ line"
+    input := "solve(y=x^2, x+y=2)"
+    check := fun e =>
+      let s := prettySolution e
+      (s.contains "x = 1" && s.contains "y = 1")
+        && (s.contains "x = -2" && s.contains "y = 4") },
+  { name := "xy=2 and x²+y²=5"
+    input := "solve(x*y=2, x^2+y^2=5)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "x = 2" && s.contains "y = 1" },
+  { name := "resultant x²=y, y=1"
+    input := "solve(x^2-y=0, y-1=0)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y = 1" && s.contains "x = 1" && s.contains "x = -1" },
+  { name := "linear system still named"
+    input := "solve(x+y=1, x-y=3)"
+    check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) }
 ]
 
 structure CaseResult where
@@ -240,6 +267,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 25
+#guard suite.length ≥ 30
 
 end Taschenrechner.SolveRegression

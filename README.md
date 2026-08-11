@@ -5,7 +5,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
 - **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
-- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **systems** `solve(x+y=1,x-y=3)` → `x = 2, y = -1`; **intervals** `solve(x^2-1>0)` → `(-∞, -1) ∪ (1, ∞)`
+- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **linear & 2-var polynomial systems** (resultant); **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
@@ -55,7 +55,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
-| `Taschenrechner.Solve` | `factor`, scalar/`system`/`inequality` `solve`, `roots`, `coeff` |
+| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, `roots` |
+| `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
@@ -149,7 +150,7 @@ Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is
 | `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
 | `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
-| `solve(eq1, eq2, …[, x, y, …])` | **Linear system** → named eqs `x = …, y = …` (var order explicit or alphabetical) |
+| `solve(eq1, eq2, …[, x, y, …])` | **System**: linear via RREF; **2-var polynomial** via sub / resultant |
 | `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** → merged intervals with open/closed ends; print as `(-∞, -1) ∪ [1, ∞)` |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
@@ -163,6 +164,8 @@ lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
 lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1
 lake exe taschenrechner 'solve(x+y+z=6, x-y=1, y-z=1)' # → x = 3, y = 2, z = 1
+lake exe taschenrechner 'solve(x^2+y^2=1, x+y=1)'     # → {x=1,y=0}, {x=0,y=1}
+lake exe taschenrechner 'solve(y=x^2, x+y=2)'         # → {x=1,y=1}, {x=-2,y=4}
 lake exe taschenrechner 'solve(x^2-1>0)'              # → (-∞, -1) ∪ (1, ∞)
 lake exe taschenrechner 'solve(x^2-1>=0)'             # → (-∞, -1] ∪ [1, ∞)
 lake exe taschenrechner 'solve(x^2-1<0)'              # → (-1, 1)

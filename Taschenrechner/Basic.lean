@@ -9,6 +9,7 @@ import Taschenrechner.Numeric
 import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Poly
+import Taschenrechner.BiPoly
 import Taschenrechner.RatInt
 import Taschenrechner.Trig
 import Taschenrechner.Complex
