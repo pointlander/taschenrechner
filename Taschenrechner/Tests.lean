@@ -12,7 +12,9 @@ import Taschenrechner.Env
 import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Numeric
+import Taschenrechner.Plot
 import Taschenrechner.Solve
+import Taschenrechner.AsciiArt
 import Taschenrechner.Series
 import Taschenrechner.Eigen
 import Taschenrechner.Limit
@@ -463,6 +465,21 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "seriesmul(1/(1-x), 1/(1-x), 2)" with
   | .ok e =>
       equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
+  | _ => false
+-- Plot sampling (no gnuplot window required)
+#guard
+  match buildPlotSpec [sin x] with
+  | .ok s => s.var == "x" && s.nPoints == 400
+  | _ => false
+#guard
+  let pts := sampleCurve (sin x) "x" 0.0 3.14159265 5
+  countValid pts ≥ 3
+#guard
+  match parse "plot(sin(x), -1, 1)" with
+  | .ok e =>
+      match asPlotSpec? e with
+      | some s => s.lo < 0 && s.hi > 0
+      | none => false
   | _ => false
 -- ASCII art layout
 #guard

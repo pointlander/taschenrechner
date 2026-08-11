@@ -14,9 +14,6 @@
 *.exe
 *.out
 
-# Lake / dependency state that is machine-local
-# (lake-manifest.json is usually committed for apps; keep it tracked)
-
 # Editor / IDE
 .vscode/
 .idea/
@@ -33,3 +30,6 @@ Thumbs.db
 .env.*
 *.log
 /tmp/
+
+# Generated plots (plot / plotpng)
+*.png

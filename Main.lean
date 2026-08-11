@@ -268,8 +268,18 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
       pure (0, withAns env' val)
   | .expr e =>
     let e := simplify (substEnv env e)
-    printExpr e
-    pure (0, withAns env e)
+    match asPlotSpec? e with
+    | some spec =>
+      match ← runPlot { spec with expr := simplify (substEnv env spec.expr) } with
+      | .ok msg =>
+        IO.println msg
+        pure (0, env)
+      | .error err =>
+        IO.eprintln err
+        pure (1, env)
+    | none =>
+      printExpr e
+      pure (0, withAns env e)
   | .simplify e =>
     let e := simplify (substEnv env e)
     printExpr e
