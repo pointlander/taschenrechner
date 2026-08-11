@@ -8,6 +8,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **linear & 2-var polynomial systems** (resultant); **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
+- **ASCII art** multi-line output for fractions, powers, matrices, and equations
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
@@ -26,7 +27,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 ```bash
 lake build
 lake exe taschenrechner                 # demo
-lake exe taschenrechner 'x^2 + 2x + 1'  # parse & print
+lake exe taschenrechner 'x^2 + 2x + 1'  # parse & print (ASCII art when multi-line)
+lake exe taschenrechner '(x^2+1)/(x-1)' # stacked fraction
 lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner -i              # REPL
@@ -54,6 +56,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, `expm` |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Rewrite` | Identity rewrite table (trig/hyperbolic/abs/exp) |
+| `Taschenrechner.AsciiArt` | Multi-line ASCII layout (`asciiArt`, fractions/powers) |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |

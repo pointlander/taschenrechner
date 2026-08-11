@@ -25,6 +25,7 @@ import Taschenrechner.Sum
 import Taschenrechner.ODE
 import Taschenrechner.Env
 import Taschenrechner.Parse
+import Taschenrechner.AsciiArt
 import Taschenrechner.Regression
 import Taschenrechner.MatrixRegression
 import Taschenrechner.LimitRegression

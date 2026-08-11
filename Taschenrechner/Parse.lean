@@ -36,6 +36,7 @@ import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
 import Taschenrechner.Eigen
 import Taschenrechner.Env
+import Taschenrechner.AsciiArt
 
 namespace Taschenrechner.Parse
 
@@ -256,6 +257,10 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "rewrite", [e] => pure (Taschenrechner.rewrite (simplify e))
   | "hyperexpand", [e] | "hexpand", [e] =>
       pure (simplify (Taschenrechner.expandHyperbolic e))
+  | "ascii", [e] | "art", [e] | "pretty", [e] =>
+      -- Return a var holding multi-line art is awkward; use a string-like var.
+      -- Instead we attach via a special var marker printed by the CLI.
+      pure (Expr.var s!"__ascii__\n{asciiArt e}")
   | "expand", [e] => pure (expand e)
   | "cancel", [e] => pure (cancel e)
   | "together", [e] => pure (together e)
@@ -800,6 +805,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "cabs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "rewrite" || n == "hyperexpand" || n == "hexpand"
+    || n == "ascii" || n == "art" || n == "pretty"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
@@ -1252,7 +1258,7 @@ def helpText : String :=
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
     functions   sin cos tan sinh cosh tanh exp ln log sqrt atan abs cabs\n\
-                re im conj  rewrite(e)  hyperexpand(e)\n\
+                re im conj  rewrite(e)  hyperexpand(e)  ascii(e)\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
                 det inv transpose/tp trace/tr rref rank nullity\n\

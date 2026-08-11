@@ -464,6 +464,13 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
   | _ => false
+-- ASCII art layout
+#guard
+  let art := asciiArt (div (add (pow x (ofInt 2)) one) (sub x one))
+  art.contains "─" && art.contains "x"
+#guard
+  let art := asciiArt (eq (pow x (ofInt 2)) (ofInt 4))
+  art.contains "=" && art.contains "x"
 -- PR S: rewrite rules, hyperbolics, abs
 #guard
   match parse "simplify(sin(x)^2 + cos(x)^2)" with

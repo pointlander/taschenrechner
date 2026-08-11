@@ -24,17 +24,29 @@ def showInt (label : String) (e : Expr) : IO Unit := do
   IO.println ""
 
 def printExpr (e : Expr) : IO Unit := do
-  -- Prefer solution pretty-print (named systems, intervals, root sets).
+  -- Special marker from ascii(...) builtin
+  match e with
+  | .var name =>
+    if name.startsWith "__ascii__\n" then
+      IO.println (name.dropPrefix "__ascii__\n" |>.toString)
+      return
+    else if name.startsWith "__ascii__" then
+      IO.println (name.dropPrefix "__ascii__" |>.toString)
+      return
+    else pure ()
+  | _ => pure ()
+  -- Solution summaries (intervals, named systems) stay one-line when clearer
   let sol := prettySolution e
-  if sol != Expr.toString e then
+  let art := asciiArt e
+  if sol != Expr.toString e && !art.contains '\n' then
+    IO.println sol
+  else if art.contains '\n' || (asMat? e).isSome then
+    for line in art.splitOn "\n" do
+      IO.println line
+  else if sol != Expr.toString e then
     IO.println sol
   else
-    match asMat? e with
-    | some rows =>
-      for line in (Mat.pretty rows).splitOn "\n" do
-        IO.println line
-    | none =>
-      IO.println s!"{e}"
+    IO.println art
 
 def runDemo : IO Unit := do
   IO.println "═══════════════════════════════════════════════"
