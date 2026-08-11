@@ -48,7 +48,8 @@ partial def matchComplexLinear (e : Expr) : Option (Expr × Expr) :=
     | none, none =>
       -- both real
       some (simplify (add a b), zero)
-  | re _ | im _ | conj _ | sin _ | cos _ | tan _ | atan _ | ln _ | exp _ | var _ | pow _ _ =>
+  | re _ | im _ | conj _ | sin _ | cos _ | tan _ | sinh _ | cosh _ | tanh _
+  | atan _ | ln _ | exp _ | abs _ | var _ | pow _ _ =>
     -- treat as real
     some (e, zero)
   | eq _ _ | lt _ _ | le _ _ => none
@@ -69,8 +70,12 @@ partial def eulerExpand1 (e : Expr) : Expr :=
   | sin a => sin (eulerExpand1 a)
   | cos a => cos (eulerExpand1 a)
   | tan a => tan (eulerExpand1 a)
+  | sinh a => sinh (eulerExpand1 a)
+  | cosh a => cosh (eulerExpand1 a)
+  | tanh a => tanh (eulerExpand1 a)
   | ln a => ln (eulerExpand1 a)
   | atan a => atan (eulerExpand1 a)
+  | abs a => abs (eulerExpand1 a)
   | re a => re (eulerExpand1 a)
   | im a => im (eulerExpand1 a)
   | conj a => conj (eulerExpand1 a)

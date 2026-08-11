@@ -3,6 +3,7 @@
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Matrix
+import Taschenrechner.Rewrite
 
 namespace Taschenrechner.Expr
 
@@ -39,6 +40,15 @@ partial def cmpExpr : Expr → Expr → Ordering
   | tan a, tan b => cmpExpr a b
   | tan _, _ => .lt
   | _, tan _ => .gt
+  | sinh a, sinh b => cmpExpr a b
+  | sinh _, _ => .lt
+  | _, sinh _ => .gt
+  | cosh a, cosh b => cmpExpr a b
+  | cosh _, _ => .lt
+  | _, cosh _ => .gt
+  | tanh a, tanh b => cmpExpr a b
+  | tanh _, _ => .lt
+  | _, tanh _ => .gt
   | exp a, exp b => cmpExpr a b
   | exp _, _ => .lt
   | _, exp _ => .gt
@@ -48,6 +58,9 @@ partial def cmpExpr : Expr → Expr → Ordering
   | atan a, atan b => cmpExpr a b
   | atan _, _ => .lt
   | _, atan _ => .gt
+  | abs a, abs b => cmpExpr a b
+  | abs _, _ => .lt
+  | _, abs _ => .gt
   | re a, re b => cmpExpr a b
   | re _, _ => .lt
   | _, re _ => .gt
@@ -261,6 +274,21 @@ partial def simplify1 : Expr → Expr
     match e with
     | const r => if r.isZero then zero else tan e
     | _ => tan e
+  | sinh e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then zero else sinh e
+    | _ => sinh e
+  | cosh e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then one else cosh e
+    | _ => cosh e
+  | tanh e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then zero else tanh e
+    | _ => tanh e
   | exp e =>
     let e := simplify1 e
     match e with
@@ -277,6 +305,20 @@ partial def simplify1 : Expr → Expr
     match e with
     | const r => if r.isZero then zero else atan e
     | _ => atan e
+  | abs e =>
+    let e := simplify1 e
+    match e with
+    | const c =>
+      if c.isReal then
+        ofRat (if c.re.num < 0 then RatConst.neg c.re else c.re)
+      else abs e
+    | abs u => abs u
+    | mul (const c) u =>
+      if c.isNegOne then abs u
+      else if c.isReal then
+        mul (ofRat (if c.re.num < 0 then RatConst.neg c.re else c.re)) (abs u)
+      else abs (mul (const c) u)
+    | _ => abs e
   | re e =>
     let e := simplify1 e
     match e with
@@ -327,7 +369,8 @@ where
     | var _ => true
     | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
         isRealValued a && isRealValued b
-    | sin e | cos e | tan e | exp e | ln e | atan e => isRealValued e
+    | sin e | cos e | tan e | sinh e | cosh e | tanh e
+    | exp e | ln e | atan e | abs e => isRealValued e
     | re _ | im _ => true
     | conj e => isRealValued e
     | mat _ => false
@@ -356,13 +399,13 @@ where
       | [] => one
       | _ => foldMul factors
 
-/-- Iterate simplification to a fixed point (bounded). -/
+/-- Iterate simplification + identity rewrites to a fixed point (bounded). -/
 def simplify (e : Expr) (maxIters : Nat := 32) : Expr :=
   let rec go (n : Nat) (e : Expr) : Expr :=
     match n with
     | 0 => e
     | n'+1 =>
-      let e' := simplify1 e
+      let e' := Taschenrechner.rewrite (simplify1 e)
       if e' == e then e else go n' e'
   go maxIters e
 
@@ -392,9 +435,13 @@ partial def expand1 : Expr → Expr
   | sin e => sin (expand1 e)
   | cos e => cos (expand1 e)
   | tan e => tan (expand1 e)
+  | sinh e => sinh (expand1 e)
+  | cosh e => cosh (expand1 e)
+  | tanh e => tanh (expand1 e)
   | exp e => exp (expand1 e)
   | ln e => ln (expand1 e)
   | atan e => atan (expand1 e)
+  | abs e => abs (expand1 e)
   | re e => re (expand1 e)
   | im e => im (expand1 e)
   | conj e => conj (expand1 e)

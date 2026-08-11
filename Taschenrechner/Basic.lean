@@ -3,6 +3,7 @@
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
+import Taschenrechner.Rewrite
 import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Numeric

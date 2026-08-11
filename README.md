@@ -4,7 +4,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
 - **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
-- Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
+- Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`)
+- **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **linear & 2-var polynomial systems** (resultant); **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
@@ -52,6 +53,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
 | `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, `expm` |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
+| `Taschenrechner.Rewrite` | Identity rewrite table (trig/hyperbolic/abs/exp) |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
@@ -85,6 +87,10 @@ x^2 + 3*x + 1
 1.25 + 0.75          # → 2
 2x(x+1)              # juxtaposition = multiply
 sin(x^2)
+sinh(x)  cosh(x)  tanh(x)
+abs(x)               # |x|;  cabs(z) for √(re²+im²)
+rewrite(e)           # apply identity table
+hyperexpand(sinh(x)) # → (e^x − e^{-x})/2
 -x^2 + 1             # unary minus; ^ binds tighter → -(x^2)
 2+3*i                # complex rationals ℚ(i)
 N(sin(1), 4)         # → 0.8415  (numeric approx)

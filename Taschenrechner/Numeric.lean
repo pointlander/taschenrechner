@@ -101,6 +101,24 @@ partial def evalFloats? (e : Expr) : Option (Float × Float) :=
     match evalFloats? a with
     | some (r, i) => if i == 0 then some (Float.tan r, 0) else none
     | none => none
+  | sinh a =>
+    match evalFloats? a with
+    | some (r, i) => if i == 0 then some (Float.sinh r, 0) else none
+    | none => none
+  | cosh a =>
+    match evalFloats? a with
+    | some (r, i) => if i == 0 then some (Float.cosh r, 0) else none
+    | none => none
+  | tanh a =>
+    match evalFloats? a with
+    | some (r, i) => if i == 0 then some (Float.tanh r, 0) else none
+    | none => none
+  | abs a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 then some (Float.abs r, 0)
+      else some (Float.sqrt (r * r + i * i), 0)
+    | none => none
   | exp a =>
     match evalFloats? a with
     | some (r, i) =>

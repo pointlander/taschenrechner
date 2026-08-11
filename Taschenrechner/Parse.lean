@@ -234,6 +234,9 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "sin", [e] => pure (Expr.sin e)
   | "cos", [e] => pure (Expr.cos e)
   | "tan", [e] => pure (Expr.tan e)
+  | "sinh", [e] => pure (Expr.sinh e)
+  | "cosh", [e] => pure (Expr.cosh e)
+  | "tanh", [e] => pure (Expr.tanh e)
   | "exp", [e] => pure (Expr.exp e)
   | "ln",  [e] => pure (Expr.ln e)
   | "log", [e] => pure (Expr.ln e)
@@ -243,12 +246,16 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "re", [e] => pure (Expr.re e)
   | "im", [e] => pure (Expr.im e)
   | "conj", [e] => pure (Expr.conj e)
-  | "abs", [e] =>
-    -- |z| = sqrt(re(z)² + im(z)²)
+  | "abs", [e] => pure (Expr.abs e)
+  | "cabs", [e] =>
+    -- complex modulus √(re²+im²)
     pure (Taschenrechner.sqrt (Expr.add
       (Expr.pow (Expr.re e) (2 : Expr))
       (Expr.pow (Expr.im e) (2 : Expr))))
   | "simplify", [e] => pure (simplify e)
+  | "rewrite", [e] => pure (Taschenrechner.rewrite (simplify e))
+  | "hyperexpand", [e] | "hexpand", [e] =>
+      pure (simplify (Taschenrechner.expandHyperbolic e))
   | "expand", [e] => pure (expand e)
   | "cancel", [e] => pure (cancel e)
   | "together", [e] => pure (together e)
@@ -637,8 +644,10 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       let y ← asVarName y
       let x ← asVarName x
       dsolveIC2 e y x x0 y0 yp0
-  | "sin", _ | "cos", _ | "tan", _ | "exp", _ | "ln", _ | "log", _ | "sqrt", _
-  | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _
+  | "sin", _ | "cos", _ | "tan", _ | "sinh", _ | "cosh", _ | "tanh", _
+  | "exp", _ | "ln", _ | "log", _ | "sqrt", _
+  | "atan", _ | "arctan", _ | "re", _ | "im", _ | "conj", _ | "abs", _ | "cabs", _
+  | "rewrite", _ | "hyperexpand", _ | "hexpand", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
   | "det", _ | "trace", _ | "tr", _ | "transpose", _ | "tp", _ | "inv", _
   | "rref", _ | "rank", _ | "nullity", _ | "nullspace", _ | "null", _ | "ker", _ | "eye", _ =>
@@ -786,9 +795,11 @@ where
 /-- Known callables that consume `(...)`; bare vars juxtapose: `x(x+1)` = `x*(x+1)`. -/
 def isBuiltinName (name : String) : Bool :=
   let n := name.toLower
-  n == "sin" || n == "cos" || n == "tan" || n == "exp" || n == "ln" || n == "log"
+  n == "sin" || n == "cos" || n == "tan" || n == "sinh" || n == "cosh" || n == "tanh"
+    || n == "exp" || n == "ln" || n == "log"
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "re" || n == "im" || n == "conj"
-    || n == "abs" || n == "simplify" || n == "expand" || n == "cancel"
+    || n == "abs" || n == "cabs" || n == "simplify" || n == "expand" || n == "cancel"
+    || n == "rewrite" || n == "hyperexpand" || n == "hexpand"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
@@ -1240,7 +1251,8 @@ def helpText : String :=
     ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
-    functions   sin cos tan exp ln log sqrt atan re im conj abs\n\
+    functions   sin cos tan sinh cosh tanh exp ln log sqrt atan abs cabs\n\
+                re im conj  rewrite(e)  hyperexpand(e)\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
                 det inv transpose/tp trace/tr rref rank nullity\n\

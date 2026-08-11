@@ -464,6 +464,40 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
   | _ => false
+-- PR S: rewrite rules, hyperbolics, abs
+#guard
+  match parse "simplify(sin(x)^2 + cos(x)^2)" with
+  | .ok e => simplify e == ofInt 1
+  | _ => false
+#guard
+  match parse "simplify(abs(-x))" with
+  | .ok e => e == abs x || simplify e == abs x
+  | _ => false
+#guard
+  match parse "simplify(abs(abs(x)))" with
+  | .ok e => simplify e == abs x
+  | _ => false
+#guard
+  match parse "diff(sinh(x))" with
+  | .ok e => simplify e == cosh x
+  | _ => false
+#guard
+  match parse "diff(cosh(x))" with
+  | .ok e => simplify e == sinh x
+  | _ => false
+#guard
+  match parse "simplify(sinh(-x))" with
+  | .ok e => simplify e == neg (sinh x)
+  | _ => false
+#guard
+  match parse "simplify(cosh(-x))" with
+  | .ok e => simplify e == cosh x
+  | _ => false
+#guard
+  match parse "simplify(exp(a)*exp(b))" with
+  | .ok e =>
+      simplify e == exp (add (var "a") (var "b"))
+  | _ => false
 -- PR Q: decimals + numeric N
 #guard
   match parse "0.5" with

@@ -104,7 +104,8 @@ partial def invClearFactors : Expr → List Expr
     | none => invClearFactors base
   | pow base e => invClearFactors base ++ invClearFactors e
   | add a b => invClearFactors a ++ invClearFactors b
-  | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => invClearFactors e
+  | sin e | cos e | tan e | sinh e | cosh e | tanh e
+  | exp e | ln e | atan e | abs e | re e | im e | conj e => invClearFactors e
   | eq a b | lt a b | le a b => invClearFactors a ++ invClearFactors b
   | _ => []
 
@@ -489,7 +490,7 @@ where
     | ln _ => 0
     | var _ => 1
     | pow (var _) _ => 1
-    | sin _ | cos _ | tan _ => 2
+    | sin _ | cos _ | tan _ | sinh _ | cosh _ | tanh _ => 2
     | exp _ => 3
     | _ => 4
   chooseU (fs : List Expr) : Option (Expr × List Expr) :=

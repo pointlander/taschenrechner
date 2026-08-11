@@ -41,13 +41,20 @@ where
     | sin a, v => mul (cos a) (diffRaw a v)
     | cos a, v => mul (neg (sin a)) (diffRaw a v)
     | tan a, v =>
-      -- (tan u)' = (1 + tan^2 u) * u'  =  sec^2 u * u'
+      -- (tan u)' = (1 + tan^2 u) * u'
       mul (add one (pow (tan a) (ofInt 2))) (diffRaw a v)
+    | sinh a, v => mul (cosh a) (diffRaw a v)
+    | cosh a, v => mul (sinh a) (diffRaw a v)
+    | tanh a, v =>
+      -- (tanh u)' = (1 - tanh² u) * u'
+      mul (sub one (pow (tanh a) (ofInt 2))) (diffRaw a v)
     | exp a, v => mul (exp a) (diffRaw a v)
     | ln a, v => div (diffRaw a v) a
     | atan a, v =>
-      -- (atan u)' = u' / (1 + u²)
       div (diffRaw a v) (add one (pow a (ofInt 2)))
+    | abs a, v =>
+      -- d/dx |u| = u' · u / |u|  (real; undefined at 0)
+      mul (div a (abs a)) (diffRaw a v)
     | re a, v => re (diffRaw a v)
     | im a, v => im (diffRaw a v)
     | conj a, v => conj (diffRaw a v)

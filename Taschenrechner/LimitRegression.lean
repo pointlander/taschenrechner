@@ -149,7 +149,27 @@ def suite : List Case := [
           match CplxConst.toRat? c with
           | some q => Float.abs (ratToFloat q - 2.718) < 0.01
           | none => false
-      | none => false }
+      | none => false },
+  -- PR S: rewrites / hyperbolics / abs
+  { name := "sin²+cos² → 1"
+    input := "simplify(sin(x)^2+cos(x)^2)"
+    check := fun e => simplify e == ofInt 1 },
+  { name := "abs(-x) → |x|"
+    input := "simplify(abs(-x))"
+    check := fun e => simplify e == abs x },
+  { name := "diff sinh"
+    input := "diff(sinh(x))"
+    check := fun e => simplify e == cosh x },
+  { name := "diff cosh"
+    input := "diff(cosh(x))"
+    check := fun e => simplify e == sinh x },
+  { name := "sinh odd / cosh even"
+    input := "simplify(sinh(-x)+cosh(-x))"
+    check := fun e =>
+      equivNF e (add (neg (sinh x)) (cosh x)) },
+  { name := "exp product"
+    input := "simplify(exp(2)*exp(3))"
+    check := fun e => simplify e == exp (ofInt 5) }
 ]
 
 structure CaseResult where
@@ -196,6 +216,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 24
+#guard suite.length ≥ 30
 
 end Taschenrechner.LimitRegression

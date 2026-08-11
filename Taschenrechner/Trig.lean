@@ -133,9 +133,13 @@ partial def trigRewrite1 (e : Expr) : Expr :=
     -- tan u = sin u / cos u
     let a := trigRewrite1 a
     Expr.div (sin a) (cos a)
+  | sinh a => sinh (trigRewrite1 a)
+  | cosh a => cosh (trigRewrite1 a)
+  | tanh a => tanh (trigRewrite1 a)
   | exp a => exp (trigRewrite1 a)
   | ln a => ln (trigRewrite1 a)
   | atan a => atan (trigRewrite1 a)
+  | abs a => abs (trigRewrite1 a)
   | re a => re (trigRewrite1 a)
   | im a => im (trigRewrite1 a)
   | conj a => conj (trigRewrite1 a)

@@ -279,9 +279,13 @@ inductive Expr where
   | sin   : Expr → Expr
   | cos   : Expr → Expr
   | tan   : Expr → Expr
+  | sinh  : Expr → Expr
+  | cosh  : Expr → Expr
+  | tanh  : Expr → Expr
   | exp   : Expr → Expr
   | ln    : Expr → Expr
   | atan  : Expr → Expr
+  | abs   : Expr → Expr
   | re    : Expr → Expr
   | im    : Expr → Expr
   | conj  : Expr → Expr
@@ -336,7 +340,8 @@ partial def freeVars : Expr → List String
   | var v => [v]
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       (freeVars a ++ freeVars b).eraseDups
-  | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e => freeVars e
+  | sin e | cos e | tan e | sinh e | cosh e | tanh e
+  | exp e | ln e | atan e | abs e | re e | im e | conj e => freeVars e
   | mat rows =>
     rows.toList.foldl (fun acc row =>
       row.toList.foldl (fun acc e => (acc ++ freeVars e).eraseDups) acc) []
@@ -348,7 +353,8 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   | var name => name == v
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       dependsOn a v || dependsOn b v
-  | sin a | cos a | tan a | exp a | ln a | atan a | re a | im a | conj a => dependsOn a v
+  | sin a | cos a | tan a | sinh a | cosh a | tanh a
+  | exp a | ln a | atan a | abs a | re a | im a | conj a => dependsOn a v
   | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
 /-- Structural equality (not algebraic). -/
@@ -361,9 +367,13 @@ partial def beq : Expr → Expr → Bool
   | sin a, sin b => beq a b
   | cos a, cos b => beq a b
   | tan a, tan b => beq a b
+  | sinh a, sinh b => beq a b
+  | cosh a, cosh b => beq a b
+  | tanh a, tanh b => beq a b
   | exp a, exp b => beq a b
   | ln a, ln b => beq a b
   | atan a, atan b => beq a b
+  | abs a, abs b => beq a b
   | re a, re b => beq a b
   | im a, im b => beq a b
   | conj a, conj b => beq a b
@@ -396,9 +406,13 @@ partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
   | sin a => sin (subst a v val)
   | cos a => cos (subst a v val)
   | tan a => tan (subst a v val)
+  | sinh a => sinh (subst a v val)
+  | cosh a => cosh (subst a v val)
+  | tanh a => tanh (subst a v val)
   | exp a => exp (subst a v val)
   | ln a => ln (subst a v val)
   | atan a => atan (subst a v val)
+  | abs a => abs (subst a v val)
   | re a => re (subst a v val)
   | im a => im (subst a v val)
   | conj a => conj (subst a v val)
@@ -480,7 +494,8 @@ partial def termDegree (e : Expr) (v : String) : Int :=
       else termDegree base v
     | none => termDegree base v
   | pow base _ => termDegree base v
-  | sin e | cos e | tan e | exp e | ln e | atan e | re e | im e | conj e =>
+  | sin e | cos e | tan e | sinh e | cosh e | tanh e
+  | exp e | ln e | atan e | abs e | re e | im e | conj e =>
       -- transcendental: sort after polynomials of same “priority”
       100 + termDegree e v
   | eq a b | lt a b | le a b => max (termDegree a v) (termDegree b v)
@@ -545,9 +560,13 @@ partial def toString : Expr → String
   | sin e => s!"sin({toString e})"
   | cos e => s!"cos({toString e})"
   | tan e => s!"tan({toString e})"
+  | sinh e => s!"sinh({toString e})"
+  | cosh e => s!"cosh({toString e})"
+  | tanh e => s!"tanh({toString e})"
   | exp e => s!"exp({toString e})"
   | ln e => s!"ln({toString e})"
   | atan e => s!"atan({toString e})"
+  | abs e => s!"|{toString e}|"
   | re e => s!"re({toString e})"
   | im e => s!"im({toString e})"
   | conj e => s!"conj({toString e})"
