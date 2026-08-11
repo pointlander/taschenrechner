@@ -11,6 +11,7 @@ import Taschenrechner.Risch
 import Taschenrechner.Env
 import Taschenrechner.Normal
 import Taschenrechner.Eval
+import Taschenrechner.Numeric
 import Taschenrechner.Solve
 import Taschenrechner.Series
 import Taschenrechner.Eigen
@@ -462,6 +463,36 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "seriesmul(1/(1-x), 1/(1-x), 2)" with
   | .ok e =>
       equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
+  | _ => false
+-- PR Q: decimals + numeric N
+#guard
+  match parse "0.5" with
+  | .ok e => simplify e == ofRat ⟨1, 2⟩
+  | _ => false
+#guard
+  match parse "1.25" with
+  | .ok e => simplify e == ofRat ⟨5, 4⟩
+  | _ => false
+#guard
+  match parse "0.5 + 0.5" with
+  | .ok e => simplify e == ofInt 1
+  | _ => false
+#guard
+  match parse "N(sin(1), 4)" with
+  | .ok e =>
+      -- ≈ 0.8415
+      match eval? e with
+      | some c =>
+          match CplxConst.toRat? c with
+          | some q =>
+              let f := ratToFloat q
+              Float.abs (f - 0.8415) < 0.001
+          | none => false
+      | none => false
+  | _ => false
+#guard
+  match parse "N(1/2)" with
+  | .ok e => simplify e == ofRat ⟨1, 2⟩
   | _ => false
 #guard
   match parse "series(sin(x), 3)" with

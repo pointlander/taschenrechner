@@ -23,6 +23,7 @@ import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Normal
 import Taschenrechner.Eval
+import Taschenrechner.Numeric
 import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
@@ -44,7 +45,7 @@ open Taschenrechner.Expr
 /-! ### Tokens -/
 
 inductive Token where
-  | num   : Int → Token
+  | num   : RatConst → Token
   | ident : String → Token
   | plus | minus | star | slash | caret | middot
   | eq | lt | le | gt | ge
@@ -54,7 +55,7 @@ inductive Token where
   deriving Repr, DecidableEq, Inhabited
 
 def Token.toString : Token → String
-  | .num n => s!"{n}"
+  | .num r => RatConst.toString r
   | .ident s => s
   | .plus => "+"
   | .minus => "-"
@@ -113,17 +114,38 @@ def tokenize (input : String) : Except String (Array Token) := do
     let c := cs[i]!
     if isSpace c then
       i := i + 1
-    else if isDigit c then
+    else if isDigit c || (c == '.' && i + 1 < len && isDigit cs[i + 1]!) then
+      -- Integer or decimal literal → exact rational (1.5 → 3/2, .25 → 1/4)
       let start := i
-      i := i + 1
-      while i < len && isDigit cs[i]! do
+      let mut intDigits : String := ""
+      let mut fracDigits : String := ""
+      if c == '.' then
         i := i + 1
-      if i < len && cs[i]! == '.' then
-        throw s!"decimal literals are not supported (use fractions like 1/2); at position {start}"
-      let digits := charsToString (cs.extract start i).toList
-      match digits.toInt? with
-      | some n => out := out.push (.num n)
-      | none => throw s!"invalid number '{digits}'"
+        let fstart := i
+        while i < len && isDigit cs[i]! do
+          i := i + 1
+        fracDigits := charsToString (cs.extract fstart i).toList
+        intDigits := "0"
+      else
+        while i < len && isDigit cs[i]! do
+          i := i + 1
+        intDigits := charsToString (cs.extract start i).toList
+        if i < len && cs[i]! == '.' then
+          i := i + 1
+          let fstart := i
+          while i < len && isDigit cs[i]! do
+            i := i + 1
+          fracDigits := charsToString (cs.extract fstart i).toList
+      match intDigits.toInt?, (if fracDigits.isEmpty then some (0 : Int) else fracDigits.toInt?) with
+      | some ip, some fp =>
+        if fracDigits.isEmpty then
+          out := out.push (.num (RatConst.ofInt ip))
+        else
+          let k := fracDigits.length
+          let den := Nat.pow 10 k
+          let num : Int := ip * (den : Int) + (if ip < 0 then -fp else fp)
+          out := out.push (.num (RatConst.normalize ⟨num, den⟩))
+      | _, _ => throw s!"invalid number at position {start}"
     else if isAlpha c then
       let start := i
       i := i + 1
@@ -244,6 +266,13 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
   | "eval", [e, v, val] | "at", [e, v, val] => do
       let v ← asVarName v
       pure (evalAtOrSimplify e v val)
+  -- "N" is lowercased to "n" here; only capital N is a builtin (see isBuiltinName)
+  | "n", [e] | "numeric", [e] | "num", [e] =>
+      N e 6
+  | "n", [e, d] | "numeric", [e, d] | "num", [e, d] =>
+      match asNatDim d with
+      | some k => N e k
+      | none => throw "N: expected non-negative integer digit count"
   | "euler", [e] => pure (eulerExpand e)
   | "det", [e] =>
     match asMat? e with
@@ -655,6 +684,8 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
       throw s!"{name} expects 1 or 3 arguments: eval(expr) or eval(expr, var, value), got {args.length}"
+  | "n", _ | "numeric", _ | "num", _ =>
+      throw s!"{name} expects N(e) or N(e, digits), got {args.length} args"
   | _, _ =>
       throw s!"unknown function '{name}'"
 where
@@ -760,6 +791,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "abs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
+    || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
     || n == "apart" || n == "pf" || n == "partialfractions"
     || n == "taylor" || n == "maclaurin" || n == "series" || n == "laurent"
@@ -858,7 +890,7 @@ partial def parsePower (env : Env) (p : Parser) : Except String (Expr × Parser)
 
 partial def parseAtom (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   match p.peek with
-  | .num n => pure (Expr.ofInt n, p.advance)
+  | .num r => pure (Expr.ofRat r, p.advance)
   | .ident name => parseIdent env name p.advance
   | .lparen =>
     let (e, p) ← parseExpr env p.advance
@@ -1203,7 +1235,7 @@ def helpText : String :=
   "Taschenrechner — expression language\n\
   \n\
   Expressions:\n\
-    numbers     0, 42, -3\n\
+    numbers     0, 42, -3, 1.5, 0.25  (decimals → exact rationals)\n\
     variables   x, y, theta\n\
     ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
@@ -1231,6 +1263,7 @@ def helpText : String :=
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
+                N(e)  N(e, digits)  numeric(e)  — float approx, default 6 digits\n\
   \n\
   Commands:\n\
     <expr>\n\

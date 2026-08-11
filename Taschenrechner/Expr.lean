@@ -72,11 +72,67 @@ def powInt (a : RatConst) (n : Int) : Option RatConst :=
     | none => none
     | some a' => some (powNat a' n.natAbs)
 
+/-- Count factors of prime `p` in `n` (n > 0). -/
+partial def factorCount (n p : Nat) : Nat :=
+  if n == 0 || p ≤ 1 then 0
+  else if n % p == 0 then 1 + factorCount (n / p) p
+  else 0
+
+/-- Remove all factors of `p` from `n`. -/
+partial def stripPrime (n p : Nat) : Nat :=
+  if n == 0 || p ≤ 1 then n
+  else if n % p == 0 then stripPrime (n / p) p
+  else n
+
+/-- Zero-pad digit list on the left to width `n`. -/
+partial def padLeftZeros (ds : List Char) (n : Nat) : List Char :=
+  if ds.length ≥ n then ds else padLeftZeros ('0' :: ds) n
+
+/-- Strip trailing `'0'` from a digit list. -/
+partial def rstripZeros (ds : List Char) : List Char :=
+  match ds.reverse with
+  | [] => ['0']
+  | '0' :: rest => rstripZeros rest.reverse
+  | _ => if ds.isEmpty then ['0'] else ds
+
+/--
+  Decimal rendering when the denominator's primes are only 2 and/or 5
+  (e.g. 1/2 → `0.5`, 3/4 → `0.75`, 1/3 → none).
+-/
+def toDecimalString? (r : RatConst) : Option String :=
+  let r := normalize r
+  if r.den == 1 then none  -- prefer plain integer form
+  else
+    let d := r.den
+    let a := factorCount d 2
+    let b := factorCount d 5
+    let rest := stripPrime (stripPrime d 2) 5
+    if rest != 1 then none
+    else
+      let k := max a b
+      let scale2 := Nat.pow 2 (k - a)
+      let scale5 := Nat.pow 5 (k - b)
+      let mag : Nat := r.num.natAbs * scale2 * scale5
+      let sign := if r.num < 0 then "-" else ""
+      if k == 0 then some s!"{sign}{mag}"
+      else
+        let tenK := Nat.pow 10 k
+        let whole := mag / tenK
+        let frac := mag % tenK
+        let fracCs := rstripZeros (padLeftZeros (toString frac).toList k)
+        let fracS := String.ofList fracCs
+        if fracS == "0" then some s!"{sign}{whole}"
+        else some s!"{sign}{whole}.{fracS}"
+
 def toString (r : RatConst) : String :=
   let r := normalize r
   if r.den == 1 then s!"{r.num}"
-  else if r.num < 0 then s!"-{-r.num}/{r.den}"
-  else s!"{r.num}/{r.den}"
+  else
+    match toDecimalString? r with
+    | some s => s
+    | none =>
+      if r.num < 0 then s!"-{-r.num}/{r.den}"
+      else s!"{r.num}/{r.den}"
 
 instance : ToString RatConst where
   toString := toString

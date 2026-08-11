@@ -10,6 +10,8 @@ import Taschenrechner.Normal
 import Taschenrechner.Limit
 import Taschenrechner.Matrix
 import Taschenrechner.Expr
+import Taschenrechner.Eval
+import Taschenrechner.Numeric
 
 namespace Taschenrechner.LimitRegression
 
@@ -122,7 +124,32 @@ def suite : List Case := [
   { name := "taylor still works"
     input := "taylor(exp(x), 2)"
     check := fun e =>
-      equivNF e (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr)) }
+      equivNF e (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr)) },
+  -- PR Q: decimals + N
+  { name := "decimal 0.5"
+    input := "0.5"
+    check := fun e => simplify e == ofRat ⟨1, 2⟩ },
+  { name := "decimal arithmetic"
+    input := "1.5 * 2"
+    check := fun e => simplify e == ofInt 3 },
+  { name := "N(sqrt(2), 4)"
+    input := "N(sqrt(2), 4)"
+    check := fun e =>
+      match eval? e with
+      | some c =>
+          match CplxConst.toRat? c with
+          | some q => Float.abs (ratToFloat q - 1.4142) < 0.001
+          | none => false
+      | none => false },
+  { name := "N(exp(1), 3)"
+    input := "N(exp(1), 3)"
+    check := fun e =>
+      match eval? e with
+      | some c =>
+          match CplxConst.toRat? c with
+          | some q => Float.abs (ratToFloat q - 2.718) < 0.01
+          | none => false
+      | none => false }
 ]
 
 structure CaseResult where
@@ -169,6 +196,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 20
+#guard suite.length ≥ 24
 
 end Taschenrechner.LimitRegression

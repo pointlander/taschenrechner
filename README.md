@@ -2,7 +2,8 @@
 
 A small **computer algebra system** written in [Lean 4](https://lean-lang.org/), supporting:
 
-- Symbolic expression trees with exact rational coefficients  
+- Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
+- **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
 - Algebraic simplification, expansion, and **normal forms** (`cancel` / `together` / `nf`)
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **systems** `solve(x+y=1,x-y=3)` → `x = 2, y = -1`; **intervals** `solve(x^2-1>0)` → `(-∞, -1) ∪ (1, ∞)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
@@ -53,6 +54,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
+| `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
 | `Taschenrechner.Solve` | `factor`, scalar/`system`/`inequality` `solve`, `roots`, `coeff` |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
@@ -78,10 +80,14 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 
 ```
 x^2 + 3*x + 1
+0.5                  # decimal → exact 1/2 (prints as 0.5)
+1.25 + 0.75          # → 2
 2x(x+1)              # juxtaposition = multiply
 sin(x^2)
 -x^2 + 1             # unary minus; ^ binds tighter → -(x^2)
 2+3*i                # complex rationals ℚ(i)
+N(sin(1), 4)         # → 0.8415  (numeric approx)
+N(sqrt(2))           # → 1.414214 (default 6 digits)
 euler(exp(i*x))      # → cos(x) + i·sin(x)
 [1, 2; 3, 4]         # 2×2 matrix
 det([1, 2; 3, 4])    # −2
@@ -129,6 +135,10 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `subst(e, v, a)` / `subs(...)` | Replace free `v` by `a`, then simplify |
 | `eval(e)` | Exact eval in ℚ(i) when ground; else simplify |
 | `eval(e, v, a)` / `at(e, v, a)` | Substitute then exact-eval if possible |
+| `N(e)` / `numeric(e)` | Float approx of ground expr (default 6 digits after decimal) |
+| `N(e, n)` | Same with `n` digits (max 12); result is a rounded rational |
+
+Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is `2^a·5^b` print as decimals (e.g. `1/2` → `0.5`); others stay as fractions (`1/3`).
 
 **Factor, solve, systems & inequalities**
 
