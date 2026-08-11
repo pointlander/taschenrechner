@@ -4,12 +4,13 @@
   * `plot(f)`              — f(x) on [-10, 10]
   * `plot(f, a, b)`        — range [a, b]
   * `plot(f, x, a, b)`     — free variable `x`
-  * `plot(f, a, b, n)`     — n sample points
+  * `plot(f, a, b, n)`     — n sample points (or gnuplot samples)
   * `plot(f, x, a, b, n)`
-  * Optional PNG: `plot(f, a, b, "out.png")` via string is not supported;
-    use `plotpng(f, path, a, b)` instead.
+  * `plotpng(f[, …])`      — write PNG instead of interactive window
 
-  Builds a temp data file + gnuplot script and runs `gnuplot -persist`.
+  Prefer **native gnuplot formulas** (`plot sin(x)`) when the expression
+  uses only ops/functions gnuplot supports. Otherwise sample in Lean and
+  feed a data file.
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -128,7 +129,7 @@ def formatPlotData (pts : Array (Float × Option Float)) : String :=
       | some y => lines := lines ++ [s!"{x} {y}"]
     pure (String.intercalate "\n" lines ++ "\n")
 
-/-- Escape a string for double-quoted gnuplot titles. -/
+/-- Escape a string for double-quoted gnuplot titles / paths. -/
 def gnuplotEscape (s : String) : String :=
   (s.replace "\\" "\\\\").replace "\"" "\\\""
 
@@ -137,9 +138,108 @@ def shortTitle (t : String) : String :=
   if t.length ≤ 60 then t
   else String.ofList (t.toList.take 57) ++ "..."
 
-/-- Build gnuplot script that reads `dataPath`. -/
-def formatGnuplotScript (s : PlotSpec) (dataPath : String) : String :=
-  let title := gnuplotEscape (shortTitle (Expr.toString s.expr))
+/-- Parenthesize a gnuplot subexpression when needed. -/
+def gpParen (s : String) : String := s!"({s})"
+
+/--
+  Translate `e` to a gnuplot formula in free variable `v`.
+  Returns `none` if the expression uses features gnuplot cannot evaluate
+  (matrices, relations, free symbols other than `v`, complex non-reals, …).
+-/
+partial def toGnuplotFormula? (e : Expr) (v : String) : Option String :=
+  go (simplify e)
+where
+  go : Expr → Option String
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q =>
+      if q.den == 1 then some s!"{q.num}"
+      else some s!"({q.num}.0/{q.den}.0)"
+    | none => none  -- pure imaginary / complex
+  | var name =>
+    if name == v then some name
+    else if isInfName name then none
+    else none  -- other free symbols not supported natively
+  | add a b =>
+    match go a, go b with
+    | some sa, some sb => some s!"({sa})+({sb})"
+    | _, _ => none
+  | mul a b =>
+    -- Detect a * b^(-1) → a/b
+    match a, b with
+    | _, pow d (const r) =>
+      match CplxConst.toRat? r, go a, go d with
+      | some q, some sa, some sd =>
+        if q == RatConst.negOne then some s!"({sa})/({sd})"
+        else
+          match go b with
+          | some sb => some s!"({sa})*({sb})"
+          | none => none
+      | _, _, _ =>
+        match go a, go b with
+        | some sa, some sb => some s!"({sa})*({sb})"
+        | _, _ => none
+    | pow d (const r), _ =>
+      match CplxConst.toRat? r, go b, go d with
+      | some q, some sb, some sd =>
+        if q == RatConst.negOne then some s!"({sb})/({sd})"
+        else
+          match go a with
+          | some sa => some s!"({sa})*({sb})"
+          | none => none
+      | _, _, _ =>
+        match go a, go b with
+        | some sa, some sb => some s!"({sa})*({sb})"
+        | _, _ => none
+    | _, _ =>
+      match go a, go b with
+      | some sa, some sb => some s!"({sa})*({sb})"
+      | _, _ => none
+  | pow a b =>
+    match b with
+    | const r =>
+      match CplxConst.toRat? r with
+      | some q =>
+        if q == ⟨1, 2⟩ then
+          match go a with
+          | some sa => some s!"sqrt({sa})"
+          | none => none
+        else if q == RatConst.negOne then
+          match go a with
+          | some sa => some s!"(1.0)/({sa})"
+          | none => none
+        else
+          match go a with
+          | some sa =>
+            if q.den == 1 then some s!"({sa})**({q.num})"
+            else some s!"({sa})**({q.num}.0/{q.den}.0)"
+          | none => none
+      | none => none
+    | _ =>
+      match go a, go b with
+      | some sa, some sb => some s!"({sa})**({sb})"
+      | _, _ => none
+  | sin a => match go a with | some s => some s!"sin({s})" | none => none
+  | cos a => match go a with | some s => some s!"cos({s})" | none => none
+  | tan a => match go a with | some s => some s!"tan({s})" | none => none
+  | sinh a => match go a with | some s => some s!"sinh({s})" | none => none
+  | cosh a => match go a with | some s => some s!"cosh({s})" | none => none
+  | tanh a => match go a with | some s => some s!"tanh({s})" | none => none
+  | exp a => match go a with | some s => some s!"exp({s})" | none => none
+  | ln a => match go a with | some s => some s!"log({s})" | none => none  -- gnuplot log = ln
+  | atan a => match go a with | some s => some s!"atan({s})" | none => none
+  | abs a => match go a with | some s => some s!"abs({s})" | none => none
+  | re a => go a  -- real-valued path only
+  | im a =>
+    match go a with
+    | some _ => some "0"  -- real embedding
+    | none => none
+  | conj a => go a
+  | eq _ _ | lt _ _ | le _ _ | mat _ => none
+
+/-- Shared terminal / axes setup for gnuplot scripts. -/
+def gnuplotPreamble (s : PlotSpec) (title : String) : String :=
+  let title := gnuplotEscape title
   let term :=
     match s.pngPath with
     | some path =>
@@ -148,52 +248,100 @@ def formatGnuplotScript (s : PlotSpec) (dataPath : String) : String :=
         "set terminal qt size 900,600 enhanced font 'sans,12' persist\n"
   term ++
     "set grid\n" ++
-    "set xlabel '" ++ s.var ++ "'\n" ++
+    s!"set xlabel '{s.var}'\n" ++
     "set ylabel 'y'\n" ++
     s!"set title \"{title}\"\n" ++
     "set zeroaxis lt -1\n" ++
-    s!"plot '{gnuplotEscape dataPath}' using 1:2 with lines lw 2 title \"{title}\"\n" ++
-    (match s.pngPath with
-     | some _ => "set output\n"
-     | none => "")
+    -- Use the CAS free variable as gnuplot's dummy independent variable
+    s!"set dummy {s.var}\n" ++
+    s!"set samples {s.nPoints}\n"
+
+def gnuplotEpilogue (s : PlotSpec) : String :=
+  match s.pngPath with
+  | some _ => "set output\n"
+  | none => ""
+
+/-- Native formula plot: `plot [lo:hi] <formula>`. -/
+def formatGnuplotScriptNative (s : PlotSpec) (formula : String) : String :=
+  let title := shortTitle (Expr.toString s.expr)
+  gnuplotPreamble s title ++
+    s!"plot [{s.lo}:{s.hi}] {formula} with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
+    gnuplotEpilogue s
+
+/-- Data-file plot (sampled in Lean). -/
+def formatGnuplotScriptData (s : PlotSpec) (dataPath : String) : String :=
+  let title := shortTitle (Expr.toString s.expr)
+  gnuplotPreamble s title ++
+    s!"plot [{s.lo}:{s.hi}] '{gnuplotEscape dataPath}' using 1:2 with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
+    gnuplotEpilogue s
 
 /-- Count successfully sampled points. -/
 def countValid (pts : Array (Float × Option Float)) : Nat :=
   pts.foldl (fun n p => match p.2 with | some _ => n + 1 | none => n) 0
 
-/--
-  Run gnuplot for the given spec.
-  Returns a human-readable status message or an error.
--/
-def runPlot (s : PlotSpec) : IO (Except String String) := do
-  -- Ensure gnuplot exists
-  let which ← IO.Process.output { cmd := "which", args := #["gnuplot"] }
-  if which.exitCode != 0 then
-    return .error "plot: gnuplot not found in PATH (install gnuplot)"
-  let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
-  let nOk := countValid pts
-  if nOk == 0 then
-    return .error "plot: no finite real sample points (check domain / free variables)"
-  let tmp ← IO.FS.createTempDir
-  let dataPath := tmp / "data.dat"
-  let scriptPath := tmp / "plot.gp"
-  IO.FS.writeFile dataPath (formatPlotData pts)
-  IO.FS.writeFile scriptPath (formatGnuplotScript s (toString dataPath))
+/-- Invoke gnuplot on a script file. -/
+def invokeGnuplot (scriptPath : String) (persist : Bool) : IO (Except String Unit) := do
   let r ← IO.Process.output {
     cmd := "gnuplot"
-    args :=
-      match s.pngPath with
-      | some _ => #[toString scriptPath]
-      | none => #["-persist", toString scriptPath]
+    args := if persist then #["-persist", scriptPath] else #[scriptPath]
   }
   if r.exitCode != 0 then
     let err := r.stderr.trimAscii.toString
     return .error s!"plot: gnuplot failed (exit {r.exitCode}){if err.isEmpty then "" else s!": {err}"}"
-  let msg :=
-    match s.pngPath with
-    | some p => s!"plotted {nOk} points → {p}"
-    | none => s!"plotted {nOk} points on [{s.lo}, {s.hi}] (gnuplot window)"
-  return .ok msg
+  return .ok ()
+
+/--
+  Run gnuplot for the given spec.
+  Uses a **native gnuplot formula** when possible; otherwise samples in Lean.
+-/
+def runPlot (s : PlotSpec) : IO (Except String String) := do
+  let which ← IO.Process.output { cmd := "which", args := #["gnuplot"] }
+  if which.exitCode != 0 then
+    return .error "plot: gnuplot not found in PATH (install gnuplot)"
+  let tmp ← IO.FS.createTempDir
+  let scriptPath := tmp / "plot.gp"
+  match toGnuplotFormula? s.expr s.var with
+  | some formula =>
+    IO.FS.writeFile scriptPath (formatGnuplotScriptNative s formula)
+    match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+    | .error err =>
+      -- Rare: formula parse failed in gnuplot → fall back to sampling
+      let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
+      let nOk := countValid pts
+      if nOk == 0 then return .error err
+      let dataPath := tmp / "data.dat"
+      IO.FS.writeFile dataPath (formatPlotData pts)
+      IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
+      match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+      | .error err2 => return .error err2
+      | .ok () =>
+        let msg :=
+          match s.pngPath with
+          | some p => s!"plotted {nOk} samples (data fallback) → {p}"
+          | none => s!"plotted {nOk} samples (data fallback) on [{s.lo}, {s.hi}]"
+        return .ok msg
+    | .ok () =>
+      let msg :=
+        match s.pngPath with
+        | some p => s!"plotted via gnuplot formula → {p}\n  {formula}"
+        | none => s!"plotted via gnuplot formula on [{s.lo}, {s.hi}]\n  {s.var} ↦ {formula}"
+      return .ok msg
+  | none =>
+    let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
+    let nOk := countValid pts
+    if nOk == 0 then
+      return .error "plot: no finite real sample points (and expression is not a native gnuplot formula)"
+    let dataPath := tmp / "data.dat"
+    IO.FS.writeFile dataPath (formatPlotData pts)
+    IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
+    match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+    | .error err => return .error err
+    | .ok () =>
+      let msg :=
+        match s.pngPath with
+        | some p => s!"plotted {nOk} samples → {p}"
+        | none => s!"plotted {nOk} samples on [{s.lo}, {s.hi}] (gnuplot window)"
+      return .ok msg
 
 /-- Build a plot spec from parser arguments (expressions). -/
 def buildPlotSpec (args : List Expr) : Except String PlotSpec := do

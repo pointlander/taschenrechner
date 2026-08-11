@@ -286,20 +286,22 @@ lake exe taschenrechner 'seriesmul(1/(1-x), 1/(1-x), 3)' # → 1 + 2x + 3x² + 4
 
 Requires [`gnuplot`](http://www.gnuplot.info/) on `PATH`. Interactive plots use the `qt` terminal with `-persist`; `plotpng` writes a PNG via `pngcairo`.
 
+When the expression only uses gnuplot-supported ops (`+ − * / ^`, `sin/cos/tan`, `sinh/cosh/tanh`, `exp`, `ln`→`log`, `atan`, `abs`, `sqrt`), Taschenrechner sends a **native formula** (`plot sin(x)`). Otherwise it **samples** the expression in Lean and plots the data file.
+
 | Form | Meaning |
 |------|---------|
-| `plot(f)` | Plot `f` vs `x` on `[-10, 10]` (~400 samples) |
+| `plot(f)` | Plot `f` vs `x` on `[-10, 10]` |
 | `plot(f, a, b)` | Range `[a, b]` |
 | `plot(f, x, a, b)` | Free variable `x` |
-| `plot(f, a, b, n)` | `n` sample points |
+| `plot(f, a, b, n)` | `n` samples / gnuplot sample count |
 | `plotpng(f)` | Write `plot.png` (default range) |
 | `plotpng(f, a, b)` | PNG on `[a, b]` |
 | `plotpng(f, name, a, b)` | PNG `name.png` on `[a, b]` |
 
 ```bash
-lake exe taschenrechner 'plot(sin(x))'
+lake exe taschenrechner 'plot(sin(x))'                 # native gnuplot formula
 lake exe taschenrechner 'plot(x^2, -2, 2)'
-lake exe taschenrechner 'plot(exp(-x^2), t, -3, 3)'   # if f uses t: plot(exp(-t^2), t, -3, 3)
+lake exe taschenrechner 'plot(exp(-x^2), -3, 3)'
 lake exe taschenrechner 'plotpng(sin(x)*exp(-x/4), -12, 12)'
 ```
 

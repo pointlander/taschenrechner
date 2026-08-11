@@ -466,7 +466,24 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
   | _ => false
--- Plot sampling (no gnuplot window required)
+-- Plot: native gnuplot formulas + sampling fallback
+#guard
+  match toGnuplotFormula? (sin x) "x" with
+  | some s => s.contains "sin"
+  | none => false
+#guard
+  match toGnuplotFormula? (div (sin x) (cos x)) "x" with
+  | some s => s.contains "sin" && s.contains "cos"
+  | none => false
+#guard
+  match toGnuplotFormula? (exp (mul (negOne) (pow x (ofInt 2)))) "x" with
+  | some s => s.contains "exp"
+  | none => false
+#guard
+  -- free symbol other than x → not native
+  match toGnuplotFormula? (mul (var "a") (sin x)) "x" with
+  | none => true
+  | some _ => false
 #guard
   match buildPlotSpec [sin x] with
   | .ok s => s.var == "x" && s.nPoints == 400
