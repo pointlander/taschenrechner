@@ -450,6 +450,20 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       equivNF e (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr))
   | _ => false
 #guard
+  match parse "laurent(1/(1-x), 3)" with
+  | .ok e =>
+      equivNF e (1 + x + x ^ (2 : Expr) + x ^ (3 : Expr))
+  | _ => false
+#guard
+  match parse "laurent(1/x, 2)" with
+  | .ok e => equivNF e ((1 : Expr) / x)
+  | _ => false
+#guard
+  match parse "seriesmul(1/(1-x), 1/(1-x), 2)" with
+  | .ok e =>
+      equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr))
+  | _ => false
+#guard
   match parse "series(sin(x), 3)" with
   | .ok e =>
       equivNF e (x - (1 : Expr) / (6 : Expr) * x ^ (3 : Expr))

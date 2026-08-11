@@ -468,6 +468,37 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       match asNatDim n with
       | some k => pure (maclaurin e v k)
       | none => throw s!"{name}: expected non-negative integer order"
+  | "laurent", [e, n] =>
+      match asNatDim n with
+      | some k => laurent e "x" zero k
+      | none => throw "laurent: expected non-negative integer order"
+  | "laurent", [e, a, n] => do
+      -- laurent(f, a, n) about a in x, or laurent(f, x, n) about 0
+      match asVarName a, asNatDim n with
+      | .ok v, some k => laurent e v zero k
+      | _, some k => laurent e "x" a k
+      | _, none => throw "laurent: expected non-negative integer order"
+  | "laurent", [e, v, a, n] => do
+      let v ← asVarName v
+      match asNatDim n with
+      | some k => laurent e v a k
+      | none => throw "laurent: expected non-negative integer order"
+  | "seriesadd", [f, g, n] | "sadd", [f, g, n] =>
+      match asNatDim n with
+      | some k => seriesAdd f g "x" zero k
+      | none => throw "seriesadd: expected non-negative integer order"
+  | "seriesadd", [f, g, a, n] | "sadd", [f, g, a, n] =>
+      match asNatDim n with
+      | some k => seriesAdd f g "x" a k
+      | none => throw "seriesadd: expected non-negative integer order"
+  | "seriesmul", [f, g, n] | "smul", [f, g, n] =>
+      match asNatDim n with
+      | some k => seriesMul f g "x" zero k
+      | none => throw "seriesmul: expected non-negative integer order"
+  | "seriesmul", [f, g, a, n] | "smul", [f, g, a, n] =>
+      match asNatDim n with
+      | some k => seriesMul f g "x" a k
+      | none => throw "seriesmul: expected non-negative integer order"
   | "limit", [e, a] | "lim", [e, a] =>
       -- default variable x, two-sided
       match (limitAt e "x" a).toExpr? with
@@ -604,6 +635,12 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       throw s!"taylor expects taylor(f,n) | taylor(f,x,n) | taylor(f,a,n) | taylor(f,x,a,n), got {args.length} args"
   | "maclaurin", _ | "series", _ =>
       throw s!"{name} expects {name}(f,n) or {name}(f,x,n), got {args.length} args"
+  | "laurent", _ =>
+      throw s!"laurent expects laurent(f,n) | laurent(f,a,n) | laurent(f,x,a,n), got {args.length} args"
+  | "seriesadd", _ | "sadd", _ =>
+      throw s!"seriesadd expects seriesadd(f,g,n) or seriesadd(f,g,a,n), got {args.length} args"
+  | "seriesmul", _ | "smul", _ =>
+      throw s!"seriesmul expects seriesmul(f,g,n) or seriesmul(f,g,a,n), got {args.length} args"
   | "limit", _ | "lim", _ =>
       throw s!"{name} expects limit(e,a) | limit(e,x,a) | limit(e,a,side) | limit(e,x,a,side), got {args.length} args"
   | "limleft", _ | "limitleft", _ | "limright", _ | "limitright", _ =>
@@ -725,7 +762,8 @@ def isBuiltinName (name : String) : Bool :=
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
     || n == "apart" || n == "pf" || n == "partialfractions"
-    || n == "taylor" || n == "maclaurin" || n == "series"
+    || n == "taylor" || n == "maclaurin" || n == "series" || n == "laurent"
+    || n == "seriesadd" || n == "sadd" || n == "seriesmul" || n == "smul"
     || n == "limit" || n == "lim" || n == "limleft" || n == "limitleft"
     || n == "limright" || n == "limitright" || n == "poleorder" || n == "ord"
     || n == "classify" || n == "singularity"
@@ -1184,6 +1222,7 @@ def helpText : String :=
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
+                laurent(f, n)  laurent(f, a, n)  seriesadd/seriesmul(f,g,n)\n\
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
                 sum(expr, k, lo, hi)  dsolve(eq)  (y'/yp; y''/ypp; C/C1/C2)\n\

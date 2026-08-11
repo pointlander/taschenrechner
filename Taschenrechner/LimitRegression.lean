@@ -91,7 +91,38 @@ def suite : List Case := [
     check := fun e => isInfPos e },
   { name := "limit side -1 = left"
     input := "limit(1/x, 0, -1)"
-    check := fun e => isInfNeg e }
+    check := fun e => isInfNeg e },
+  -- PR P: Laurent series & series arithmetic
+  { name := "laurent 1/x"
+    input := "laurent(1/x, 2)"
+    check := fun e => equivNF e ((1 : Expr) / x) },
+  { name := "laurent 1/x²"
+    input := "laurent(1/x^2, 1)"
+    check := fun e => equivNF e ((1 : Expr) / (x ^ (2 : Expr))) },
+  { name := "laurent geometric 1/(1-x)"
+    input := "laurent(1/(1-x), 3)"
+    check := fun e =>
+      equivNF e (1 + x + x ^ (2 : Expr) + x ^ (3 : Expr)) },
+  { name := "laurent about a=1"
+    input := "laurent(1/(x-1), 1, 2)"
+    check := fun e => equivNF e ((1 : Expr) / (x - 1)) },
+  { name := "laurent removable → Taylor"
+    input := "laurent((x^2-1)/(x-1), 1, 2)"
+    check := fun e => equivNF e (x + 1) },
+  { name := "seriesmul 1/(1-x)² coeffs"
+    input := "seriesmul(1/(1-x), 1/(1-x), 3)"
+    check := fun e =>
+      -- 1 + 2x + 3x² + 4x³
+      equivNF e (1 + (2 : Expr) * x + (3 : Expr) * x ^ (2 : Expr)
+        + (4 : Expr) * x ^ (3 : Expr)) },
+  { name := "seriesadd 1/x + 1/(1-x)"
+    input := "seriesadd(1/x, 1/(1-x), 2)"
+    check := fun e =>
+      equivNF e ((1 : Expr) / x + 1 + x + x ^ (2 : Expr)) },
+  { name := "taylor still works"
+    input := "taylor(exp(x), 2)"
+    check := fun e =>
+      equivNF e (1 + x + (1 : Expr) / (2 : Expr) * x ^ (2 : Expr)) }
 ]
 
 structure CaseResult where
@@ -125,7 +156,7 @@ def formatReport (results : List CaseResult) : String :=
     results.map fun r =>
       let mark := if r.passed then "✓" else "✗"
       s!"  {mark}  {r.name}: {r.detail}"
-  String.intercalate "\n" (s!"Limit regression: {n}/{total} passed" :: lines)
+  String.intercalate "\n" (s!"Limit/series regression: {n}/{total} passed" :: lines)
 
 def runSuiteIO : IO UInt32 := do
   let results := runSuite
@@ -138,6 +169,6 @@ def runSuiteIO : IO UInt32 := do
     pure 1
 
 #guard allPassed (runSuite suite)
-#guard suite.length ≥ 12
+#guard suite.length ≥ 20
 
 end Taschenrechner.LimitRegression

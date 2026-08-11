@@ -12,7 +12,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Limits**: two-sided & one-sided, ±∞ (`oo`), pole order / `classify`
 - **Radical integrals**: √(x²±a²), 1/√(a²−x²), … (verified)
 - **Partial fractions**: `apart` / `pf`
-- **Taylor / Maclaurin series**: `taylor`, `series`, `maclaurin`
+- **Taylor / Maclaurin / Laurent series**: `taylor`, `series`, `laurent`, `seriesadd` / `seriesmul`
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
@@ -54,7 +54,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Solve` | `factor`, scalar/`system`/`inequality` `solve`, `roots`, `coeff` |
-| `Taschenrechner.Series` | Taylor / Maclaurin series |
+| `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff, systems `Y'=AY` |
@@ -240,12 +240,20 @@ lake exe taschenrechner 'apart(1/((x-1)*(x-2)))'    # → 1/(x-2) − 1/(x-1)
 | `taylor(f, n)` | Maclaurin poly of degree ≤ n in `x` |
 | `taylor(f, x, a, n)` | Taylor about `a` |
 | `series(f, n)` / `maclaurin(f, n)` | Same as Maclaurin |
+| `laurent(f, n)` | Laurent about 0 through degree n (rationals exact) |
+| `laurent(f, a, n)` / `laurent(f, x, a, n)` | Laurent about `a` |
+| `seriesadd(f, g, n)` / `sadd(...)` | Truncated sum of series about 0 |
+| `seriesmul(f, g, n)` / `smul(...)` | Truncated product of series about 0 |
 
 ```bash
 lake exe taschenrechner 'int(x^2, 0, 1)'             # → 1/3
 lake exe taschenrechner 'int(sin(x), 0, 0)'           # → 0
 lake exe taschenrechner 'taylor(exp(x), 3)'           # → 1 + x + x²/2 + x³/6
 lake exe taschenrechner 'series(sin(x), 5)'           # → x − x³/6 + x⁵/120
+lake exe taschenrechner 'laurent(1/x^2, 1)'           # → 1/x²
+lake exe taschenrechner 'laurent(1/(1-x), 3)'         # → 1 + x + x² + x³
+lake exe taschenrechner 'laurent(1/(x-1), 1, 2)'      # → 1/(x−1)
+lake exe taschenrechner 'seriesmul(1/(1-x), 1/(1-x), 3)' # → 1 + 2x + 3x² + 4x³
 ```
 
 ```bash
