@@ -1,11 +1,17 @@
 /-
   Plot expressions with gnuplot.
 
-  * `plot(f)`              — f vs free var (default x); no xrange forced
+  * `plot` / `plot()` / `gnuplot` — gnuplot command-line shell
+  * `plot(f)`              — plot f, then drop into the gnuplot CLI
   * `plot(f, a, b)`        — optional sample window [a,b] if data fallback
   * `plot(f, x, a, b)`     — free variable `x`
   * `plot(f, a, b, n)`     — n samples / gnuplot `set samples`
-  * `plotpng(f[, …])`      — write PNG instead of interactive window
+  * `plotpng(f[, …])`      — write PNG instead of an interactive session
+
+  On a TTY, interactive `plot` starts gnuplot and **feeds commands on
+  stdin**, then runs a `gnuplot>` prompt that forwards lines to that
+  process. Type gnuplot commands (`set xrange [-5:5]`, `replot`,
+  `help`, …); `quit` / `exit` returns to the CAS.
 
   Prefer **native gnuplot formulas** (`plot sin(x)`) with gnuplot's default
   axis scaling. Do **not** emit `plot [lo:hi] …`. Data fallback still samples
@@ -21,6 +27,16 @@ namespace Taschenrechner
 
 open Expr
 
+/-- How to drive gnuplot after writing the script. -/
+inductive PlotMode where
+  /-- Write PNG and wait. -/
+  | png
+  /-- Hand the TTY to gnuplot's interactive CLI. -/
+  | shell
+  /-- No TTY: detach, persist the window, pause until it is closed. -/
+  | detach
+  deriving Repr, BEq, Inhabited
+
 /-- Plot specification. -/
 structure PlotSpec where
   expr    : Expr
@@ -28,29 +44,44 @@ structure PlotSpec where
   lo      : Float := -10
   hi      : Float := 10
   nPoints : Nat := 400
-  /-- If set, write a PNG instead of an interactive window. -/
+  /-- If set, write a PNG instead of an interactive session. -/
   pngPath : Option String := none
+  /-- Bare gnuplot CLI with no curve preloaded. -/
+  shellOnly : Bool := false
   deriving Repr, Inhabited
 
 /-- Marker prefix for plot-spec matrices. -/
 def plotMarker : String := "__plot__"
 
+/-- Marker for a bare gnuplot CLI session (`plot()` / `plot`). -/
+def plotShellMarker : String := "__plot_shell__"
+
 /-- Encode a plot request as an expression (for the parser → CLI path). -/
 def plotSpecToExpr (s : PlotSpec) : Expr :=
-  let loE := ofRat (floatToRat s.lo 8)
-  let hiE := ofRat (floatToRat s.hi 8)
-  let nE := ofNat s.nPoints
-  let pngE :=
-    match s.pngPath with
-    | none => var ""
-    | some p => var p
-  Expr.mat #[#[var plotMarker, s.expr, var s.var, loE, hiE, nE, pngE]]
+  if s.shellOnly then
+    Expr.mat #[#[var plotShellMarker]]
+  else
+    let loE := ofRat (floatToRat s.lo 8)
+    let hiE := ofRat (floatToRat s.hi 8)
+    let nE := ofNat s.nPoints
+    let pngE :=
+      match s.pngPath with
+      | none => var ""
+      | some p => var p
+    Expr.mat #[#[var plotMarker, s.expr, var s.var, loE, hiE, nE, pngE]]
 
 /-- Decode a plot request; `none` if not a plot marker. -/
 def asPlotSpec? (e : Expr) : Option PlotSpec :=
   match e with
   | mat rows =>
-    if rows.size == 1 && rows[0]!.size == 7 then
+    if rows.size == 1 && rows[0]!.size == 1 then
+      match rows[0]![0]! with
+      | var m =>
+        if m == plotShellMarker then
+          some { expr := var "x", shellOnly := true }
+        else none
+      | _ => none
+    else if rows.size == 1 && rows[0]!.size == 7 then
       let row := rows[0]!
       match row[0]! with
       | var m =>
@@ -237,15 +268,28 @@ where
   | eq _ _ | lt _ _ | le _ _ | mat _ => none
 
 /-- Shared terminal / axes setup for gnuplot scripts. -/
-def gnuplotPreamble (s : PlotSpec) (title : String) : String :=
+def gnuplotPreamble (s : PlotSpec) (title : String) (mode : PlotMode) : String :=
   let title := gnuplotEscape title
+  let header :=
+    match mode with
+    | .shell =>
+        "# Taschenrechner — gnuplot CLI (help; quit returns to the CAS)\n"
+    | _ => ""
   let term :=
-    match s.pngPath with
-    | some path =>
-        s!"set terminal pngcairo size 900,600 enhanced font 'sans,12'\nset output \"{gnuplotEscape path}\"\n"
-    | none =>
+    match mode with
+    | .png =>
+      match s.pngPath with
+      | some path =>
+          s!"set terminal pngcairo size 900,600 enhanced font 'sans,12'\nset output \"{gnuplotEscape path}\"\n"
+      | none =>
+          "set terminal pngcairo size 900,600 enhanced font 'sans,12'\nset output \"plot.png\"\n"
+    | .shell =>
+        -- persist: stdin is a pipe (not a tty), so the qt window must not
+        -- depend on gnuplot thinking it is an interactive session
         "set mouse\nset terminal qt size 900,600 enhanced font 'sans,12' persist\n"
-  term ++
+    | .detach =>
+        "set mouse\nset terminal qt size 900,600 enhanced font 'sans,12' persist\n"
+  header ++ term ++
     "set grid\n" ++
     s!"set xlabel '{s.var}'\n" ++
     "set ylabel 'y'\n" ++
@@ -255,96 +299,226 @@ def gnuplotPreamble (s : PlotSpec) (title : String) : String :=
     s!"set dummy {s.var}\n" ++
     s!"set samples {s.nPoints}\n"
 
-def gnuplotEpilogue (s : PlotSpec) : String :=
-  match s.pngPath with
-  | some _ => "set output\n"
-  | none => "pause mouse close\n"
+def gnuplotEpilogue (mode : PlotMode) : String :=
+  match mode with
+  | .png => "set output\n"
+  | .shell => ""  -- remain at the gnuplot> prompt
+  | .detach => "pause mouse close\n"
 
 /-- Native formula plot: let gnuplot choose the default xrange (no `[lo:hi]`). -/
-def formatGnuplotScriptNative (s : PlotSpec) (formula : String) : String :=
+def formatGnuplotScriptNative (s : PlotSpec) (formula : String) (mode : PlotMode) : String :=
   let title := shortTitle (Expr.toString s.expr)
-  gnuplotPreamble s title ++
+  gnuplotPreamble s title mode ++
     s!"plot {formula} with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
-    gnuplotEpilogue s
+    gnuplotEpilogue mode
 
 /-- Data-file plot (sampled in Lean); autoscale axes from the data. -/
-def formatGnuplotScriptData (s : PlotSpec) (dataPath : String) : String :=
+def formatGnuplotScriptData (s : PlotSpec) (dataPath : String) (mode : PlotMode) : String :=
   let title := shortTitle (Expr.toString s.expr)
-  gnuplotPreamble s title ++
+  gnuplotPreamble s title mode ++
     s!"plot '{gnuplotEscape dataPath}' using 1:2 with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
-    gnuplotEpilogue s
+    gnuplotEpilogue mode
 
 /-- Count successfully sampled points. -/
 def countValid (pts : Array (Float × Option Float)) : Nat :=
   pts.foldl (fun n p => match p.2 with | some _ => n + 1 | none => n) 0
 
-/--
-  Invoke gnuplot on a script file.
+/-- True when stdin is a terminal (so we can hand it to gnuplot). -/
+def stdinIsTty : IO Bool := do
+  (← IO.getStdin).isTty
 
-  * `wait := true`  — run to completion (PNG / batch)
-  * `wait := false` — spawn and return immediately; do not wait or kill the child
-    (`setsid` detaches so the plot survives when the CAS process exits)
+/-- Pick a driver from the spec and whether we have a TTY. -/
+def choosePlotMode (s : PlotSpec) : IO PlotMode := do
+  if s.pngPath.isSome then
+    return .png
+  else if (← stdinIsTty) then
+    return .shell
+  else
+    return .detach
+
+def gnuplotMissingError : String :=
+  "plot: gnuplot not found in PATH (install gnuplot)"
+
+/-- Check that `gnuplot` is on PATH. -/
+def ensureGnuplot : IO (Except String Unit) := do
+  let which ← IO.Process.output { cmd := "which", args := #["gnuplot"] }
+  if which.exitCode != 0 then
+    return .error gnuplotMissingError
+  return .ok ()
+
+/-- Ensure a command block ends with a newline so gnuplot executes it. -/
+def gnuplotEnsureNl (s : String) : String :=
+  if s.isEmpty || s.endsWith "\n" then s else s ++ "\n"
+
+def isGnuplotQuit (line : String) : Bool :=
+  let t := line.trimAscii.toString.toLower
+  t == "quit" || t == "exit" || t == "q" || t == ":q"
+
+/--
+  Forward user lines to a live gnuplot process (stdin is a pipe).
+  `quit` / `exit` / EOF close gnuplot and return to the CAS.
 -/
-def invokeGnuplot (scriptPath : String) (wait : Bool) : IO (Except String Unit) := do
-  if wait then
-    let r ← IO.Process.output {
-      cmd := "gnuplot"
-      args := #[scriptPath]
-    }
+partial def gnuplotStdinLoop (h : IO.FS.Handle)
+    (child : IO.Process.Child { stdin := .null }) : IO (Except String Unit) := do
+  match ← child.tryWait with
+  | some code =>
+    if code != 0 then
+      return .error s!"plot: gnuplot exited {code}"
+    return .ok ()
+  | none =>
+    IO.print "gnuplot> "
+    (← IO.getStdout).flush
+    let raw ← (← IO.getStdin).getLine
+    if raw.isEmpty then
+      try
+        h.putStr "exit\n"
+        h.flush
+      catch _ => pure ()
+      let _ ← child.wait
+      return .ok ()
+    let line := raw.trimAscii.toString
+    if line.isEmpty then
+      gnuplotStdinLoop h child
+    else if isGnuplotQuit line then
+      try
+        h.putStr "exit\n"
+        h.flush
+      catch _ => pure ()
+      let _ ← child.wait
+      return .ok ()
+    else
+      try
+        h.putStr (line ++ "\n")
+        h.flush
+      catch _ =>
+        let code ← child.wait
+        if code != 0 then
+          return .error s!"plot: gnuplot exited {code}"
+        return .ok ()
+      gnuplotStdinLoop h child
+
+/-- Banner printed before the stdin-fed gnuplot prompt. -/
+def gnuplotShellBanner : String :=
+  "(gnuplot CLI — type gnuplot commands; help; quit returns)"
+
+/--
+  Start gnuplot with piped stdin, write `commands`, then run `gnuplot>`.
+  No script file is passed on gnuplot's command line.
+-/
+def invokeGnuplotShell (commands : String) : IO (Except String Unit) := do
+  if !(← stdinIsTty) then
+    return .error "gnuplot: interactive CLI requires a terminal (use plotpng for batch)"
+  let child ← IO.Process.spawn {
+    cmd := "gnuplot"
+    stdin := .piped
+    stdout := .inherit
+    stderr := .inherit
+  }
+  let cmds := gnuplotEnsureNl commands
+  if !cmds.isEmpty then
+    child.stdin.putStr cmds
+    child.stdin.flush
+  let (h, child) ← child.takeStdin
+  IO.println gnuplotShellBanner
+  (← IO.getStdout).flush
+  gnuplotStdinLoop h child
+
+/--
+  Feed gnuplot via stdin (never a script-file argument).
+
+  * `png`    — write commands on stdin, wait for completion
+  * `shell`  — write commands, then an interactive `gnuplot>` loop
+  * `detach` — write commands (persist + pause) and return
+-/
+def invokeGnuplot (commands : String) (mode : PlotMode) : IO (Except String Unit) := do
+  match mode with
+  | .png =>
+    let r ← IO.Process.output { cmd := "gnuplot" } (some (gnuplotEnsureNl commands))
     if r.exitCode != 0 then
       let err := r.stderr.trimAscii.toString
       return .error s!"plot: gnuplot failed (exit {r.exitCode}){if err.isEmpty then "" else s!": {err}"}"
     return .ok ()
-  else
-    -- Leave the process running (pause mouse close keeps the window open).
-    let _ ← IO.Process.spawn {
+  | .shell =>
+    invokeGnuplotShell commands
+  | .detach =>
+    let child ← IO.Process.spawn {
       cmd := "gnuplot"
-      args := #[scriptPath]
-      stdin := .null
+      stdin := .piped
       stdout := .null
       stderr := .null
       setsid := true
     }
+    child.stdin.putStr (gnuplotEnsureNl commands)
+    child.stdin.flush
+    let _ ← child.takeStdin
     return .ok ()
+
+/-- Enter a bare gnuplot command-line session (no curve preloaded). -/
+def runBareGnuplotShell : IO (Except String String) := do
+  match ← ensureGnuplot with
+  | .error err => return .error err
+  | .ok () => pure ()
+  match ← invokeGnuplotShell "" with
+  | .error err => return .error err
+  | .ok () => return .ok "(left gnuplot)"
+
+/-- Status line for a finished / detached plot. -/
+def plotResultMessage (s : PlotSpec) (mode : PlotMode) (detail : String) : String :=
+  match mode with
+  | .png =>
+    match s.pngPath with
+    | some p => s!"{detail} → {p}"
+    | none => detail
+  | .shell => s!"{detail}\n{gnuplotShellBanner}"
+  | .detach => s!"{detail}\n(gnuplot left running)"
 
 /--
   Run gnuplot for the given spec.
   Uses a **native gnuplot formula** when possible; otherwise samples in Lean.
-  Interactive windows are spawned without waiting on the gnuplot process.
+  On a TTY, interactive plots hand the terminal to the gnuplot CLI.
 -/
 def runPlot (s : PlotSpec) : IO (Except String String) := do
-  let which ← IO.Process.output { cmd := "which", args := #["gnuplot"] }
-  if which.exitCode != 0 then
-    return .error "plot: gnuplot not found in PATH (install gnuplot)"
-  let waitForExit := s.pngPath.isSome
+  match ← ensureGnuplot with
+  | .error err => return .error err
+  | .ok () => pure ()
+  if s.shellOnly then
+    return (← runBareGnuplotShell)
+  let mode ← choosePlotMode s
   let tmp ← IO.FS.createTempDir
-  let scriptPath := tmp / "plot.gp"
+  let finish (commands msg : String) : IO (Except String String) := do
+    match mode with
+    | .shell =>
+      IO.println msg
+      (← IO.getStdout).flush
+      match ← invokeGnuplot commands mode with
+      | .error err => return .error err
+      | .ok () => return .ok "(left gnuplot)"
+    | _ =>
+      match ← invokeGnuplot commands mode with
+      | .error err => return .error err
+      | .ok () => return .ok msg
   match toGnuplotFormula? s.expr s.var with
   | some formula =>
-    IO.FS.writeFile scriptPath (formatGnuplotScriptNative s formula)
-    match ← invokeGnuplot (toString scriptPath) waitForExit with
-    | .error err =>
-      -- Rare: formula parse failed in gnuplot → fall back to sampling
-      let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
-      let nOk := countValid pts
-      if nOk == 0 then return .error err
-      let dataPath := tmp / "data.dat"
-      IO.FS.writeFile dataPath (formatPlotData pts)
-      IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-      match ← invokeGnuplot (toString scriptPath) waitForExit with
-      | .error err2 => return .error err2
+    let commands := formatGnuplotScriptNative s formula mode
+    -- PNG: if the formula is rejected, fall back to sampled data.
+    -- Shell: errors show on gnuplot's stderr; the prompt stays up.
+    if mode == .png then
+      match ← invokeGnuplot commands mode with
+      | .error err =>
+        let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
+        let nOk := countValid pts
+        if nOk == 0 then return .error err
+        let dataPath := tmp / "data.dat"
+        IO.FS.writeFile dataPath (formatPlotData pts)
+        let commands := formatGnuplotScriptData s (toString dataPath) mode
+        match ← invokeGnuplot commands mode with
+        | .error err2 => return .error err2
+        | .ok () =>
+          return .ok (plotResultMessage s mode s!"plotted {nOk} samples (data fallback)")
       | .ok () =>
-        let msg :=
-          match s.pngPath with
-          | some p => s!"plotted {nOk} samples (data fallback) → {p}"
-          | none => s!"plotted {nOk} samples (data fallback; gnuplot left running)"
-        return .ok msg
-    | .ok () =>
-      let msg :=
-        match s.pngPath with
-        | some p => s!"plotted via gnuplot formula → {p}\n  {formula}"
-        | none => s!"plotted via gnuplot formula (gnuplot left running)\n  {s.var} ↦ {formula}"
-      return .ok msg
+        return .ok (plotResultMessage s mode s!"plotted via gnuplot formula\n  {formula}")
+    else
+      finish commands (plotResultMessage s mode s!"plotted via gnuplot formula\n  {s.var} ↦ {formula}")
   | none =>
     let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
     let nOk := countValid pts
@@ -352,15 +526,15 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
       return .error "plot: no finite real sample points (and expression is not a native gnuplot formula)"
     let dataPath := tmp / "data.dat"
     IO.FS.writeFile dataPath (formatPlotData pts)
-    IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-    match ← invokeGnuplot (toString scriptPath) waitForExit with
-    | .error err => return .error err
-    | .ok () =>
-      let msg :=
-        match s.pngPath with
-        | some p => s!"plotted {nOk} samples → {p}"
-        | none => s!"plotted {nOk} samples (gnuplot left running)"
-      return .ok msg
+    let commands := formatGnuplotScriptData s (toString dataPath) mode
+    let detail := s!"plotted {nOk} samples"
+    match mode with
+    | .png =>
+      match ← invokeGnuplot commands mode with
+      | .error err => return .error err
+      | .ok () => return .ok (plotResultMessage s mode detail)
+    | _ =>
+      finish commands (plotResultMessage s mode detail)
 
 /-- Build a plot spec from parser arguments (expressions). -/
 def buildPlotSpec (args : List Expr) : Except String PlotSpec := do
@@ -381,6 +555,8 @@ def buildPlotSpec (args : List Expr) : Except String PlotSpec := do
       | none => throw "plot: point count must be an integer ≥ 2"
     | _ => throw "plot: point count must be an integer ≥ 2"
   match args with
+  | [] =>
+    pure { expr := var "x", shellOnly := true }
   | [f] =>
     pure { expr := f, var := "x", lo := -10, hi := 10, nPoints := 400 }
   | [f, a, b] =>
@@ -451,7 +627,7 @@ def buildPlotSpec (args : List Expr) : Except String PlotSpec := do
       | _ => throw "plot: PNG path must be an identifier or quoted name (use plotpng)"
     pure { expr := f, var := v, lo := lo, hi := hi, nPoints := n, pngPath := some path }
   | _ =>
-    throw "plot: plot(f) | plot(f,a,b) | plot(f,x,a,b) | plot(f,a,b,n) | plot(f,x,a,b,n) [| png path]"
+    throw "plot: plot | plot() | plot(f) | plot(f,a,b) | plot(f,x,a,b) | plot(f,a,b,n) | plot(f,x,a,b,n) [| png path]"
 
 /-- Convenience: plot and write PNG (default `plot.png`). -/
 def buildPlotPngSpec (args : List Expr) : Except String PlotSpec := do

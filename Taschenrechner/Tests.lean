@@ -498,6 +498,39 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some s => s.lo < 0 && s.hi > 0
       | none => false
   | _ => false
+#guard
+  match buildPlotSpec [] with
+  | .ok s => s.shellOnly
+  | _ => false
+#guard
+  match parse "plot()" with
+  | .ok e =>
+      match asPlotSpec? e with
+      | some s => s.shellOnly
+      | none => false
+  | _ => false
+#guard
+  match parseCommand "plot" with
+  | .ok .gnuplot => true
+  | _ => false
+#guard
+  match parseCommand "gnuplot" with
+  | .ok .gnuplot => true
+  | _ => false
+#guard
+  match parseCommand "gp" with
+  | .ok .gnuplot => true
+  | _ => false
+#guard
+  let s : PlotSpec := { expr := sin x }
+  let shell := formatGnuplotScriptNative s "sin(x)" .shell
+  let detach := formatGnuplotScriptNative s "sin(x)" .detach
+  shell.contains "plot sin(x)"
+    && !shell.contains "pause"
+    && detach.contains "pause mouse close"
+    && detach.contains "persist"
+#guard
+  isGnuplotQuit "quit" && isGnuplotQuit " EXIT " && !isGnuplotQuit "replot"
 -- ASCII art layout
 #guard
   let art := asciiArt (div (add (pow x (ofInt 2)) one) (sub x one))

@@ -9,7 +9,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **linear & 2-var polynomial systems** (resultant); **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **ASCII art** multi-line output for fractions, powers, matrices, and equations
-- **Plotting** via **gnuplot**: `plot(sin(x))`, `plot(f, a, b)`, `plotpng(f)`
+- **Plotting** via **gnuplot**: `plot(sin(x))` drops into the gnuplot CLI; `plotpng(f)` writes a PNG
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
@@ -32,7 +32,7 @@ lake exe taschenrechner 'x^2 + 2x + 1'  # parse & print (ASCII art when multi-li
 lake exe taschenrechner '(x^2+1)/(x-1)' # stacked fraction
 lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
-lake exe taschenrechner 'plot(sin(x))'           # gnuplot window (needs gnuplot)
+lake exe taschenrechner 'plot(sin(x))'           # plot + gnuplot CLI (needs gnuplot)
 lake exe taschenrechner 'plotpng(sin(x), -6.28, 6.28)'  # → plot.png
 lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
@@ -60,7 +60,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Rewrite` | Identity rewrite table (trig/hyperbolic/abs/exp) |
 | `Taschenrechner.AsciiArt` | Multi-line ASCII layout (`asciiArt`, fractions/powers) |
-| `Taschenrechner.Plot` | Sample curves and drive **gnuplot** (`plot` / `plotpng`) |
+| `Taschenrechner.Plot` | Sample curves and drive **gnuplot** (`plot` CLI / `plotpng`) |
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
@@ -284,24 +284,26 @@ lake exe taschenrechner 'seriesmul(1/(1-x), 1/(1-x), 3)' # → 1 + 2x + 3x² + 4
 
 **Plotting (gnuplot)**
 
-Requires [`gnuplot`](http://www.gnuplot.info/) on `PATH`. Interactive plots use the `qt` terminal with `set mouse` / `pause mouse close`; `plotpng` writes a PNG via `pngcairo`.
+Requires [`gnuplot`](http://www.gnuplot.info/) on `PATH`. On a terminal, `plot` / `plot(f)` **starts gnuplot and feeds commands on stdin**, then a `gnuplot>` prompt forwards further lines. Type any gnuplot command (`set xrange [-5:5]`, `replot`, `set title "…"`, `help`, …); `quit` or `exit` returns to the CAS (or the shell). `plotpng` writes a PNG via `pngcairo` and does not enter the CLI.
 
 When the expression only uses gnuplot-supported ops (`+ − * / ^`, `sin/cos/tan`, `sinh/cosh/tanh`, `exp`, `ln`→`log`, `atan`, `abs`, `sqrt`), Taschenrechner sends a **native formula** (`plot sin(x)`). Otherwise it **samples** the expression in Lean and plots the data file.
 
-**No x-range is forced** in the gnuplot script (gnuplot’s default axes / autoscale). Optional `a,b` only set the Lean sampling window used if a data fallback is needed (default sample window `[-10,10]`).
+**No x-range is forced** in the gnuplot script (gnuplot’s default axes / autoscale). Optional `a,b` only set the Lean sampling window used if a data fallback is needed (default sample window `[-10,10]`). Without a TTY (pipes / CI), interactive plots detach as before (`persist` + `pause mouse close`).
 
 | Form | Meaning |
 |------|---------|
-| `plot(f)` | Plot `f` vs `x` (native formula if possible) |
+| `plot` / `plot()` / `gnuplot` | Bare gnuplot CLI (no curve) |
+| `plot(f)` | Plot `f` vs `x`, then gnuplot CLI |
 | `plot(f, a, b)` | Optional sample window `[a,b]` for data fallback |
 | `plot(f, x, a, b)` | Free variable `x` |
 | `plot(f, a, b, n)` | `n` samples / gnuplot `set samples` |
-| `plotpng(f)` | Write `plot.png` |
+| `plotpng(f)` | Write `plot.png` (no CLI) |
 | `plotpng(f, a, b)` | PNG; `a,b` only for sample fallback |
 | `plotpng(f, name, a, b)` | PNG `name.png` |
 
 ```bash
-lake exe taschenrechner 'plot(sin(x))'                 # native; default gnuplot axes
+lake exe taschenrechner 'plot(sin(x))'                 # native + gnuplot>
+lake exe taschenrechner plot                           # empty gnuplot shell
 lake exe taschenrechner 'plot(x^2)'
 lake exe taschenrechner 'plot(exp(-x^2))'
 lake exe taschenrechner 'plotpng(sin(x)*exp(-x/4))'

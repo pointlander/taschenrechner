@@ -1038,6 +1038,7 @@ inductive Command where
   | save      : String → Command
   | load      : String → Command
   | help      : Command
+  | gnuplot   : Command
   deriving Repr
 
 private def isKeyword (k : String) : Bool :=
@@ -1177,6 +1178,8 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
   let lower := trimmed.toLower
   if lower == "help" || lower == "?" then
     pure .help
+  else if lower == "plot" || lower == "gnuplot" || lower == "gp" then
+    pure .gnuplot
   else if lower == "vars" || lower == "bindings" then
     pure .vars
   else if lower == "clear" then
@@ -1265,7 +1268,9 @@ def helpText : String :=
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
     functions   sin cos tan sinh cosh tanh exp ln log sqrt atan abs cabs\n\
                 re im conj  rewrite(e)  hyperexpand(e)  ascii(e)\n\
-                plot(f)  plot(f,a,b)  plot(f,x,a,b)  plotpng(f)  (needs gnuplot)\n\
+                plot  plot()  gnuplot   — gnuplot command-line shell\n\
+                plot(f)  plot(f,a,b)  plot(f,x,a,b)  then gnuplot CLI (quit to return)\n\
+                plotpng(f)  write PNG (needs gnuplot)\n\
     complex     i  (or I);  2+3*i;  euler(exp(i*x)) → cos+i·sin\n\
     matrices    [1, 2; 3, 4]  or  matrix(1, 2; 3, 4)\n\
                 det inv transpose/tp trace/tr rref rank nullity\n\
@@ -1306,6 +1311,8 @@ def helpText : String :=
     cancel <expr>\n\
     together <expr>\n\
     nf / normal <expr>\n\
+    plot / plot() / gnuplot  gnuplot command line (quit returns)\n\
+    plot(<expr>[, …])        plot, then gnuplot CLI\n\
     help\n\
   \n\
   Examples:\n\

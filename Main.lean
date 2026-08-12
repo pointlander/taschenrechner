@@ -209,6 +209,14 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
   | .help =>
     IO.println helpText
     pure (0, env)
+  | .gnuplot =>
+    match ← runBareGnuplotShell with
+    | .ok msg =>
+      IO.println msg
+      pure (0, env)
+    | .error err =>
+      IO.eprintln err
+      pure (1, env)
   | .vars =>
     IO.println (Env.format env)
     pure (0, env)
@@ -360,6 +368,7 @@ def usage : String :=
   "  taschenrechner <expr-or-cmd>    evaluate one expression/command\n" ++
   "  taschenrechner -c <cmd>         same as above\n" ++
   "  taschenrechner -i               interactive REPL (with bindings)\n" ++
+  "  taschenrechner plot             gnuplot command-line shell\n" ++
   "  taschenrechner --regression     integration suite (~45 cases)\n" ++
   "  taschenrechner --matrix-regression   matrix / eigen suite\n" ++
   "  taschenrechner --limit-regression    limits / poles\n" ++
@@ -378,6 +387,7 @@ def usage : String :=
   "  taschenrechner 'x^2 + 2x + 1'\n" ++
   "  taschenrechner 'diff sin(x^2)'\n" ++
   "  taschenrechner 'int x*exp(x)'\n" ++
+  "  taschenrechner 'plot(sin(x))'   # then gnuplot>\n" ++
   "  taschenrechner 'sum(k, 1, n, k)'\n" ++
   "  taschenrechner 'dsolve(yp + y = 0)'\n" ++
   "  taschenrechner 'A := eye(2); det(A)'"
@@ -406,8 +416,9 @@ def main (args : List String) : IO UInt32 := do
   | ["--all-regression"] | ["-ar"] | ["--regressions"] =>
     AllRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
-    IO.println "Taschenrechner REPL  (help | vars | clear | save | load | quit)"
+    IO.println "Taschenrechner REPL  (help | vars | clear | save | load | plot | quit)"
     IO.println "  name := expr   |   stmt; stmt   |   ans   |   save/load file"
+    IO.println "  plot(f) / gnuplot   — gnuplot command line (quit returns)"
     repl Env.empty
     pure 0
   | ["-c", cmd] =>
