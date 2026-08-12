@@ -278,31 +278,51 @@ def formatGnuplotScriptData (s : PlotSpec) (dataPath : String) : String :=
 def countValid (pts : Array (Float × Option Float)) : Nat :=
   pts.foldl (fun n p => match p.2 with | some _ => n + 1 | none => n) 0
 
-/-- Invoke gnuplot on a script file. -/
-def invokeGnuplot (scriptPath : String) : IO (Except String Unit) := do
-  let r ← IO.Process.output {
-    cmd := "gnuplot"
-    args := #[scriptPath]
-  }
-  if r.exitCode != 0 then
-    let err := r.stderr.trimAscii.toString
-    return .error s!"plot: gnuplot failed (exit {r.exitCode}){if err.isEmpty then "" else s!": {err}"}"
-  return .ok ()
+/--
+  Invoke gnuplot on a script file.
+
+  * `wait := true`  — run to completion (PNG / batch)
+  * `wait := false` — spawn and return immediately; do not wait or kill the child
+    (`setsid` detaches so the plot survives when the CAS process exits)
+-/
+def invokeGnuplot (scriptPath : String) (wait : Bool) : IO (Except String Unit) := do
+  if wait then
+    let r ← IO.Process.output {
+      cmd := "gnuplot"
+      args := #[scriptPath]
+    }
+    if r.exitCode != 0 then
+      let err := r.stderr.trimAscii.toString
+      return .error s!"plot: gnuplot failed (exit {r.exitCode}){if err.isEmpty then "" else s!": {err}"}"
+    return .ok ()
+  else
+    -- Leave the process running (pause mouse close keeps the window open).
+    let _ ← IO.Process.spawn {
+      cmd := "gnuplot"
+      args := #[scriptPath]
+      stdin := .null
+      stdout := .null
+      stderr := .null
+      setsid := true
+    }
+    return .ok ()
 
 /--
   Run gnuplot for the given spec.
   Uses a **native gnuplot formula** when possible; otherwise samples in Lean.
+  Interactive windows are spawned without waiting on the gnuplot process.
 -/
 def runPlot (s : PlotSpec) : IO (Except String String) := do
   let which ← IO.Process.output { cmd := "which", args := #["gnuplot"] }
   if which.exitCode != 0 then
     return .error "plot: gnuplot not found in PATH (install gnuplot)"
+  let waitForExit := s.pngPath.isSome
   let tmp ← IO.FS.createTempDir
   let scriptPath := tmp / "plot.gp"
   match toGnuplotFormula? s.expr s.var with
   | some formula =>
     IO.FS.writeFile scriptPath (formatGnuplotScriptNative s formula)
-    match ← invokeGnuplot (toString scriptPath) with
+    match ← invokeGnuplot (toString scriptPath) waitForExit with
     | .error err =>
       -- Rare: formula parse failed in gnuplot → fall back to sampling
       let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
@@ -311,19 +331,19 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
       let dataPath := tmp / "data.dat"
       IO.FS.writeFile dataPath (formatPlotData pts)
       IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-      match ← invokeGnuplot (toString scriptPath) with
+      match ← invokeGnuplot (toString scriptPath) waitForExit with
       | .error err2 => return .error err2
       | .ok () =>
         let msg :=
           match s.pngPath with
           | some p => s!"plotted {nOk} samples (data fallback) → {p}"
-          | none => s!"plotted {nOk} samples (data fallback; gnuplot autoscaled)"
+          | none => s!"plotted {nOk} samples (data fallback; gnuplot left running)"
         return .ok msg
     | .ok () =>
       let msg :=
         match s.pngPath with
         | some p => s!"plotted via gnuplot formula → {p}\n  {formula}"
-        | none => s!"plotted via gnuplot formula (default axes)\n  {s.var} ↦ {formula}"
+        | none => s!"plotted via gnuplot formula (gnuplot left running)\n  {s.var} ↦ {formula}"
       return .ok msg
   | none =>
     let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
@@ -333,13 +353,13 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
     let dataPath := tmp / "data.dat"
     IO.FS.writeFile dataPath (formatPlotData pts)
     IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-    match ← invokeGnuplot (toString scriptPath) with
+    match ← invokeGnuplot (toString scriptPath) waitForExit with
     | .error err => return .error err
     | .ok () =>
       let msg :=
         match s.pngPath with
         | some p => s!"plotted {nOk} samples → {p}"
-        | none => s!"plotted {nOk} samples (gnuplot autoscaled)"
+        | none => s!"plotted {nOk} samples (gnuplot left running)"
       return .ok msg
 
 /-- Build a plot spec from parser arguments (expressions). -/
