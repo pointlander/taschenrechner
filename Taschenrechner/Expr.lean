@@ -61,6 +61,42 @@ def powNat (a : RatConst) (k : Nat) : RatConst :=
   | 0 => one
   | k'+1 => mul (powNat a k') a
 
+/-- Exact integer `n`-th root of a natural, if it is a perfect power. -/
+def natNthRoot? (n k : Nat) : Option Nat :=
+  if n == 0 then none
+  else if k == 0 then some 0
+  else if k == 1 || n == 1 then some k
+  else
+    Id.run do
+      let mut i : Nat := 1
+      while i ≤ k do
+        let p := Nat.pow i n
+        if p == k then return some i
+        if p > k then return none
+        i := i + 1
+      none
+
+/-- Exact rational `n`-th root, if it exists in ℚ. Odd `n` allows a negative radicand. -/
+def nthRoot? (r : RatConst) (n : Nat) : Option RatConst :=
+  let r := normalize r
+  if n == 0 then none
+  else if n == 1 then some r
+  else if r.isZero then some zero
+  else
+    let signNeg := r.num < 0
+    if signNeg && n % 2 == 0 then none
+    else
+      let mag := if signNeg then neg r else r
+      match natNthRoot? n mag.num.natAbs, natNthRoot? n mag.den with
+      | some a, some b =>
+        if b == 0 then none
+        else
+          let s := normalize ⟨(a : Int), b⟩
+          some (if signNeg then neg s else s)
+      | _, _ => none
+
+def cbrt? (r : RatConst) : Option RatConst := nthRoot? r 3
+
 def powInt (a : RatConst) (n : Int) : Option RatConst :=
   if n == 0 then some one
   else if a.isZero then
@@ -285,6 +321,8 @@ inductive Expr where
   | exp   : Expr → Expr
   | ln    : Expr → Expr
   | atan  : Expr → Expr
+  | asin  : Expr → Expr
+  | acos  : Expr → Expr
   | abs   : Expr → Expr
   | re    : Expr → Expr
   | im    : Expr → Expr
@@ -341,7 +379,8 @@ partial def freeVars : Expr → List String
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       (freeVars a ++ freeVars b).eraseDups
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | abs e | re e | im e | conj e => freeVars e
+  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
+      freeVars e
   | mat rows =>
     rows.toList.foldl (fun acc row =>
       row.toList.foldl (fun acc e => (acc ++ freeVars e).eraseDups) acc) []
@@ -354,7 +393,8 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       dependsOn a v || dependsOn b v
   | sin a | cos a | tan a | sinh a | cosh a | tanh a
-  | exp a | ln a | atan a | abs a | re a | im a | conj a => dependsOn a v
+  | exp a | ln a | atan a | asin a | acos a | abs a | re a | im a | conj a =>
+      dependsOn a v
   | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
 /-- Structural equality (not algebraic). -/
@@ -373,6 +413,8 @@ partial def beq : Expr → Expr → Bool
   | exp a, exp b => beq a b
   | ln a, ln b => beq a b
   | atan a, atan b => beq a b
+  | asin a, asin b => beq a b
+  | acos a, acos b => beq a b
   | abs a, abs b => beq a b
   | re a, re b => beq a b
   | im a, im b => beq a b
@@ -412,6 +454,8 @@ partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
   | exp a => exp (subst a v val)
   | ln a => ln (subst a v val)
   | atan a => atan (subst a v val)
+  | asin a => asin (subst a v val)
+  | acos a => acos (subst a v val)
   | abs a => abs (subst a v val)
   | re a => re (subst a v val)
   | im a => im (subst a v val)
@@ -495,7 +539,7 @@ partial def termDegree (e : Expr) (v : String) : Int :=
     | none => termDegree base v
   | pow base _ => termDegree base v
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | abs e | re e | im e | conj e =>
+  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
       -- transcendental: sort after polynomials of same “priority”
       100 + termDegree e v
   | eq a b | lt a b | le a b => max (termDegree a v) (termDegree b v)
@@ -566,6 +610,8 @@ partial def toString : Expr → String
   | exp e => s!"exp({toString e})"
   | ln e => s!"ln({toString e})"
   | atan e => s!"atan({toString e})"
+  | asin e => s!"asin({toString e})"
+  | acos e => s!"acos({toString e})"
   | abs e => s!"|{toString e}|"
   | re e => s!"re({toString e})"
   | im e => s!"im({toString e})"

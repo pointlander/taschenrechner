@@ -6,7 +6,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
 - Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`)
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
-- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **linear & 2-var polynomial systems** (resultant); **intervals** `solve(x^2-1>0)`
+- Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
+- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **ASCII art** multi-line output for fractions, powers, matrices, and equations
 - **Plotting** via **gnuplot**: `plot(sin(x))` drops into the gnuplot CLI; `plotpng(f)` writes a PNG
@@ -64,7 +65,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
-| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, `roots` |
+| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, `roots` |
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
@@ -94,6 +95,7 @@ x^2 + 3*x + 1
 1.25 + 0.75          # → 2
 2x(x+1)              # juxtaposition = multiply
 sin(x^2)
+asin(x)  acos(x)  atan(x)
 sinh(x)  cosh(x)  tanh(x)
 abs(x)               # |x|;  cabs(z) for √(re²+im²)
 rewrite(e)           # apply identity table
@@ -173,6 +175,9 @@ Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
 lake exe taschenrechner 'solve(x^2=4, x)'             # → {2, -2}
+lake exe taschenrechner 'solve(x^3-2=0, x)'           # → 2^{1/3} and complex cube roots
+lake exe taschenrechner 'solve(x^3-3*x-1=0, x)'       # → 2 cos((acos(1/2) − 2πk)/3)
+lake exe taschenrechner 'int(1/sqrt(1-x^2))'           # → asin(x)
 lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
 lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1

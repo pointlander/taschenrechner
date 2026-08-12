@@ -176,6 +176,37 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 -- Automatic verification helpers
 #guard verifyDerivative (atan x) (Expr.div (1 : Expr) (x ^ (2 : Expr) + 1)) "x"
 #guard verifyDerivative (exp x) (exp x) "x"
+#guard simplify (asin zero) == zero
+#guard simplify (acos one) == zero
+#guard simplify (sin (asin x)) == x
+#guard simplify (cos (acos x)) == x
+#guard
+  match parse "asin(x)" with
+  | .ok e => e == asin x
+  | _ => false
+#guard
+  match parse "arccos(0)" with
+  | .ok e => simplify e == acos zero
+  | _ => false
+#guard verifyDerivative (asin x)
+  (Expr.div (1 : Expr) (pow (sub one (pow x (ofInt 2))) (ofRat ⟨1, 2⟩))) "x"
+#guard verifyDerivative (acos x)
+  (neg (Expr.div (1 : Expr) (pow (sub one (pow x (ofInt 2))) (ofRat ⟨1, 2⟩)))) "x"
+#guard
+  match integrate (asin x) "x" with
+  | .success F _ => verifyDerivative F (asin x) "x"
+  | _ => false
+#guard RatConst.cbrt? ⟨8, 1⟩ == some ⟨2, 1⟩
+#guard RatConst.nthRoot? ⟨16, 1⟩ 4 == some ⟨2, 1⟩
+#guard
+  match parse "solve(x^3-2=0, x)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          rows.size == 1 && rows[0]!.size == 3
+            && rows[0]!.toList.any (· == pow (ofInt 2) (ofRat ⟨1, 3⟩))
+      | none => false
+  | _ => false
 
 -- Complex differentiation / integration
 #guard simplify (diff (I * x) "x") == I

@@ -52,6 +52,12 @@ where
     | ln a, v => div (diffRaw a v) a
     | atan a, v =>
       div (diffRaw a v) (add one (pow a (ofInt 2)))
+    | asin a, v =>
+      -- (asin u)' = u' / √(1 − u²)
+      div (diffRaw a v) (pow (sub one (pow a (ofInt 2))) (ofRat ⟨1, 2⟩))
+    | acos a, v =>
+      -- (acos u)' = −u' / √(1 − u²)
+      neg (div (diffRaw a v) (pow (sub one (pow a (ofInt 2))) (ofRat ⟨1, 2⟩)))
     | abs a, v =>
       -- d/dx |u| = u' · u / |u|  (real; undefined at 0)
       mul (div a (abs a)) (diffRaw a v)

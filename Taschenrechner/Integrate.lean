@@ -105,7 +105,8 @@ partial def invClearFactors : Expr → List Expr
   | pow base e => invClearFactors base ++ invClearFactors e
   | add a b => invClearFactors a ++ invClearFactors b
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | abs e | re e | im e | conj e => invClearFactors e
+  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
+      invClearFactors e
   | eq a b | lt a b | le a b => invClearFactors a ++ invClearFactors b
   | _ => []
 
@@ -207,6 +208,16 @@ def tableIntegral (e : Expr) (v : String) : Option Expr :=
     -- ∫ ln x = x ln x - x
     if name == v then
       some (sub (mul (var v) (ln (var v))) (var v))
+    else none
+  | asin (var name) =>
+    if name == v then
+      some (add (mul (var v) (asin (var v)))
+        (pow (sub one (pow (var v) (ofInt 2))) (ofRat ⟨1, 2⟩)))
+    else none
+  | acos (var name) =>
+    if name == v then
+      some (sub (mul (var v) (acos (var v)))
+        (pow (sub one (pow (var v) (ofInt 2))) (ofRat ⟨1, 2⟩)))
     else none
   | _ => none
 
@@ -331,8 +342,18 @@ def radicalInvSqrtIntegral (base : Expr) (a2 : Expr) (kind : Nat) (v : String) :
     -- ∫ 1/√(x²±a²) = ln|x + √(x²±a²)|
     some (simplify (ln (add x s)))
   | 2 =>
-    -- ∫ 1/√(a²−x²) = atan(x/√(a²−x²))  (= arcsin(x/a))
-    some (simplify (atan (div x s)))
+    -- ∫ 1/√(a²−x²) = asin(x/a)
+    match a2 with
+    | const c =>
+      match CplxConst.toRat? c with
+      | some q =>
+        if q.isOne then some (simplify (asin x))
+        else
+          -- asin(x/a) with a = √(a²)
+          let a := sqrtE (const c)
+          some (simplify (asin (div x a)))
+      | none => some (simplify (asin (div x (sqrtE a2))))
+    | _ => some (simplify (asin (div x (sqrtE a2))))
   | _ => none
 
 /--
@@ -487,7 +508,7 @@ partial def tryByParts (e : Expr) (v : String) (fuel : Nat)
 where
   /-- LIATE-ish priority: ln > algebraic (var/pow) > trig > exp. -/
   priority : Expr → Nat
-    | ln _ => 0
+    | ln _ | asin _ | acos _ => 0
     | var _ => 1
     | pow (var _) _ => 1
     | sin _ | cos _ | tan _ | sinh _ | cosh _ | tanh _ => 2
@@ -592,6 +613,13 @@ where
     | cos inner => tryLin inner fun u => sin u
     | exp inner => tryLin inner fun u => exp u
     | tan inner => tryLin inner fun u => neg (ln (cos u))
+    | asin inner =>
+      -- ∫ asin(u) du = u asin(u) + √(1−u²)  when u = ax+b, times 1/a
+      tryLin inner fun u =>
+        add (mul u (asin u)) (pow (sub one (pow u (ofInt 2))) (ofRat ⟨1, 2⟩))
+    | acos inner =>
+      tryLin inner fun u =>
+        sub (mul u (acos u)) (pow (sub one (pow u (ofInt 2))) (ofRat ⟨1, 2⟩))
     | pow (sin inner) (const r) =>
       -- ∫ sin², cos² not fully general; skip unless r=1
       if r.isOne then tryLin inner fun u => neg (cos u) else none

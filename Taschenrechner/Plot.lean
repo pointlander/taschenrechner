@@ -258,6 +258,8 @@ where
   | exp a => match go a with | some s => some s!"exp({s})" | none => none
   | ln a => match go a with | some s => some s!"log({s})" | none => none  -- gnuplot log = ln
   | atan a => match go a with | some s => some s!"atan({s})" | none => none
+  | asin a => match go a with | some s => some s!"asin({s})" | none => none
+  | acos a => match go a with | some s => some s!"acos({s})" | none => none
   | abs a => match go a with | some s => some s!"abs({s})" | none => none
   | re a => go a  -- real-valued path only
   | im a =>

@@ -86,7 +86,7 @@ where
             else some (simplify ⟨powNat rb.den k, powNat rb.num k⟩)
   | .pow _ _ => none
   | .sin _ | .cos _ | .tan _ | .sinh _ | .cosh _ | .tanh _
-  | .exp _ | .ln _ | .atan _ | .abs _ | .re _ | .im _ | .conj _
+  | .exp _ | .ln _ | .atan _ | .asin _ | .acos _ | .abs _ | .re _ | .im _ | .conj _
   | .eq _ _ | .lt _ _ | .le _ _ | .mat _ => none
 
 end RatFn

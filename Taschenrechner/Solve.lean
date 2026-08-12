@@ -2,7 +2,7 @@
   Scalar polynomial solving and factoring over ℚ.
 
   * `factor` — factor polynomials / rationals in one variable (and small integers)
-  * `roots` / `solve` — rational roots + quadratic formula for remaining deg-2 pieces
+  * `roots` / `solve` — rational roots, quadratic formula, binomial n-th roots, Cardano cubics
   * `coeff` / `collect` — coefficient extraction and poly collection
 -/
 import Taschenrechner.Expr
@@ -207,9 +207,125 @@ def quadraticRoots (a b c : RatConst) : List Expr :=
             let mid := Expr.ofRat (negB * inv2a)
             [simplify (add mid (mul half s)), simplify (sub mid (mul half s))]
 
+/-- Real cube root as an expression (`8 → 2`, negatives as `−(|a|)^{1/3}`). -/
+def cbrtExpr (e : Expr) : Expr :=
+  match e with
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q =>
+      match RatConst.cbrt? q with
+      | some r => ofRat r
+      | none =>
+        if q.num < 0 then
+          neg (pow (ofRat (RatConst.neg q)) (ofRat ⟨1, 3⟩))
+        else
+          pow (ofRat q) (ofRat ⟨1, 3⟩)
+    | none => pow e (ofRat ⟨1, 3⟩)
+  | _ => pow e (ofRat ⟨1, 3⟩)
+
+/-- Principal real `n`-th root of a rational, else `a^(1/n)` (sign pulled out). -/
+def nthRootExpr (a : RatConst) (n : Nat) : Expr :=
+  match RatConst.nthRoot? a n with
+  | some r => ofRat r
+  | none =>
+    if a.num < 0 && n % 2 == 1 then
+      neg (pow (ofRat (RatConst.neg a)) (ofRat ⟨1, n⟩))
+    else
+      pow (ofRat a) (ofRat ⟨1, n⟩)
+
+/-- Primitive cube roots of unity `(−1 ± i√3)/2`. -/
+def cubeRootsOfUnity : Expr × Expr :=
+  let half := ofRat ⟨1, 2⟩
+  let s3 := sqrt (ofInt 3)
+  let ω := simplify (mul half (add (negOne) (mul I s3)))
+  let ω2 := simplify (mul half (add (negOne) (neg (mul I s3))))
+  (ω, ω2)
+
+/-- Roots of `x³ = a`. -/
+def cubeRootsOf (a : Expr) : List Expr :=
+  let r := cbrtExpr a
+  let (ω, ω2) := cubeRootsOfUnity
+  [r, simplify (mul ω r), simplify (mul ω2 r)]
+
 /--
-  Roots of a univariate poly over ℚ, with quadratic formula for irreducible
-  quadratics. Higher-degree irreducibles yield no closed roots here.
+  Three roots of the depressed cubic `t³ + p t + q = 0` (`p,q ∈ ℚ`).
+  `δ > 0` Cardano (1 real); `δ = 0` multiple; `δ < 0` trig / `acos` (3 real).
+-/
+def depressedCubicRoots (p q : RatConst) : List Expr :=
+  if p.isZero && q.isZero then [zero]
+  else
+    let q2 := q * ⟨1, 2⟩
+    let p3 := p * ⟨1, 3⟩
+    let delta := q2 * q2 + p3 * p3 * p3
+    if delta.isZero then
+      let u := cbrtExpr (ofRat (RatConst.neg q2))
+      [simplify (mul (ofInt 2) u), simplify (neg u)]
+    else if delta.num > 0 then
+      let disc := sqrt (ofRat delta)
+      let u := cbrtExpr (add (ofRat (RatConst.neg q2)) disc)
+      let v := cbrtExpr (sub (ofRat (RatConst.neg q2)) disc)
+      let (ω, ω2) := cubeRootsOfUnity
+      [ simplify (add u v)
+      , simplify (add (mul ω u) (mul ω2 v))
+      , simplify (add (mul ω2 u) (mul ω v)) ]
+    else
+      -- casus irreducibilis: p < 0, three distinct real roots
+      let mp3 := RatConst.neg (p * ⟨1, 3⟩)
+      let amp := simplify (mul (ofInt 2) (sqrt (ofRat mp3)))
+      let inner := mp3 * mp3 * mp3
+      let arg := simplify (div (ofRat (RatConst.neg q2)) (sqrt (ofRat inner)))
+      let θ := acos arg
+      let pi := acos (negOne)
+      let third (e : Expr) : Expr := div e (ofInt 3)
+      let tk (k : Nat) : Expr :=
+        simplify (mul amp (cos (sub (third θ)
+          (mul (ofNat (2 * k)) (third pi)))))
+      [tk 0, tk 1, tk 2]
+
+/-- Cardano: roots of `a x³ + b x² + c x + d = 0`, `a ≠ 0`. -/
+def cubicRoots (a b c d : RatConst) : List Expr :=
+  let aa := a * a
+  let p? := RatConst.div (RatConst.ofInt 3 * a * c - b * b) (RatConst.ofInt 3 * aa)
+  let q? := RatConst.div
+    (RatConst.ofInt 2 * b * b * b
+      - RatConst.ofInt 9 * a * b * c
+      + RatConst.ofInt 27 * aa * d)
+    (RatConst.ofInt 27 * aa * a)
+  let shift? := RatConst.div b (RatConst.ofInt 3 * a)
+  match p?, q?, shift? with
+  | some p, some q, some shift =>
+    depressedCubicRoots p q |>.map fun t => simplify (sub t (ofRat shift))
+  | _, _, _ => []
+
+/-- Monic `x^n + c` (no middle terms), `n ≥ 2`. -/
+def asBinomial? (p : Poly) : Option (Nat × RatConst) :=
+  let p := Poly.monic (Poly.strip p)
+  let nI := p.deg
+  if nI < 2 then none
+  else
+    let n := nI.toNat
+    let midZero :=
+      Id.run do
+        for i in [1:n] do
+          if !(Poly.coeff p i).isZero then return false
+        pure true
+    if midZero then some (n, Poly.coeff p 0) else none
+
+/-- Real (and cube-of-unity) roots of `x^n + c0 = 0`. -/
+def binomialRoots (n : Nat) (c0 : RatConst) : List Expr :=
+  let a := RatConst.neg c0
+  if a.isZero then [zero]
+  else if n == 3 then
+    cubeRootsOf (ofRat a)
+  else
+    let r := nthRootExpr a n
+    if n % 2 == 1 then [r]
+    else if a.num > 0 then [r, simplify (neg r)]
+    else []
+
+/--
+  Roots of a univariate poly over ℚ: rational roots, quadratic formula,
+  binomial `x^n = a` (irrational n-th roots), and Cardano for irreducible cubics.
 -/
 def rootsPoly (p : Poly) : List Expr :=
   let p := Poly.strip p
@@ -230,6 +346,12 @@ def rootsPoly (p : Poly) : List Expr :=
           let b := Poly.coeff f 1
           let c0 := Poly.coeff f 0
           out := quadraticRoots a b c0 ++ out
+        else if let some (n, c0) := asBinomial? f then
+          out := binomialRoots n c0 ++ out
+        else if f.deg == 3 then
+          out := cubicRoots
+            (Poly.coeff f 3) (Poly.coeff f 2) (Poly.coeff f 1) (Poly.coeff f 0)
+            ++ out
         else
           pure ()
       pure out.reverse

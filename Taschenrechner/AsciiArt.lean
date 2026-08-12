@@ -208,6 +208,8 @@ partial def exprToBox (e : Expr) : Box :=
   | exp a => Box.funcCall "exp" (exprToBox a)
   | ln a => Box.funcCall "ln" (exprToBox a)
   | atan a => Box.funcCall "atan" (exprToBox a)
+  | asin a => Box.funcCall "asin" (exprToBox a)
+  | acos a => Box.funcCall "acos" (exprToBox a)
   | abs a =>
     let inner := exprToBox a
     if inner.height == 1 then Box.text s!"|{inner.lines[0]!}|"

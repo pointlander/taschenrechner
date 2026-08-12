@@ -58,6 +58,12 @@ partial def cmpExpr : Expr → Expr → Ordering
   | atan a, atan b => cmpExpr a b
   | atan _, _ => .lt
   | _, atan _ => .gt
+  | asin a, asin b => cmpExpr a b
+  | asin _, _ => .lt
+  | _, asin _ => .gt
+  | acos a, acos b => cmpExpr a b
+  | acos _, _ => .lt
+  | _, acos _ => .gt
   | abs a, abs b => cmpExpr a b
   | abs _, _ => .lt
   | _, abs _ => .gt
@@ -251,7 +257,16 @@ partial def simplify1 : Expr → Expr
             match CplxConst.powInt ra r.re.num with
             | some rc => const rc
             | none => pow a b
-          else pow a b
+          else
+            -- exact rational n-th roots: 8^(1/3) → 2
+            match CplxConst.toRat? ra, CplxConst.toRat? r with
+            | some q, some e =>
+              if e.num == 1 && e.den > 1 then
+                match RatConst.nthRoot? q e.den with
+                | some s => const (CplxConst.ofRat s)
+                | none => pow a b
+              else pow a b
+            | _, _ => pow a b
         | pow base e => pow base (mul e b)  -- (x^m)^n = x^(m*n)
         | _ => pow a b
     | const r, _ =>
@@ -263,11 +278,13 @@ partial def simplify1 : Expr → Expr
     let e := simplify1 e
     match e with
     | const r => if r.isZero then zero else sin e
+    | asin u => u
     | _ => sin e
   | cos e =>
     let e := simplify1 e
     match e with
     | const r => if r.isZero then one else cos e
+    | acos u => u
     | _ => cos e
   | tan e =>
     let e := simplify1 e
@@ -305,6 +322,16 @@ partial def simplify1 : Expr → Expr
     match e with
     | const r => if r.isZero then zero else atan e
     | _ => atan e
+  | asin e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then zero else asin e
+    | _ => asin e
+  | acos e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isOne then zero else acos e
+    | _ => acos e
   | abs e =>
     let e := simplify1 e
     match e with
@@ -370,7 +397,7 @@ where
     | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
         isRealValued a && isRealValued b
     | sin e | cos e | tan e | sinh e | cosh e | tanh e
-    | exp e | ln e | atan e | abs e => isRealValued e
+    | exp e | ln e | atan e | asin e | acos e | abs e => isRealValued e
     | re _ | im _ => true
     | conj e => isRealValued e
     | mat _ => false
@@ -441,6 +468,8 @@ partial def expand1 : Expr → Expr
   | exp e => exp (expand1 e)
   | ln e => ln (expand1 e)
   | atan e => atan (expand1 e)
+  | asin e => asin (expand1 e)
+  | acos e => acos (expand1 e)
   | abs e => abs (expand1 e)
   | re e => re (expand1 e)
   | im e => im (expand1 e)

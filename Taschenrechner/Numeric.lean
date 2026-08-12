@@ -57,7 +57,7 @@ def floatToRat (x : Float) (digits : Nat) : RatConst :=
 
 /--
   Numeric evaluation of a ground expression to real/imag floats.
-  Supports rationals, +, −, *, /, ^, sin, cos, tan, exp, ln, sqrt, atan, re, im, conj.
+  Supports rationals, +, −, *, /, ^, sin, cos, tan, exp, ln, sqrt, atan, asin, acos, re, im, conj.
 -/
 partial def evalFloats? (e : Expr) : Option (Float × Float) :=
   match simplify e with
@@ -144,6 +144,16 @@ partial def evalFloats? (e : Expr) : Option (Float × Float) :=
   | atan a =>
     match evalFloats? a with
     | some (r, i) => if i == 0 then some (Float.atan r, 0) else none
+    | none => none
+  | asin a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 && r ≥ -1 && r ≤ 1 then some (Float.asin r, 0) else none
+    | none => none
+  | acos a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 && r ≥ -1 && r ≤ 1 then some (Float.acos r, 0) else none
     | none => none
   | Expr.re a =>
     match evalFloats? a with

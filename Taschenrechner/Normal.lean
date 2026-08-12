@@ -114,6 +114,8 @@ partial def cancel1 : Expr → Expr
   | exp e => exp (cancel1 e)
   | ln e => ln (cancel1 e)
   | atan e => atan (cancel1 e)
+  | asin e => asin (cancel1 e)
+  | acos e => acos (cancel1 e)
   | abs e => abs (cancel1 e)
   | re e => re (cancel1 e)
   | im e => im (cancel1 e)

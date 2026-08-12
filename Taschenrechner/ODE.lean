@@ -247,6 +247,8 @@ partial def tidyExpForm : Expr → Expr
   | tanh e => tanh (tidyExpForm e)
   | ln e => ln (tidyExpForm e)
   | atan e => atan (tidyExpForm e)
+  | asin e => asin (tidyExpForm e)
+  | acos e => acos (tidyExpForm e)
   | abs e => abs (tidyExpForm e)
   | re e => re (tidyExpForm e)
   | im e => im (tidyExpForm e)

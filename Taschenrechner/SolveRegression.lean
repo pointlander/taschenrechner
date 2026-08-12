@@ -220,7 +220,39 @@ def suite : List Case := [
       s.contains "y = 1" && s.contains "x = 1" && s.contains "x = -1" },
   { name := "linear system still named"
     input := "solve(x+y=1, x-y=3)"
-    check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) }
+    check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) },
+  -- cubics / irrational n-th roots
+  { name := "solve x³=8 rational cube"
+    input := "solve(x^3-8=0, x)"
+    check := fun e => rowContains e [ofInt 2] },
+  { name := "solve x³=2 cube root"
+    input := "solve(x^3-2=0, x)"
+    check := fun e =>
+      isRow e 3 && rowContains e [pow (ofInt 2) (ofRat ⟨1, 3⟩)] },
+  { name := "solve x⁴=16 ±2"
+    input := "solve(x^4-16=0, x)"
+    check := fun e =>
+      rowContains e [ofInt 2] && rowContains e [ofInt (-2)] },
+  { name := "solve x⁴=2 fourth roots"
+    input := "solve(x^4-2=0, x)"
+    check := fun e =>
+      let r := pow (ofInt 2) (ofRat ⟨1, 4⟩)
+      rowContains e [r] && rowContains e [neg r] },
+  { name := "Cardano cubic three roots"
+    input := "solve(x^3+x+1=0, x)"
+    check := fun e => isRow e 3 },
+  { name := "casus irreducibilis three reals"
+    input := "solve(x^3-3*x-1=0, x)"
+    check := fun e =>
+      isRow e 3 &&
+        match asMat? e with
+        | some rows =>
+            rows[0]!.toList.any fun t =>
+              match t with
+              | cos _ => true
+              | mul _ (cos _) => true
+              | _ => false
+        | none => false }
 ]
 
 structure CaseResult where
