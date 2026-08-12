@@ -284,25 +284,27 @@ lake exe taschenrechner 'seriesmul(1/(1-x), 1/(1-x), 3)' # → 1 + 2x + 3x² + 4
 
 **Plotting (gnuplot)**
 
-Requires [`gnuplot`](http://www.gnuplot.info/) on `PATH`. Interactive plots use the `qt` terminal with `-persist`; `plotpng` writes a PNG via `pngcairo`.
+Requires [`gnuplot`](http://www.gnuplot.info/) on `PATH`. Interactive plots use the `qt` terminal with `set mouse` / `pause mouse close`; `plotpng` writes a PNG via `pngcairo`.
 
 When the expression only uses gnuplot-supported ops (`+ − * / ^`, `sin/cos/tan`, `sinh/cosh/tanh`, `exp`, `ln`→`log`, `atan`, `abs`, `sqrt`), Taschenrechner sends a **native formula** (`plot sin(x)`). Otherwise it **samples** the expression in Lean and plots the data file.
 
+**No x-range is forced** in the gnuplot script (gnuplot’s default axes / autoscale). Optional `a,b` only set the Lean sampling window used if a data fallback is needed (default sample window `[-10,10]`).
+
 | Form | Meaning |
 |------|---------|
-| `plot(f)` | Plot `f` vs `x` on `[-10, 10]` |
-| `plot(f, a, b)` | Range `[a, b]` |
+| `plot(f)` | Plot `f` vs `x` (native formula if possible) |
+| `plot(f, a, b)` | Optional sample window `[a,b]` for data fallback |
 | `plot(f, x, a, b)` | Free variable `x` |
-| `plot(f, a, b, n)` | `n` samples / gnuplot sample count |
-| `plotpng(f)` | Write `plot.png` (default range) |
-| `plotpng(f, a, b)` | PNG on `[a, b]` |
-| `plotpng(f, name, a, b)` | PNG `name.png` on `[a, b]` |
+| `plot(f, a, b, n)` | `n` samples / gnuplot `set samples` |
+| `plotpng(f)` | Write `plot.png` |
+| `plotpng(f, a, b)` | PNG; `a,b` only for sample fallback |
+| `plotpng(f, name, a, b)` | PNG `name.png` |
 
 ```bash
-lake exe taschenrechner 'plot(sin(x))'                 # native gnuplot formula
-lake exe taschenrechner 'plot(x^2, -2, 2)'
-lake exe taschenrechner 'plot(exp(-x^2), -3, 3)'
-lake exe taschenrechner 'plotpng(sin(x)*exp(-x/4), -12, 12)'
+lake exe taschenrechner 'plot(sin(x))'                 # native; default gnuplot axes
+lake exe taschenrechner 'plot(x^2)'
+lake exe taschenrechner 'plot(exp(-x^2))'
+lake exe taschenrechner 'plotpng(sin(x)*exp(-x/4))'
 ```
 
 ```bash

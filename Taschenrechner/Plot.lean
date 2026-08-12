@@ -1,16 +1,15 @@
 /-
   Plot expressions with gnuplot.
 
-  * `plot(f)`              — f(x) on [-10, 10]
-  * `plot(f, a, b)`        — range [a, b]
+  * `plot(f)`              — f vs free var (default x); no xrange forced
+  * `plot(f, a, b)`        — optional sample window [a,b] if data fallback
   * `plot(f, x, a, b)`     — free variable `x`
-  * `plot(f, a, b, n)`     — n sample points (or gnuplot samples)
-  * `plot(f, x, a, b, n)`
+  * `plot(f, a, b, n)`     — n samples / gnuplot `set samples`
   * `plotpng(f[, …])`      — write PNG instead of interactive window
 
-  Prefer **native gnuplot formulas** (`plot sin(x)`) when the expression
-  uses only ops/functions gnuplot supports. Otherwise sample in Lean and
-  feed a data file.
+  Prefer **native gnuplot formulas** (`plot sin(x)`) with gnuplot's default
+  axis scaling. Do **not** emit `plot [lo:hi] …`. Data fallback still samples
+  on [lo,hi] (default [-10,10]) only when a formula cannot be emitted.
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -245,7 +244,7 @@ def gnuplotPreamble (s : PlotSpec) (title : String) : String :=
     | some path =>
         s!"set terminal pngcairo size 900,600 enhanced font 'sans,12'\nset output \"{gnuplotEscape path}\"\n"
     | none =>
-        "set terminal qt size 900,600 enhanced font 'sans,12' persist\n"
+        "set mouse\nset terminal qt size 900,600 enhanced font 'sans,12' persist\n"
   term ++
     "set grid\n" ++
     s!"set xlabel '{s.var}'\n" ++
@@ -259,20 +258,20 @@ def gnuplotPreamble (s : PlotSpec) (title : String) : String :=
 def gnuplotEpilogue (s : PlotSpec) : String :=
   match s.pngPath with
   | some _ => "set output\n"
-  | none => ""
+  | none => "pause mouse close\n"
 
-/-- Native formula plot: `plot [lo:hi] <formula>`. -/
+/-- Native formula plot: let gnuplot choose the default xrange (no `[lo:hi]`). -/
 def formatGnuplotScriptNative (s : PlotSpec) (formula : String) : String :=
   let title := shortTitle (Expr.toString s.expr)
   gnuplotPreamble s title ++
-    s!"plot [{s.lo}:{s.hi}] {formula} with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
+    s!"plot {formula} with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
     gnuplotEpilogue s
 
-/-- Data-file plot (sampled in Lean). -/
+/-- Data-file plot (sampled in Lean); autoscale axes from the data. -/
 def formatGnuplotScriptData (s : PlotSpec) (dataPath : String) : String :=
   let title := shortTitle (Expr.toString s.expr)
   gnuplotPreamble s title ++
-    s!"plot [{s.lo}:{s.hi}] '{gnuplotEscape dataPath}' using 1:2 with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
+    s!"plot '{gnuplotEscape dataPath}' using 1:2 with lines lw 2 title \"{gnuplotEscape title}\"\n" ++
     gnuplotEpilogue s
 
 /-- Count successfully sampled points. -/
@@ -280,10 +279,10 @@ def countValid (pts : Array (Float × Option Float)) : Nat :=
   pts.foldl (fun n p => match p.2 with | some _ => n + 1 | none => n) 0
 
 /-- Invoke gnuplot on a script file. -/
-def invokeGnuplot (scriptPath : String) (persist : Bool) : IO (Except String Unit) := do
+def invokeGnuplot (scriptPath : String) : IO (Except String Unit) := do
   let r ← IO.Process.output {
     cmd := "gnuplot"
-    args := if persist then #["-persist", scriptPath] else #[scriptPath]
+    args := #[scriptPath]
   }
   if r.exitCode != 0 then
     let err := r.stderr.trimAscii.toString
@@ -303,7 +302,7 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
   match toGnuplotFormula? s.expr s.var with
   | some formula =>
     IO.FS.writeFile scriptPath (formatGnuplotScriptNative s formula)
-    match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+    match ← invokeGnuplot (toString scriptPath) with
     | .error err =>
       -- Rare: formula parse failed in gnuplot → fall back to sampling
       let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
@@ -312,19 +311,19 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
       let dataPath := tmp / "data.dat"
       IO.FS.writeFile dataPath (formatPlotData pts)
       IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-      match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+      match ← invokeGnuplot (toString scriptPath) with
       | .error err2 => return .error err2
       | .ok () =>
         let msg :=
           match s.pngPath with
           | some p => s!"plotted {nOk} samples (data fallback) → {p}"
-          | none => s!"plotted {nOk} samples (data fallback) on [{s.lo}, {s.hi}]"
+          | none => s!"plotted {nOk} samples (data fallback; gnuplot autoscaled)"
         return .ok msg
     | .ok () =>
       let msg :=
         match s.pngPath with
         | some p => s!"plotted via gnuplot formula → {p}\n  {formula}"
-        | none => s!"plotted via gnuplot formula on [{s.lo}, {s.hi}]\n  {s.var} ↦ {formula}"
+        | none => s!"plotted via gnuplot formula (default axes)\n  {s.var} ↦ {formula}"
       return .ok msg
   | none =>
     let pts := sampleCurve s.expr s.var s.lo s.hi s.nPoints
@@ -334,13 +333,13 @@ def runPlot (s : PlotSpec) : IO (Except String String) := do
     let dataPath := tmp / "data.dat"
     IO.FS.writeFile dataPath (formatPlotData pts)
     IO.FS.writeFile scriptPath (formatGnuplotScriptData s (toString dataPath))
-    match ← invokeGnuplot (toString scriptPath) (s.pngPath.isNone) with
+    match ← invokeGnuplot (toString scriptPath) with
     | .error err => return .error err
     | .ok () =>
       let msg :=
         match s.pngPath with
         | some p => s!"plotted {nOk} samples → {p}"
-        | none => s!"plotted {nOk} samples on [{s.lo}, {s.hi}] (gnuplot window)"
+        | none => s!"plotted {nOk} samples (gnuplot autoscaled)"
       return .ok msg
 
 /-- Build a plot spec from parser arguments (expressions). -/
