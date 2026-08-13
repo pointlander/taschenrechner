@@ -230,7 +230,7 @@ def integrateDefiniteCall (e : Expr) (v : String) (lo hi : Expr) : Except String
   | .failure msg => throw s!"integration failed: {msg}"
 
 /-- Desugar built-in function / CAS forms. -/
-def applyCall (name : String) (args : List Expr) : Except String Expr := do
+def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except String Expr := do
   let n := name.toLower
   match n, args with
   | "sin", [e] => pure (Expr.sin e)
@@ -256,12 +256,36 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
     pure (Taschenrechner.sqrt (Expr.add
       (Expr.pow (Expr.re e) (2 : Expr))
       (Expr.pow (Expr.im e) (2 : Expr))))
-  | "simplify", [e] => pure (simplify e)
+  | "simplify", [e] => pure (evalWithEnv env e)
   | "rewrite", [e] => pure (Taschenrechner.rewrite (simplify e))
   | "hyperexpand", [e] | "hexpand", [e] =>
       pure (simplify (Taschenrechner.expandHyperbolic e))
   | "ascii", [e] | "art", [e] | "pretty", [e] =>
       pure (Expr.var s!"__ascii__\n{asciiArt e}")
+  | "assume", [] =>
+      pure (assumeReqToExpr .show)
+  | "assume", [e] =>
+      match signFromRel? e with
+      | some (v, p) => pure (assumeReqToExpr (.set v p))
+      | none =>
+        match e with
+        | var v =>
+          -- `assume(x)` → x ≠ 0
+          pure (assumeReqToExpr (.set v .nonzero))
+        | _ => throw "assume: expected x>0, x>=0, x<0, x<=0, or assume(x, pos)"
+  | "assume", [v, tag] => do
+      let v ← asVarName v
+      let tag ← asVarName tag
+      match SignPred.ofTag? tag with
+      | some p => pure (assumeReqToExpr (.set v p))
+      | none => throw s!"assume: unknown predicate '{tag}' (pos/nonneg/neg/nonpos/nonzero)"
+  | "forget", [] | "unassume", [] =>
+      pure (assumeReqToExpr (.forget none))
+  | "forget", [v] | "unassume", [v] => do
+      let v ← asVarName v
+      pure (assumeReqToExpr (.forget (some v)))
+  | "assumptions", [] =>
+      pure (assumeReqToExpr .show)
   | "plot", args => do
       let s ← buildPlotSpec args
       pure (plotSpecToExpr s)
@@ -404,7 +428,7 @@ def applyCall (name : String) (args : List Expr) : Except String Expr := do
       | .error msg => throw s!"expm: {msg}"
     | none => throw "expm: expected a matrix"
   | "solve", args => do
-      solveDispatch args
+      solveDispatch (args.map (fun a => applyAssumes env (simplify a)))
   | "roots", [e] =>
     let v := Expr.primaryVar e
     pure (Expr.mat #[(roots e v).toArray])
@@ -758,7 +782,7 @@ where
       if isVar v && !isRel lhs then
         -- solve(lhs, rhs, x) equation
         let v ← asVarName v
-        solveEqExpr? lhs rhs v
+        solveRelation (eq lhs rhs) v
       else if isRel lhs && isRel rhs && isVar v then
         -- solve(eq1, eq2, x) — still 2 eqs (var hint optional)
         let _ ← asVarName v
@@ -816,6 +840,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "rewrite" || n == "hyperexpand" || n == "hexpand"
     || n == "ascii" || n == "art" || n == "pretty"
     || n == "plot" || n == "plotpng"
+    || n == "assume" || n == "forget" || n == "unassume" || n == "assumptions"
     || n == "together" || n == "nf" || n == "normal" || n == "normalform"
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
@@ -972,7 +997,7 @@ partial def parseIdent (env : Env) (name : String) (p : Parser) : Except String 
     parseMatrixBody env p.advance .rparen
   else if p.peek == .lparen && isBuiltinName name then
     let (args, p) ← parseArgList env p.advance
-    let e ← applyCall name args
+    let e ← applyCall name args env
     pure (e, p)
   else if name == "i" || name == "I" then
     pure (Expr.I, p)
@@ -1184,6 +1209,24 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
     pure .help
   else if lower == "plot" || lower == "gnuplot" || lower == "gp" then
     pure .gnuplot
+  else if lower == "assume" || lower == "assumptions" then
+    let e ← parse "assume()" env
+    pure (.expr e)
+  else if lower.startsWith "assume " then
+    let rest := strTrim (charsToString (trimmed.toList.drop 7))
+    let e ← parse s!"assume({rest})" env
+    pure (.expr e)
+  else if lower == "forget" || lower == "unassume" then
+    let e ← parse "forget()" env
+    pure (.expr e)
+  else if lower.startsWith "forget " then
+    let rest := strTrim (charsToString (trimmed.toList.drop 7))
+    let e ← parse s!"forget({rest})" env
+    pure (.expr e)
+  else if lower.startsWith "unassume " then
+    let rest := strTrim (charsToString (trimmed.toList.drop 9))
+    let e ← parse s!"forget({rest})" env
+    pure (.expr e)
   else if lower == "vars" || lower == "bindings" then
     pure .vars
   else if lower == "clear" then
@@ -1298,6 +1341,8 @@ def helpText : String :=
                 nf(e)/normal(e)  euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
                 N(e)  N(e, digits)  numeric(e)  — float approx, default 6 digits\n\
+                assume(x>0)  assume(x, pos)  forget(x)  assumptions\n\
+                solve(exp(x)=2)  solve(sin(x)=1/2)  (k ∈ ℤ for trig families)\n\
   \n\
   Commands:\n\
     <expr>\n\
@@ -1317,6 +1362,8 @@ def helpText : String :=
     nf / normal <expr>\n\
     plot / plot() / gnuplot  gnuplot command line (quit returns)\n\
     plot(<expr>[, …])        plot, then gnuplot CLI\n\
+    assume(x>0) / assume(x, pos)   session sign assumption\n\
+    forget(x) / assumptions        clear / list assumes\n\
     help\n\
   \n\
   Examples:\n\

@@ -527,6 +527,196 @@ where
     else
       some (zeroCoeffs n, e)
 
+/-! ### Transcendental scalar equations -/
+
+/-- π as `acos(−1)`. -/
+def piExpr : Expr := acos (negOne)
+
+inductive TransKind where
+  | exp | ln | sin | cos | tan | sinh | cosh | tanh
+  | asin | acos | atan | sqrt
+  deriving Repr, BEq
+
+def matchUnaryFun : Expr → Option (TransKind × Expr)
+  | exp u => some (.exp, u)
+  | ln u => some (.ln, u)
+  | sin u => some (.sin, u)
+  | cos u => some (.cos, u)
+  | tan u => some (.tan, u)
+  | sinh u => some (.sinh, u)
+  | cosh u => some (.cosh, u)
+  | tanh u => some (.tanh, u)
+  | asin u => some (.asin, u)
+  | acos u => some (.acos, u)
+  | atan u => some (.atan, u)
+  | pow u (const r) =>
+    match CplxConst.toRat? r with
+    | some q =>
+      if q == ⟨1, 2⟩ then some (.sqrt, u) else none
+    | none => none
+  | _ => none
+
+/-- Integer parameter name that does not clash with the unknown. -/
+def intParamName (v : String) : String :=
+  if v == "k" then "n" else "k"
+
+/-- `f(u) − rhs` residual → `(kind, u, rhs)` when `rhs` is free of `v`. -/
+def splitFunEq (e : Expr) (v : String) : Option (TransKind × Expr × Expr) :=
+  let e := simplify e
+  -- peel a nonzero constant factor
+  let e :=
+    match e with
+    | mul (const c) rest => if c.isZero then e else rest
+    | mul rest (const c) => if c.isZero then e else rest
+    | _ => e
+  match e with
+  | add a b =>
+    match matchUnaryFun a with
+    | some (k, u) =>
+      if dependsOn b v then none else some (k, u, simplify (neg b))
+    | none =>
+      match matchUnaryFun b with
+      | some (k, u) =>
+        if dependsOn a v then none else some (k, u, simplify (neg a))
+      | none =>
+        -- a^u = rhs  ⇔  exp(u·ln a) = rhs
+        match a with
+        | pow (const c) u =>
+          if dependsOn u v && !dependsOn b v then
+            some (.exp, mul u (ln (const c)), simplify (neg b))
+          else none
+        | _ => none
+  | pow (const c) u =>
+    if dependsOn u v then some (.exp, mul u (ln (const c)), one) else none
+  | e =>
+    match matchUnaryFun e with
+    | some (k, u) => some (k, u, zero)
+    | none => none
+
+/-- Real `n`-th roots / inverses of `f(u) = rhs`. `k` is the integer parameter. -/
+def invertTrans (k : TransKind) (rhs : Expr) (kName : String) : Option (List Expr) :=
+  let rhs := simplify rhs
+  let kk := var kName
+  let pi := piExpr
+  let twoPiK := mul (mul (ofInt 2) pi) kk
+  let rat? :=
+    match rhs with
+    | const c => CplxConst.toRat? c
+    | _ => none
+  let absGtOne : Bool :=
+    match rat? with
+    | some q => q.num.natAbs > q.den
+    | none => false
+  match k with
+  | .exp =>
+    -- exp(u)=0 has no solution; exp(u)<0 no real solution
+    match rat? with
+    | some q =>
+      if q.isZero || q.num < 0 then some []
+      else some [ln rhs]
+    | none => some [ln rhs]
+  | .ln =>
+    -- ln(u)=rhs → u = exp(rhs) (> 0 automatically)
+    some [exp rhs]
+  | .sqrt =>
+    match rat? with
+    | some q =>
+      if q.num < 0 then some []
+      else some [pow rhs (ofInt 2)]
+    | none => some [pow rhs (ofInt 2)]
+  | .sin =>
+    if absGtOne then some []
+    else
+      match rat? with
+      | some q =>
+        if q.isZero then
+          some [mul kk pi]
+        else if q.isOne then
+          some [add (div pi (ofInt 2)) twoPiK]
+        else if q == RatConst.negOne then
+          some [add (neg (div pi (ofInt 2))) twoPiK]
+        else
+          some [ add (asin rhs) twoPiK
+               , add (sub pi (asin rhs)) twoPiK ]
+      | none =>
+        some [ add (asin rhs) twoPiK
+             , add (sub pi (asin rhs)) twoPiK ]
+  | .cos =>
+    if absGtOne then some []
+    else
+      match rat? with
+      | some q =>
+        if q.isOne then some [twoPiK]
+        else if q == RatConst.negOne then some [add pi twoPiK]
+        else if q.isZero then
+          some [add (div pi (ofInt 2)) (mul kk pi)]
+        else
+          some [ add (acos rhs) twoPiK
+               , add (neg (acos rhs)) twoPiK ]
+      | none =>
+        some [ add (acos rhs) twoPiK
+             , add (neg (acos rhs)) twoPiK ]
+  | .tan =>
+    some [add (atan rhs) (mul kk pi)]
+  | .sinh =>
+    -- asinh(y) = ln(y + √(y²+1))
+    some [ln (add rhs (sqrt (add (pow rhs (ofInt 2)) one)))]
+  | .cosh =>
+    match rat? with
+    | some q =>
+      if q.num < q.den && q.num ≥ 0 && q.den > 0 then some []  -- 0 ≤ y < 1
+      else if q.num < 0 then some []
+      else if q.isOne then some [zero]
+      else
+        let acosh := ln (add rhs (sqrt (sub (pow rhs (ofInt 2)) one)))
+        some [acosh, neg acosh]
+    | none =>
+      let acosh := ln (add rhs (sqrt (sub (pow rhs (ofInt 2)) one)))
+      some [acosh, neg acosh]
+  | .tanh =>
+    match rat? with
+    | some q =>
+      if q.num.natAbs ≥ q.den && q.den != 0 then some []
+      else
+        some [mul (ofRat ⟨1, 2⟩)
+          (ln (div (add one rhs) (sub one rhs)))]
+    | none =>
+      some [mul (ofRat ⟨1, 2⟩)
+        (ln (div (add one rhs) (sub one rhs)))]
+  | .asin => some [sin rhs]
+  | .acos => some [cos rhs]
+  | .atan => some [tan rhs]
+
+/-- Solve affine `u = val` for `v`. -/
+def solveAffineEq (u : Expr) (v : String) (val : Expr) : Option Expr :=
+  match affineForm (sub u val) [v] with
+  | some (cs, k) =>
+    if cs.size == 1 then
+      let a := simplify cs[0]!
+      if a == zero then none
+      else some (simplify (neg (div k a)))
+    else none
+  | none =>
+    if u == var v then some (simplify val) else none
+
+/--
+  Invert a transcendental equation `f(u(v)) = rhs` and solve the (affine) inner.
+  Periodic families use integer parameter `k` (or `n` if the unknown is `k`).
+-/
+def solveTranscendental (e : Expr) (v : String) : Option ScalarSolveResult :=
+  match splitFunEq e v with
+  | none => none
+  | some (kind, u, rhs) =>
+    if !dependsOn u v then none
+    else
+      match invertTrans kind rhs (intParamName v) with
+      | none => none
+      | some [] => some .empty
+      | some vals =>
+        let sols := vals.filterMap (fun val => solveAffineEq u v val)
+        if sols.isEmpty then none
+        else some (.solutions (sols.map simplify))
+
 /-- Collect free variables appearing in any of the expressions, sorted. -/
 def collectVars (es : List Expr) : List String :=
   es.foldl (fun acc e => (acc ++ freeVars e).eraseDups) []
@@ -1136,17 +1326,34 @@ def solveInequality (residual : Expr) (kind : RelKind) (v : String) : Except Str
             pure acc
         pure (RealInterval.toExpr mutIs)
 
+/-- Encode a scalar solve result as a REPL expression. -/
+def encodeScalarSolve : ScalarSolveResult → Except String Expr
+  | .solutions rs => pure (Expr.mat #[rs.toArray])
+  | .all => pure (var "all")
+  | .empty => pure (Expr.mat #[#[] ])
+  | .unsupported msg => throw msg
+
+/-- Rational first, then transcendental invert. -/
+def solveResidual (e : Expr) (v : String) : Except String Expr :=
+  match solveScalar e v with
+  | .unsupported _ =>
+    match solveTranscendental e v with
+    | some r => encodeScalarSolve r
+    | none =>
+      throw s!"solve: not a rational or invertible transcendental equation in {v}"
+  | r => encodeScalarSolve r
+
 /-- Dispatch a single relation or residual for solve. -/
 def solveRelation (e : Expr) (v : String) : Except String Expr :=
   match relationToResidual e with
-  | some (.eq, r) => solveScalarExpr? r v
+  | some (.eq, r) => solveResidual r v
   | some (.lt, r) => solveInequality r .lt v
   | some (.le, r) => solveInequality r .le v
   | some (.gt, r) => solveInequality r .gt v
   | some (.ge, r) => solveInequality r .ge v
   | none =>
     -- bare expression = 0
-    solveScalarExpr? e v
+    solveResidual e v
 
 /-- Extract `vᵢ ↦ val` from a named system solution matrix. -/
 def asNamedSolution? (e : Expr) : Option (List (String × Expr)) :=

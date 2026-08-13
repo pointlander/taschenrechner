@@ -252,7 +252,46 @@ def suite : List Case := [
               | cos _ => true
               | mul _ (cos _) => true
               | _ => false
-        | none => false }
+        | none => false },
+  { name := "solve exp(x)=1"
+    input := "solve(exp(x)=1)"
+    check := fun e => isRow e 1 && rowContains e [zero] },
+  { name := "solve exp(x)=2"
+    input := "solve(exp(x)=2)"
+    check := fun e => isRow e 1 && rowContains e [ln (ofInt 2)] },
+  { name := "solve ln(x)=0"
+    input := "solve(ln(x)=0)"
+    check := fun e => isRow e 1 && rowContains e [one] },
+  { name := "solve sin(x)=0"
+    input := "solve(sin(x)=0)"
+    check := fun e =>
+      isRow e 1 &&
+        match asMat? e with
+        | some rows =>
+            let t := simplify rows[0]![0]!
+            t == mul (var "k") (acos (negOne))
+              || t == mul (acos (negOne)) (var "k")
+        | none => false },
+  { name := "solve sin(x)=1/2"
+    input := "solve(sin(x)=1/2)"
+    check := fun e =>
+      isRow e 2 &&
+        match asMat? e with
+        | some rows =>
+            rows[0]!.toList.any fun t =>
+              let t := simplify t
+              match t with
+              | add (asin _) _ => true
+              | add _ (asin _) => true
+              | asin _ => true
+              | _ => false
+        | none => false },
+  { name := "solve exp(x)=-1 empty"
+    input := "solve(exp(x)=-1)"
+    check := fun e =>
+      match asMat? e with
+      | some rows => Mat.nrows rows == 1 && Mat.ncols rows == 0
+      | none => prettySolution e == "∅" }
 ]
 
 structure CaseResult where

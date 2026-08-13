@@ -7,6 +7,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`)
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
+- **Assumptions**: `assume(x>0)` refines `√(x²)` / `|x|`; `forget(x)`
+- **Transcendental solve**: `solve(exp(x)=2)`, `solve(sin(x)=1/2)` (trig families in `k`)
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **ASCII art** multi-line output for fractions, powers, matrices, and equations
@@ -178,6 +180,9 @@ lake exe taschenrechner 'solve(x^2=4, x)'             # → {2, -2}
 lake exe taschenrechner 'solve(x^3-2=0, x)'           # → 2^{1/3} and complex cube roots
 lake exe taschenrechner 'solve(x^3-3*x-1=0, x)'       # → 2 cos((acos(1/2) − 2πk)/3)
 lake exe taschenrechner 'int(1/sqrt(1-x^2))'           # → asin(x)
+lake exe taschenrechner 'assume(x>0); sqrt(x^2)'        # → x
+lake exe taschenrechner 'solve(exp(x)=2)'               # → {ln(2)}
+lake exe taschenrechner 'solve(sin(x)=1/2)'             # → asin(1/2)+2πk, …
 lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
 lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1

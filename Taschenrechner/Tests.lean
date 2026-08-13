@@ -320,6 +320,35 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok (.load "foo.tr") => true
   | _ => false
 #guard
+  match parseCommand "assume(x>0)" with
+  | .ok (.expr e) =>
+      match asAssumeReq? e with
+      | some (.set "x" .pos) => true
+      | _ => false
+  | _ => false
+#guard
+  match parse "assume(x, nonzero)" with
+  | .ok e =>
+      match asAssumeReq? e with
+      | some (.set "x" .nonzero) => true
+      | _ => false
+  | _ => false
+#guard
+  let env := Env.empty.setAssume "x" SignPred.pos
+  applyAssumes env (Taschenrechner.sqrt (pow x (ofInt 2))) == x
+#guard
+  let env := Env.empty.setAssume "x" SignPred.neg
+  applyAssumes env (abs x) == neg x
+#guard
+  applyAssumes Env.empty (Taschenrechner.sqrt (pow x (ofInt 2))) == abs x
+#guard
+  match parse "solve(exp(x)=1)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows.size == 1 && rows[0]!.size == 1 && simplify rows[0]![0]! == zero
+      | none => false
+  | _ => false
+#guard
   let env := Env.setAns Env.empty (ofInt 7)
   match env.get? "ans" with
   | some e => simplify e == ofInt 7

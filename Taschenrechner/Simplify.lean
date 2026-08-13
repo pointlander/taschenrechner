@@ -267,7 +267,13 @@ partial def simplify1 : Expr → Expr
                 | none => pow a b
               else pow a b
             | _, _ => pow a b
-        | pow base e => pow base (mul e b)  -- (x^m)^n = x^(m*n)
+        | pow base e =>
+          -- (x^m)^n = x^(mn) only for integer n (√(x²) must stay for |x| / assume)
+          match CplxConst.toRat? r with
+          | some q =>
+            if q.den == 1 then pow base (mul e b)
+            else pow a b
+          | none => pow a b
         | _ => pow a b
     | const r, _ =>
       if r.isOne then one

@@ -221,7 +221,7 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
     IO.println (Env.format env)
     pure (0, env)
   | .clearAll =>
-    IO.println "(cleared all bindings)"
+    IO.println "(cleared all bindings and assumes)"
     pure (0, Env.empty)
   | .clearOne name =>
     if (env.get? name).isSome then
@@ -256,11 +256,20 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
               nLoaded := nLoaded + 1
             | .error err =>
               throw (IO.userError s!"load {path}: {err} (while binding {name})")
+          | .ok (.expr e) =>
+            match asAssumeReq? e with
+            | some (.set v p) =>
+              env' := env'.setAssume v p
+              nLoaded := nLoaded + 1
+            | some _ =>
+              throw (IO.userError s!"load {path}: expected assume(var, pred), got: {line}")
+            | none =>
+              throw (IO.userError s!"load {path}: expected assignment, got: {line}")
           | .ok _ =>
             throw (IO.userError s!"load {path}: expected assignment, got: {line}")
           | .error err =>
             throw (IO.userError s!"load {path}: {err} (line: {line})")
-      IO.println s!"(loaded {nLoaded} binding(s) from {path})"
+      IO.println s!"(loaded {nLoaded} binding(s)/assume(s) from {path})"
       pure (0, env')
     catch e =>
       IO.eprintln s!"load failed: {e}"
@@ -275,41 +284,63 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
       printExpr val
       pure (0, withAns env' val)
   | .expr e =>
-    let e := simplify (substEnv env e)
-    match asPlotSpec? e with
-    | some spec =>
-      match ← runPlot { spec with expr := simplify (substEnv env spec.expr) } with
-      | .ok msg =>
-        IO.println msg
-        pure (0, env)
-      | .error err =>
-        IO.eprintln err
+    match asAssumeReq? e with
+    | some (.show) =>
+      if env.assumes.isEmpty then
+        IO.println "(no assumes)"
+      else
+        IO.println (Env.format { env with bindings := #[] })
+      pure (0, env)
+    | some (.set v p) =>
+      let env' := env.setAssume v p
+      IO.println s!"(assume {v} {SignPred.toString p})"
+      pure (0, env')
+    | some (.forget none) =>
+      IO.println "(cleared all assumes)"
+      pure (0, env.clearAssumes)
+    | some (.forget (some v)) =>
+      if (env.getAssume? v).isSome then
+        IO.println s!"(forgot assume on {v})"
+        pure (0, env.eraseAssume v)
+      else
+        IO.eprintln s!"forget: no assume on '{v}'"
         pure (1, env)
     | none =>
-      printExpr e
-      pure (0, withAns env e)
+      let e := evalWithEnv env e
+      match asPlotSpec? e with
+      | some spec =>
+        match ← runPlot { spec with expr := evalWithEnv env spec.expr } with
+        | .ok msg =>
+          IO.println msg
+          pure (0, env)
+        | .error err =>
+          IO.eprintln err
+          pure (1, env)
+      | none =>
+        printExpr e
+        pure (0, withAns env e)
   | .simplify e =>
-    let e := simplify (substEnv env e)
+    let e := evalWithEnv env e
     printExpr e
     pure (0, withAns env e)
   | .expand e =>
-    let e := expand (substEnv env e)
+    let e := applyAssumes env (expand (substEnv env e))
     printExpr e
     pure (0, withAns env e)
   | .cancel e =>
-    let e := Expr.cancel (substEnv env e)
+    let e := applyAssumes env (Expr.cancel (substEnv env e))
     printExpr e
     pure (0, withAns env e)
   | .together e =>
-    let e := Expr.together (substEnv env e)
+    let e := applyAssumes env (Expr.together (substEnv env e))
     printExpr e
     pure (0, withAns env e)
   | .normal e =>
-    let e := Expr.normalForm (substEnv env e)
+    let e := applyAssumes env (Expr.normalForm (substEnv env e))
     printExpr e
     pure (0, withAns env e)
   | .diff e v =>
-    let e := simplify (substEnv env e)
+    let e := evalWithEnv env e
     let d := diff e v
     IO.println s!"d/d{v} ({e})  =  {d}"
     pure (0, withAns env d)
