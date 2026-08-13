@@ -128,6 +128,17 @@ def suite : List Case := [
     input := "dsolve(y'' - 3*yp + 2*y = 0)"
     check := fun e =>
       isEqY e && dependsOn e "C1" && dependsOn e "C2" },
+  { name := "nonhomogeneous y''+y=sin(x)"
+    input := "dsolve(y'' + y = sin(x))"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let yp := simplify (Expr.subst (Expr.subst r "C1" (0:Expr)) "C2" (0:Expr))
+            let want := simplify (neg (mul (mul (ofRat ⟨1, 2⟩) (var "x")) (cos (var "x"))))
+            yp == want || equivNF yp want
+      | none => false },
   { name := "nonhomogeneous y''+y=1"
     input := "dsolve(y'' + y = 1)"
     check := fun e =>

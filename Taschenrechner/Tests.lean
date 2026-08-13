@@ -186,8 +186,15 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | _ => false
 #guard
   match parse "arccos(0)" with
-  | .ok e => simplify e == acos zero
+  | .ok e => simplify e == simplify (div piE (ofInt 2))
   | _ => false
+#guard
+  match parse "pi" with
+  | .ok e => e == piE
+  | _ => false
+#guard simplify (acos (negOne)) == piE
+#guard simplify (sin piE) == zero
+#guard simplify (cos piE) == negOne
 #guard verifyDerivative (asin x)
   (Expr.div (1 : Expr) (pow (sub one (pow x (ofInt 2))) (ofRat ⟨1, 2⟩))) "x"
 #guard verifyDerivative (acos x)
@@ -1095,5 +1102,23 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       let s := prettySolution e
       s.contains "3" && s.contains "4" && !s.contains "C1"
   | _ => false
+#guard
+  match parse "dsolve(y'' + y = sin(x))" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          let yp := simplify (Expr.subst (Expr.subst r "C1" (0:Expr)) "C2" (0:Expr))
+          let want := simplify (neg (mul (mul (ofRat ⟨1, 2⟩) x) (cos x)))
+          yp == want
+            || equivNF yp want
+      | none => false
+  | _ => false
+#guard
+  match parse "solve(sin(x)=0)" with
+  | .ok e => (prettySolution e).contains "ℤ"
+  | _ => false
+#guard
+  let env := Env.empty.setAssume "k" SignPred.integer
+  applyAssumes env (sin (mul (var "k") piE)) == zero
 
 end Taschenrechner.Tests

@@ -18,6 +18,7 @@ inductive SignPred where
   | neg      -- x < 0
   | nonpos   -- x ≤ 0
   | nonzero  -- x ≠ 0
+  | integer  -- x ∈ ℤ
   deriving Repr, BEq, Inhabited, DecidableEq
 
 namespace SignPred
@@ -28,6 +29,7 @@ def toString : SignPred → String
   | neg => "< 0"
   | nonpos => "≤ 0"
   | nonzero => "≠ 0"
+  | integer => "∈ ℤ"
 
 def impliesPos : SignPred → Bool
   | pos => true
@@ -56,6 +58,7 @@ def toTag : SignPred → String
   | neg => "neg"
   | nonpos => "nonpos"
   | nonzero => "nonzero"
+  | integer => "int"
 
 def ofTag? (s : String) : Option SignPred :=
   match s.toLower with
@@ -64,6 +67,7 @@ def ofTag? (s : String) : Option SignPred :=
   | "neg" | "negative" | "minus" => some neg
   | "nonpos" | "nonpositive" | "np" => some nonpos
   | "nonzero" | "nz" | "ne0" => some nonzero
+  | "int" | "integer" | "z" | "ℤ" => some integer
   | _ => none
 
 end SignPred
@@ -209,6 +213,44 @@ partial def substEnv (env : Env) (e : Expr) : Expr :=
   | le a b => le (substEnv env a) (substEnv env b)
   | mat rows => mat (rows.map fun row => row.map (substEnv env))
 
+/-- True when `e` is an integer constant or an assumed integer expression. -/
+partial def isIntExpr (env : Env) : Expr → Bool
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q => q.den == 1
+    | none => false
+  | var v => env.getAssume? v == some .integer
+  | add a b | mul a b => isIntExpr env a && isIntExpr env b
+  | pow a (const c) =>
+    match CplxConst.toRat? c with
+    | some q => q.den == 1 && q.num ≥ 0 && isIntExpr env a
+    | none => false
+  | e =>
+    match e with
+    | mul (const c) u =>
+      match CplxConst.toRat? c with
+      | some q => q.den == 1 && isIntExpr env u
+      | none => false
+    | _ => false
+
+/-- If `e = n·π` with integer `n`, return `n`. -/
+def asIntPi? (env : Env) : Expr → Option Expr
+  | var v => if Expr.isPiName v then some one else none
+  | mul a b =>
+    if Expr.isPiName (match a with | var v => v | _ => "") && isIntExpr env b then
+      some b
+    else if Expr.isPiName (match b with | var v => v | _ => "") && isIntExpr env a then
+      some a
+    else
+      match asRatPi? (mul a b) with
+      | some q =>
+        if q.den == 1 then some (ofInt q.num) else none
+      | none => none
+  | e =>
+    match asRatPi? e with
+    | some q => if q.den == 1 then some (ofInt q.num) else none
+    | none => none
+
 /-- Inferred sign of a ground constant or assumed variable. -/
 def signOf (env : Env) : Expr → Option SignPred
   | var v => env.getAssume? v
@@ -257,9 +299,21 @@ partial def applyAssumes (env : Env) : Expr → Expr
         else pow base ex
       | _ => pow base ex
     else pow base ex
-  | sin a => sin (applyAssumes env a)
-  | cos a => cos (applyAssumes env a)
-  | tan a => tan (applyAssumes env a)
+  | sin a =>
+    let a := applyAssumes env a
+    match asIntPi? env a with
+    | some _ => zero  -- sin(nπ) = 0
+    | none => sin a
+  | cos a =>
+    let a := applyAssumes env a
+    match asIntPi? env a with
+    | some n => pow (negOne) n  -- cos(nπ) = (−1)ⁿ
+    | none => cos a
+  | tan a =>
+    let a := applyAssumes env a
+    match asIntPi? env a with
+    | some _ => zero
+    | none => tan a
   | sinh a => sinh (applyAssumes env a)
   | cosh a => cosh (applyAssumes env a)
   | tanh a => tanh (applyAssumes env a)
@@ -380,7 +434,7 @@ def isForbiddenBinding (name : String) : Bool :=
     || n == "exit" || n == "diff" || n == "int" || n == "integrate"
     || n == "simplify" || n == "expand" || n == "euler"
     || n == "save" || n == "load" || n == "assume" || n == "forget"
-    || n == "unassume" || n == "assumptions"
+    || n == "unassume" || n == "assumptions" || n == "pi" || name == "π"
 
 /-- Valid identifier for a binding name. -/
 def isBindingName (name : String) : Bool :=

@@ -269,8 +269,8 @@ def suite : List Case := [
         match asMat? e with
         | some rows =>
             let t := simplify rows[0]![0]!
-            t == mul (var "k") (acos (negOne))
-              || t == mul (acos (negOne)) (var "k")
+            t == mul (var "k") piE
+              || t == mul piE (var "k")
         | none => false },
   { name := "solve sin(x)=1/2"
     input := "solve(sin(x)=1/2)"

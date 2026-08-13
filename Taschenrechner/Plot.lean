@@ -188,6 +188,7 @@ where
     | none => none  -- pure imaginary / complex
   | var name =>
     if name == v then some name
+    else if Expr.isPiName name then some "pi"
     else if isInfName name then none
     else none  -- other free symbols not supported natively
   | add a b =>

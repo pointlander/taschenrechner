@@ -193,6 +193,69 @@ partial def combineFactors (factors : List Expr) : List Expr :=
   else if coeff.isOne then rebuilt
   else const coeff :: rebuilt
 
+/-- Floor of a rational (toward −∞). -/
+def ratFloor (q : RatConst) : Int :=
+  let q := RatConst.normalize q
+  let n := q.num
+  let d : Int := q.den
+  if d == 0 then 0
+  else if n ≥ 0 then n / d
+  else
+    let qz := n / d  -- toward 0
+    if n % d == 0 then qz else qz - 1
+
+/-- `q` reduced into `[0, 2)` (period of sin/cos in units of π). -/
+def ratMod2 (q : RatConst) : RatConst :=
+  let q := RatConst.normalize q
+  let two := RatConst.ofInt 2
+  match RatConst.div q two with
+  | none => q
+  | some half =>
+    let k := ratFloor half
+    let r := RatConst.normalize (RatConst.sub q (RatConst.ofInt (2 * k)))
+    if r.num < 0 then RatConst.add r two else r
+
+/-- `sin(q·π)` for a rational `q`, when it has a short closed form. -/
+def sinRatPi? (q : RatConst) : Option Expr :=
+  let q := ratMod2 q
+  -- table on [0, 2)
+  if q.isZero || q == RatConst.ofInt 1 then some zero
+  else if q == ⟨1, 2⟩ then some one
+  else if q == ⟨3, 2⟩ then some negOne
+  else if q == ⟨1, 6⟩ || q == ⟨5, 6⟩ then some (ofRat ⟨1, 2⟩)
+  else if q == ⟨7, 6⟩ || q == ⟨11, 6⟩ then some (ofRat ⟨-1, 2⟩)
+  else if q == ⟨1, 3⟩ || q == ⟨2, 3⟩ then
+    some (div (sqrt (ofInt 3)) (ofInt 2))
+  else if q == ⟨4, 3⟩ || q == ⟨5, 3⟩ then
+    some (neg (div (sqrt (ofInt 3)) (ofInt 2)))
+  else if q == ⟨1, 4⟩ || q == ⟨3, 4⟩ then
+    some (div (sqrt (ofInt 2)) (ofInt 2))
+  else if q == ⟨5, 4⟩ || q == ⟨7, 4⟩ then
+    some (neg (div (sqrt (ofInt 2)) (ofInt 2)))
+  else none
+
+/-- `cos(q·π)` via `sin(q·π + π/2)`. -/
+def cosRatPi? (q : RatConst) : Option Expr :=
+  sinRatPi? (q + ⟨1, 2⟩)
+
+def reduceSinPi? (e : Expr) : Option Expr :=
+  asRatPi? e |>.bind sinRatPi?
+
+def reduceCosPi? (e : Expr) : Option Expr :=
+  asRatPi? e |>.bind cosRatPi?
+
+def reduceTanPi? (e : Expr) : Option Expr :=
+  match asRatPi? e with
+  | none => none
+  | some q =>
+    match sinRatPi? q, cosRatPi? q with
+    | some s, some c =>
+      if c == zero then none else some (div s c)
+    | _, _ =>
+      -- tan(nπ) = 0
+      let q2 := ratMod2 q
+      if q2.isZero || q2 == RatConst.ofInt 1 then some zero else none
+
 /-- One bottom-up simplification pass. -/
 partial def simplify1 : Expr → Expr
   | const r => const (CplxConst.normalize r)
@@ -285,18 +348,27 @@ partial def simplify1 : Expr → Expr
     match e with
     | const r => if r.isZero then zero else sin e
     | asin u => u
-    | _ => sin e
+    | _ =>
+      match reduceSinPi? e with
+      | some s => s
+      | none => sin e
   | cos e =>
     let e := simplify1 e
     match e with
     | const r => if r.isZero then one else cos e
     | acos u => u
-    | _ => cos e
+    | _ =>
+      match reduceCosPi? e with
+      | some s => s
+      | none => cos e
   | tan e =>
     let e := simplify1 e
     match e with
     | const r => if r.isZero then zero else tan e
-    | _ => tan e
+    | _ =>
+      match reduceTanPi? e with
+      | some s => s
+      | none => tan e
   | sinh e =>
     let e := simplify1 e
     match e with
@@ -331,12 +403,20 @@ partial def simplify1 : Expr → Expr
   | asin e =>
     let e := simplify1 e
     match e with
-    | const r => if r.isZero then zero else asin e
+    | const r =>
+      if r.isZero then zero
+      else if r.isOne then simplify1 (div piE (ofInt 2))
+      else if r.isNegOne then simplify1 (neg (div piE (ofInt 2)))
+      else asin e
     | _ => asin e
   | acos e =>
     let e := simplify1 e
     match e with
-    | const r => if r.isOne then zero else acos e
+    | const r =>
+      if r.isOne then zero
+      else if r.isZero then simplify1 (div piE (ofInt 2))
+      else if r.isNegOne then piE
+      else acos e
     | _ => acos e
   | abs e =>
     let e := simplify1 e

@@ -24,7 +24,8 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
-- **Finite sums** `sum` (Faulhaber + geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff, linear systems via `expm`)
+- **Finite sums** `sum` (Faulhaber + geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
+- Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
 
@@ -72,7 +73,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
-| `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff, systems `Y'=AY` |
+| `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -220,7 +221,7 @@ lake exe taschenrechner 'expm(zeros(2))'              # → I
 |------|----------------|
 | `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber / geometric; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
-| `dsolve(eq)` | 1st-order (`y'`/`yp`) or 2nd-order const-coeff (`y''`/`ypp`) |
+| `dsolve(eq)` | 1st-order (`y'`/`yp`) or 2nd-order const-coeff (`y''`/`ypp`); `g(x)=sin/cos` via undetermined coeff / VoP |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
 | `dsolve(eq, x0, y0)` | IC y(x0)=y0 (first-order) |
 | `dsolve(eq, x0, y0, yp0)` | ICs y(x0)=y0, y′(x0)=yp0 (second-order) |
@@ -239,6 +240,9 @@ lake exe taschenrechner 'dsolve(y'\'' + y = x)'         # → y = C·exp(-x) + x
 lake exe taschenrechner 'dsolve(yp + y = 0, 0, 1)'     # → y = exp(-x)
 lake exe taschenrechner 'dsolve(yp = x*y)'             # → y = C·exp(x²/2)
 lake exe taschenrechner "dsolve(y'' + y = 0)"          # → y = C1·cos(x) + C2·sin(x)
+lake exe taschenrechner "dsolve(y'' + y = sin(x))"     # → y = C1·cos(x) + C2·sin(x) − (x/2)·cos(x)
+lake exe taschenrechner 'solve(sin(x)=0)'              # → {k·π}, k ∈ ℤ
+lake exe taschenrechner 'pi'                           # → π
 lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)
 lake exe taschenrechner 'dsolve([1,0;0,2])'            # → y1 = C1·exp(x), y2 = C2·exp(2x)
 lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 = 4·exp(2x)

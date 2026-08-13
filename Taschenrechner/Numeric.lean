@@ -62,6 +62,9 @@ def floatToRat (x : Float) (digits : Nat) : RatConst :=
 partial def evalFloats? (e : Expr) : Option (Float × Float) :=
   match simplify e with
   | const c => some (cplxToFloats c)
+  | var v =>
+    if Expr.isPiName v then some (Float.acos (-1.0), 0)
+    else none
   | add a b =>
     match evalFloats? a, evalFloats? b with
     | some (ar, ai), some (br, bi) => some (ar + br, ai + bi)

@@ -3,7 +3,8 @@
 
   * First-order linear:  y' + P(x) y = Q(x)   → integrating factor
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
-  * Second-order constant-coeff: a y'' + b y' + c y = g  (g constant)
+  * Second-order constant-coeff: a y'' + b y' + c y = g(x)
+    (undetermined coefficients for sin/cos; else variation of parameters)
   * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via diagonalization)
 -/
 import Taschenrechner.Expr
@@ -465,6 +466,133 @@ def constCoeffBasis2 (r1 r2 : Expr) (x : String) : List Expr :=
     | _, _ =>
       [exp (mul r1 xv), exp (mul r2 xv)]
 
+/-- `arg` is `ω·x` with rational `ω`. -/
+def omegaOfArg? (arg : Expr) (x : String) : Option RatConst :=
+  let arg := simplify arg
+  if arg == var x then some RatConst.one
+  else
+    match arg with
+    | mul (const c) (var v) =>
+      if v == x then CplxConst.toRat? c else none
+    | mul (var v) (const c) =>
+      if v == x then CplxConst.toRat? c else none
+    | _ => none
+
+/-- Match `K·sin(ωx)` / `K·cos(ωx)`. Returns `(amp, ω, isSin)`. -/
+partial def matchTrigForce? (e : Expr) (x : String) : Option (Expr × RatConst × Bool) :=
+  go (simplify e)
+where
+  go : Expr → Option (Expr × RatConst × Bool)
+  | sin arg =>
+    match omegaOfArg? arg x with
+    | some w => some (one, w, true)
+    | none => none
+  | cos arg =>
+    match omegaOfArg? arg x with
+    | some w => some (one, w, false)
+    | none => none
+  | mul (const k) rest =>
+    match go rest with
+    | some (amp, w, s) => some (simplify (mul (const k) amp), w, s)
+    | none => none
+  | mul rest (const k) => go (mul (const k) rest)
+  | _ => none
+
+/-- `e` as `cc·cos(ωx) + sc·sin(ωx)`. -/
+partial def collectSinCos (e : Expr) (wX : Expr) : Option (Expr × Expr) :=
+  let e := simplify e
+  if e == zero then some (zero, zero)
+  else
+    match e with
+    | add a b =>
+      match collectSinCos a wX, collectSinCos b wX with
+      | some (c1, s1), some (c2, s2) =>
+        some (simplify (add c1 c2), simplify (add s1 s2))
+      | _, _ => none
+    | mul (const k) rest =>
+      match collectSinCos rest wX with
+      | some (c, s) =>
+        some (simplify (mul (const k) c), simplify (mul (const k) s))
+      | none => none
+    | mul rest (const k) => collectSinCos (mul (const k) rest) wX
+    | cos arg =>
+      if simplify arg == simplify wX then some (one, zero) else none
+    | sin arg =>
+      if simplify arg == simplify wX then some (zero, one) else none
+    | _ => none
+
+/-- Characteristic polynomial has roots `± iω` (simple resonance for sin/cos). -/
+def trigResonance (a b c ω : RatConst) : Bool :=
+  (b.isZero || ω.isZero) && (c == a * ω * ω) && !a.isZero
+
+/--
+  Undetermined coefficients for `A y''+B y'+C y = amp·sin/cos(ωx)`.
+  Uses `x·(…)` on resonance.
+-/
+def particularTrig (a b c : RatConst) (amp : Expr) (ω : RatConst) (isSin : Bool)
+    (x : String) : Option Expr :=
+  let xv := var x
+  let wX := if ω.isOne then xv else mul (ofRat ω) xv
+  -- Resonance for y'' + ω²y (b=0, c=aω²):  ∓ (amp/(2aω)) x cos/sin
+  if b.isZero && !ω.isZero && c == a * ω * ω then
+    let den := ofRat (a * ω * RatConst.ofInt 2)
+    if den == zero then none
+    else
+      let coef := if isSin then neg (div amp den) else div amp den
+      let trig := if isSin then cos wX else sin wX
+      some (simplify (mul (mul coef xv) trig))
+  else
+  let s : Nat := if trigResonance a b c ω then 1 else 0
+  let UA := var "__ucA"
+  let UB := var "__ucB"
+  let body := add (mul UA (cos wX)) (mul UB (sin wX))
+  let yp0 := if s == 0 then body else mul xv body
+  let L :=
+    simplify (add (add
+      (mul (ofRat a) (diff (diff yp0 x) x))
+      (mul (ofRat b) (diff yp0 x)))
+      (mul (ofRat c) yp0))
+  let target := if isSin then mul amp (sin wX) else mul amp (cos wX)
+  let residual := simplify (sub L target)
+  match collectSinCos residual wX with
+  | none => none
+  | some (cc, sc) =>
+    match affineForm cc ["__ucA", "__ucB"], affineForm sc ["__ucA", "__ucB"] with
+    | some (cA, c0), some (sA, s0) =>
+      -- cA0 A + cA1 B = -c0 ;  sA0 A + sA1 B = -s0
+      let M : Array (Array Expr) :=
+        #[#[cA[0]!, cA[1]!], #[sA[0]!, sA[1]!]]
+      let rhs : Array (Array Expr) :=
+        #[#[simplify (neg c0)], #[simplify (neg s0)]]
+      match Mat.solve M rhs with
+      | .unique sol =>
+        let Av := simplify (Mat.get! sol 0 0)
+        let Bv := simplify (Mat.get! sol 1 0)
+        let yp := subst (subst yp0 "__ucA" Av) "__ucB" Bv
+        some (simplify yp)
+      | _ => none
+    | _, _ => none
+
+/-- Variation of parameters for monic `y''+… = r` with basis `u1,u2`. -/
+def variationOfParameters (u1 u2 r : Expr) (x : String) : Except String Expr := do
+  let W := simplify (sub (mul u1 (diff u2 x)) (mul u2 (diff u1 x)))
+  if W == zero then
+    throw "dsolve: Wronskian vanished"
+  else
+    let v1' := simplify (neg (div (mul u2 r) W))
+    let v2' := simplify (div (mul u1 r) W)
+    let v1 ←
+      match integrate v1' x with
+      | .success F _ => pure (simplify F)
+      | .notElementary msg => throw s!"dsolve: ∫ v1' not elementary: {msg}"
+      | .failure msg => throw s!"dsolve: ∫ v1' failed: {msg}"
+    let v2 ←
+      match integrate v2' x with
+      | .success F _ => pure (simplify F)
+      | .notElementary msg => throw s!"dsolve: ∫ v2' not elementary: {msg}"
+      | .failure msg => throw s!"dsolve: ∫ v2' failed: {msg}"
+    pure (simplify (add (mul v1 u1) (mul v2 u2)))
+
 /-- Particular solution for constant RHS: A y''+B y'+C y = G (G const). -/
 def particularConst (A B C G : RatConst) (x : String) : Except String Expr :=
   if !C.isZero then
@@ -486,13 +614,14 @@ def particularConst (A B C G : RatConst) (x : String) : Except String Expr :=
     throw "dsolve: degenerate second-order equation (A=B=C=0)"
 
 /--
-  Solve constant-coefficient second-order ODE:
-  `A y'' + B y' + C y + D = 0` with A,B,C,D rational constants, A ≠ 0.
-  Homogeneous (D=0) or constant forcing (−D).
+  Solve constant-coefficient second-order ODE
+  `A y'' + B y' + C y + D = 0` with A,B,C rational, A ≠ 0.
+  `D` may depend on `x` (forcing `g = −D`): undetermined coefficients
+  for `sin`/`cos`, else variation of parameters.
 -/
 def dsolveConstCoeff2 (A B C D : Expr) (y x : String) : Except String Expr := do
-  match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C, asRatConstExpr? D with
-  | some a, some b, some c, some d =>
+  match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C with
+  | some a, some b, some c =>
     if a.isZero then
       throw "dsolve: not second-order (coefficient of y'' is zero)"
     else
@@ -505,17 +634,35 @@ def dsolveConstCoeff2 (A B C D : Expr) (y x : String) : Except String Expr := do
         match constCoeffBasis2 r1 r2 x with
         | [u1, u2] =>
           let yh := simplify (add (mul (odeCi 0) u1) (mul (odeCi 1) u2))
-          if d.isZero then
-            pure (tidyODESol (eq (var y) yh))
-          else
-            let G := RatConst.neg d
-            let yp ← particularConst a b c G x
-            pure (tidyODESol (eq (var y) (simplify (add yh yp))))
+          match asRatConstExpr? D with
+          | some d =>
+            if d.isZero then
+              pure (tidyODESol (eq (var y) yh))
+            else
+              let G := RatConst.neg d
+              let yp ← particularConst a b c G x
+              pure (tidyODESol (eq (var y) (simplify (add yh yp))))
+          | none =>
+            -- A y''+B y'+C y = g  with g = −D
+            match RatConst.inv a with
+            | none => throw "dsolve: leading coefficient is zero"
+            | some invA =>
+              let g := simplify (neg D)
+              let rMonic := simplify (mul (ofRat invA) g)
+              let yp ←
+                match matchTrigForce? g x with
+                | some (amp, ω, isSin) =>
+                  match particularTrig a b c amp ω isSin x with
+                  | some yp => pure yp
+                  | none => variationOfParameters u1 u2 rMonic x
+                | none =>
+                  variationOfParameters u1 u2 rMonic x
+              pure (tidyODESol (eq (var y) (simplify (add yh yp))))
         | _ => throw "dsolve: expected 2 basis functions"
-  | _, _, _, _ =>
+  | _, _, _ =>
     throw "dsolve: second-order solver requires constant rational coefficients"
 
-/-- Try second-order constant-coeff path when y'' is present with constant coeffs. -/
+/-- Try second-order constant-coeff path when y'' is present with constant A,B,C. -/
 def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
   match odeResidual2 e y with
   | none => none
@@ -523,11 +670,12 @@ def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :
     let A := simplify A
     if A == zero then none
     else
-      match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C, asRatConstExpr? D with
-      | some a, some _, some _, some _ =>
+      match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C with
+      | some a, some _, some _ =>
         if a.isZero then none
+        else if dependsOnYFamily D y then none
         else some (dsolveConstCoeff2 A B C D y x)
-      | _, _, _, _ => none
+      | _, _, _ => none
 
 /-! ### Linear systems Y' = A Y via expm -/
 

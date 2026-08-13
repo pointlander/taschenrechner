@@ -516,6 +516,28 @@ def isInfName (v : String) : Bool :=
   let n := v.toLower
   n == "oo" || n == "inf" || n == "infty" || n == "infinity" || v == "∞"
 
+/-- Reserved name for the real constant π. -/
+def isPiName (v : String) : Bool :=
+  v == "π" || v.toLower == "pi"
+
+/-- Canonical π expression. -/
+def piE : Expr := var "π"
+
+/-- `e = q·π` for a rational `q` (includes `π`, `-π`, `π/2`, `2π`, …). -/
+def asRatPi? : Expr → Option RatConst
+  | var v => if isPiName v then some RatConst.one else none
+  | mul (const c) (var v) =>
+    if isPiName v then CplxConst.toRat? c else none
+  | mul (var v) (const c) =>
+    if isPiName v then CplxConst.toRat? c else none
+  | mul (const c) e =>
+    if c.isReal then
+      match asRatPi? e with
+      | some q => some (c.re * q)
+      | none => none
+    else none
+  | _ => none
+
 /-- Prefer free var `x`, else `t`, else first free var (for degree sorting). -/
 def printPrimaryVar (e : Expr) : String :=
   if dependsOn e "x" then "x"
@@ -597,7 +619,10 @@ def superscriptNat : Nat → String
 /-- Pretty-printer with fractions, √, degree-sorted sums, and ∞. -/
 partial def toString : Expr → String
   | const c => CplxConst.toString c
-  | var v => if isInfName v then "∞" else v
+  | var v =>
+    if isInfName v then "∞"
+    else if isPiName v then "π"
+    else v
   | add a b => prettySum (add a b)
   | mul a b => prettyProduct (mul a b)
   | pow a b => prettyPow a b

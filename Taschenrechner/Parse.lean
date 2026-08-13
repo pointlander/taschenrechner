@@ -1001,6 +1001,8 @@ partial def parseIdent (env : Env) (name : String) (p : Parser) : Except String 
     pure (e, p)
   else if name == "i" || name == "I" then
     pure (Expr.I, p)
+  else if Expr.isPiName name then
+    pure (Expr.piE, p)
   else if let some val := env.get? name then
     -- Session binding (must not shadow function calls above)
     pure (val, p)
@@ -1309,6 +1311,7 @@ def helpText : String :=
   \n\
   Expressions:\n\
     numbers     0, 42, -3, 1.5, 0.25  (decimals → exact rationals)\n\
+    constants   pi / π   i\n\
     variables   x, y, theta\n\
     ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
@@ -1335,7 +1338,8 @@ def helpText : String :=
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
                 sum(expr, k, lo, hi)  dsolve(eq)  (y'/yp; y''/ypp; C/C1/C2)\n\
-                dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(A)  Y'=A Y via expm\n\
+                dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
+                dsolve(A)  Y'=A Y via expm\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  euler(e)\n\
@@ -1363,6 +1367,7 @@ def helpText : String :=
     plot / plot() / gnuplot  gnuplot command line (quit returns)\n\
     plot(<expr>[, …])        plot, then gnuplot CLI\n\
     assume(x>0) / assume(x, pos)   session sign assumption\n\
+    assume(k, int)                 k ∈ ℤ  (trig families)\n\
     forget(x) / assumptions        clear / list assumes\n\
     help\n\
   \n\

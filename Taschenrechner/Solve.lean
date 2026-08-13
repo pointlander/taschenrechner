@@ -275,7 +275,7 @@ def depressedCubicRoots (p q : RatConst) : List Expr :=
       let inner := mp3 * mp3 * mp3
       let arg := simplify (div (ofRat (RatConst.neg q2)) (sqrt (ofRat inner)))
       let θ := acos arg
-      let pi := acos (negOne)
+      let pi := piE
       let third (e : Expr) : Expr := div e (ofInt 3)
       let tk (k : Nat) : Expr :=
         simplify (mul amp (cos (sub (third θ)
@@ -529,8 +529,8 @@ where
 
 /-! ### Transcendental scalar equations -/
 
-/-- π as `acos(−1)`. -/
-def piExpr : Expr := acos (negOne)
+/-- π as a reserved constant. -/
+def piExpr : Expr := piE
 
 inductive TransKind where
   | exp | ln | sin | cos | tan | sinh | cosh | tanh
@@ -1232,7 +1232,14 @@ def prettySolution (e : Expr) : String :=
     else if nr == 1 && nc ≥ 1 then
       -- 1×n root / value row → set notation
       let rs := rows[0]!.toList.map fun x => Expr.toString (simplify x)
-      if rs.isEmpty then "∅" else s!"\{{String.intercalate ", " rs}}"
+      if rs.isEmpty then "∅"
+      else
+        let body := s!"\{{String.intercalate ", " rs}}"
+        let hasK := rows[0]!.any (fun t => dependsOn t "k")
+        let hasN := rows[0]!.any (fun t => dependsOn t "n" && dependsOn t "π")
+        if hasK then s!"{body}, k ∈ ℤ"
+        else if hasN then s!"{body}, n ∈ ℤ"
+        else body
     else Expr.toString e
   | e => Expr.toString e
 
