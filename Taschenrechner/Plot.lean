@@ -261,6 +261,16 @@ where
   | atan a => match go a with | some s => some s!"atan({s})" | none => none
   | asin a => match go a with | some s => some s!"asin({s})" | none => none
   | acos a => match go a with | some s => some s!"acos({s})" | none => none
+  | sec a => match go a with | some s => some s!"1/cos({s})" | none => none
+  | csc a => match go a with | some s => some s!"1/sin({s})" | none => none
+  | cot a => match go a with | some s => some s!"cos({s})/sin({s})" | none => none
+  | factorial a => match go a with | some s => some s!"gamma(({s})+1)" | none => none
+  | gamma a => match go a with | some s => some s!"gamma({s})" | none => none
+  | floor a => match go a with | some s => some s!"floor({s})" | none => none
+  | Expr.ite c t e =>
+    match go c, go t, go e with
+    | some sc, some st, some se => some s!"(({sc}) ? ({st}) : ({se}))"
+    | _, _, _ => none
   | abs a => match go a with | some s => some s!"abs({s})" | none => none
   | re a => go a  -- real-valued path only
   | im a =>
@@ -268,7 +278,19 @@ where
     | some _ => some "0"  -- real embedding
     | none => none
   | conj a => go a
-  | eq _ _ | lt _ _ | le _ _ | mat _ => none
+  | eq a b =>
+    match go a, go b with
+    | some sa, some sb => some s!"(({sa}) == ({sb}))"
+    | _, _ => none
+  | lt a b =>
+    match go a, go b with
+    | some sa, some sb => some s!"(({sa}) < ({sb}))"
+    | _, _ => none
+  | le a b =>
+    match go a, go b with
+    | some sa, some sb => some s!"(({sa}) <= ({sb}))"
+    | _, _ => none
+  | mat _ => none
 
 /-- Shared terminal / axes setup for gnuplot scripts. -/
 def gnuplotPreamble (s : PlotSpec) (title : String) (mode : PlotMode) : String :=

@@ -64,6 +64,33 @@ partial def cmpExpr : Expr → Expr → Ordering
   | acos a, acos b => cmpExpr a b
   | acos _, _ => .lt
   | _, acos _ => .gt
+  | sec a, sec b => cmpExpr a b
+  | sec _, _ => .lt
+  | _, sec _ => .gt
+  | csc a, csc b => cmpExpr a b
+  | csc _, _ => .lt
+  | _, csc _ => .gt
+  | cot a, cot b => cmpExpr a b
+  | cot _, _ => .lt
+  | _, cot _ => .gt
+  | factorial a, factorial b => cmpExpr a b
+  | factorial _, _ => .lt
+  | _, factorial _ => .gt
+  | gamma a, gamma b => cmpExpr a b
+  | gamma _, _ => .lt
+  | _, gamma _ => .gt
+  | floor a, floor b => cmpExpr a b
+  | floor _, _ => .lt
+  | _, floor _ => .gt
+  | Expr.ite c1 t1 e1, Expr.ite c2 t2 e2 =>
+    match cmpExpr c1 c2 with
+    | .eq =>
+      match cmpExpr t1 t2 with
+      | .eq => cmpExpr e1 e2
+      | o => o
+    | o => o
+  | Expr.ite _ _ _, _ => .lt
+  | _, Expr.ite _ _ _ => .gt
   | abs a, abs b => cmpExpr a b
   | abs _, _ => .lt
   | _, abs _ => .gt
@@ -193,16 +220,18 @@ partial def combineFactors (factors : List Expr) : List Expr :=
   else if coeff.isOne then rebuilt
   else const coeff :: rebuilt
 
-/-- Floor of a rational (toward −∞). -/
+/-- Floor of a rational (toward −∞). Uses natural division to avoid Int `/` rounding. -/
 def ratFloor (q : RatConst) : Int :=
   let q := RatConst.normalize q
-  let n := q.num
-  let d : Int := q.den
-  if d == 0 then 0
-  else if n ≥ 0 then n / d
+  if q.den == 0 then 0
   else
-    let qz := n / d  -- toward 0
-    if n % d == 0 then qz else qz - 1
+    let a := q.num.natAbs
+    let d := q.den
+    let qz := a / d
+    let r := a % d
+    if q.num ≥ 0 then (qz : Int)
+    else if r == 0 then - (qz : Int)
+    else - (qz : Int) - 1
 
 /-- `q` reduced into `[0, 2)` (period of sin/cos in units of π). -/
 def ratMod2 (q : RatConst) : RatConst :=
@@ -244,13 +273,47 @@ def reduceSinPi? (e : Expr) : Option Expr :=
 def reduceCosPi? (e : Expr) : Option Expr :=
   asRatPi? e |>.bind cosRatPi?
 
+/-- Γ(p/2) for odd `p`, via Γ(1/2)=√π and Γ(z+1)=z Γ(z). -/
+partial def gammaOddHalf? (p : Int) : Option Expr :=
+  if p == 0 then none
+  else if p.natAbs > 21 then none
+  else if p == 1 then some (pow piE (ofRat ⟨1, 2⟩))
+  else if p > 1 then
+    -- Γ(p/2) = ((p-2)/2) · Γ((p-2)/2)
+    match gammaOddHalf? (p - 2) with
+    | some g => some (mul (ofRat ⟨p - 2, 2⟩) g)
+    | none => none
+  else
+    -- p < 0, odd: Γ(p/2) = Γ((p+2)/2) / (p/2)
+    match gammaOddHalf? (p + 2) with
+    | some g => some (div g (ofRat ⟨p, 2⟩))
+    | none => none
+
+/-- Ground comparison of already-simplified sides (`0<1`, `2=2`, …). -/
+def evalRelConst? : Expr → Option Bool
+  | eq (const ca) (const cb) => some (ca == cb)
+  | eq a b => if a == b then some true else none
+  | lt (const ca) (const cb) =>
+    match CplxConst.toRat? ca, CplxConst.toRat? cb with
+    | some qa, some qb => some (RatConst.compare qa qb == .lt)
+    | _, _ => none
+  | le (const ca) (const cb) =>
+    match CplxConst.toRat? ca, CplxConst.toRat? cb with
+    | some qa, some qb => some (RatConst.compare qa qb != .gt)
+    | _, _ => none
+  | _ => none
+
 def reduceTanPi? (e : Expr) : Option Expr :=
   match asRatPi? e with
   | none => none
   | some q =>
     match sinRatPi? q, cosRatPi? q with
     | some s, some c =>
-      if c == zero then none else some (div s c)
+      if c == zero then none
+      else if s == c then some one
+      else if s == zero then some zero
+      else if s == neg c || c == neg s then some negOne
+      else some (div s c)
     | _, _ =>
       -- tan(nπ) = 0
       let q2 := ratMod2 q
@@ -418,6 +481,85 @@ partial def simplify1 : Expr → Expr
       else if r.isNegOne then piE
       else acos e
     | _ => acos e
+  | sec e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then one else sec e
+    | _ =>
+      match reduceCosPi? e with
+      | some c =>
+        if c == zero then sec e else simplify1 (div one c)
+      | none => sec e
+  | csc e =>
+    let e := simplify1 e
+    match e with
+    | const r =>
+      if r.isZero then csc e
+      else csc e
+    | _ =>
+      match reduceSinPi? e with
+      | some s =>
+        if s == zero then csc e else simplify1 (div one s)
+      | none => csc e
+  | cot e =>
+    let e := simplify1 e
+    match e with
+    | const r => if r.isZero then cot e else cot e
+    | _ =>
+      match reduceTanPi? e with
+      | some t =>
+        if t == zero then cot e
+        else simplify1 (div one t)
+      | none => cot e
+  | factorial e =>
+    let e := simplify1 e
+    match asNat? e with
+    | some n =>
+      if n ≤ 20 then ofNat (factNat n) else factorial e
+    | none => factorial e
+  | gamma e =>
+    let e := simplify1 e
+    match asNat? e with
+    | some n =>
+      if n == 0 then gamma e  -- pole
+      else if n ≤ 21 then ofNat (factNat (n - 1))
+      else gamma e
+    | none =>
+      match e with
+      | const c =>
+        match CplxConst.toRat? c with
+        | some q =>
+          if q.den == 2 && q.num % 2 != 0 then
+            match gammaOddHalf? q.num with
+            | some g => simplify1 g
+            | none => gamma e
+          else gamma e
+        | none => gamma e
+      | add u (const c) =>
+        -- Γ(n+1) = n! when n is a natural
+        match CplxConst.toRat? c, asNat? u with
+        | some q, some n =>
+          if q.isOne && n ≤ 20 then ofNat (factNat n) else gamma e
+        | _, _ => gamma e
+      | _ => gamma e
+  | floor e =>
+    let e := simplify1 e
+    match e with
+    | const c =>
+      match CplxConst.toRat? c with
+      | some q => ofInt (ratFloor q)
+      | none => floor e
+    | floor u => floor u
+    | _ => floor e
+  | Expr.ite c t e =>
+    let c := simplify1 c
+    let t := simplify1 t
+    let e := simplify1 e
+    match evalRelConst? c with
+    | some true => t
+    | some false => e
+    | none =>
+      if t == e then t else Expr.ite c t e
   | abs e =>
     let e := simplify1 e
     match e with
@@ -483,7 +625,9 @@ where
     | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
         isRealValued a && isRealValued b
     | sin e | cos e | tan e | sinh e | cosh e | tanh e
-    | exp e | ln e | atan e | asin e | acos e | abs e => isRealValued e
+    | exp e | ln e | atan e | asin e | acos e | sec e | csc e | cot e
+    | factorial e | gamma e | floor e | abs e => isRealValued e
+    | Expr.ite c t e => isRealValued c && isRealValued t && isRealValued e
     | re _ | im _ => true
     | conj e => isRealValued e
     | mat _ => false
@@ -556,6 +700,13 @@ partial def expand1 : Expr → Expr
   | atan e => atan (expand1 e)
   | asin e => asin (expand1 e)
   | acos e => acos (expand1 e)
+  | sec e => sec (expand1 e)
+  | csc e => csc (expand1 e)
+  | cot e => cot (expand1 e)
+  | factorial e => factorial (expand1 e)
+  | gamma e => gamma (expand1 e)
+  | floor e => floor (expand1 e)
+  | Expr.ite c t e => Expr.ite (expand1 c) (expand1 t) (expand1 e)
   | abs e => abs (expand1 e)
   | re e => re (expand1 e)
   | im e => im (expand1 e)

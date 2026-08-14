@@ -7,6 +7,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`)
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
+- Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
 - **Assumptions**: `assume(x>0)` refines `√(x²)` / `|x|`; `forget(x)`
 - **Transcendental solve**: `solve(exp(x)=2)`, `solve(sin(x)=1/2)` (trig families in `k`)
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
@@ -99,7 +100,12 @@ x^2 + 3*x + 1
 2x(x+1)              # juxtaposition = multiply
 sin(x^2)
 asin(x)  acos(x)  atan(x)
+sec(x)  csc(x)  cot(x)
 sinh(x)  cosh(x)  tanh(x)
+5!                   # postfix factorial; also factorial(n)
+gamma(x)             # Γ(n)=(n-1)!, Γ(1/2)=√π
+floor(x)
+if(x>0, x, -x)       # piecewise: if / ite / piecewise(c1,v1,…,default)
 abs(x)               # |x|;  cabs(z) for √(re²+im²)
 rewrite(e)           # apply identity table
 hyperexpand(sinh(x)) # → (e^x − e^{-x})/2
@@ -184,6 +190,10 @@ lake exe taschenrechner 'int(1/sqrt(1-x^2))'           # → asin(x)
 lake exe taschenrechner 'assume(x>0); sqrt(x^2)'        # → x
 lake exe taschenrechner 'solve(exp(x)=2)'               # → {ln(2)}
 lake exe taschenrechner 'solve(sin(x)=1/2)'             # → asin(1/2)+2πk, …
+lake exe taschenrechner '5!'                            # → 120
+lake exe taschenrechner 'gamma(1/2)'                    # → √π
+lake exe taschenrechner 'if(x>0, x, -x)'                # piecewise
+lake exe taschenrechner 'int(sec(x))'                   # → ln(sec x + tan x)
 lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
 lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1

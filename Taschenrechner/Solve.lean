@@ -535,6 +535,7 @@ def piExpr : Expr := piE
 inductive TransKind where
   | exp | ln | sin | cos | tan | sinh | cosh | tanh
   | asin | acos | atan | sqrt
+  | sec | csc | cot
   deriving Repr, BEq
 
 def matchUnaryFun : Expr → Option (TransKind × Expr)
@@ -549,6 +550,9 @@ def matchUnaryFun : Expr → Option (TransKind × Expr)
   | asin u => some (.asin, u)
   | acos u => some (.acos, u)
   | atan u => some (.atan, u)
+  | sec u => some (.sec, u)
+  | csc u => some (.csc, u)
+  | cot u => some (.cot, u)
   | pow u (const r) =>
     match CplxConst.toRat? r with
     | some q =>
@@ -594,7 +598,7 @@ def splitFunEq (e : Expr) (v : String) : Option (TransKind × Expr × Expr) :=
     | none => none
 
 /-- Real `n`-th roots / inverses of `f(u) = rhs`. `k` is the integer parameter. -/
-def invertTrans (k : TransKind) (rhs : Expr) (kName : String) : Option (List Expr) :=
+partial def invertTrans (k : TransKind) (rhs : Expr) (kName : String) : Option (List Expr) :=
   let rhs := simplify rhs
   let kk := var kName
   let pi := piExpr
@@ -686,6 +690,26 @@ def invertTrans (k : TransKind) (rhs : Expr) (kName : String) : Option (List Exp
   | .asin => some [sin rhs]
   | .acos => some [cos rhs]
   | .atan => some [tan rhs]
+  | .sec =>
+    -- sec u = 0 has no solution; else cos u = 1/rhs
+    match rat? with
+    | some q =>
+      if q.isZero then some []
+      else invertTrans .cos (div one rhs) kName
+    | none => invertTrans .cos (div one rhs) kName
+  | .csc =>
+    match rat? with
+    | some q =>
+      if q.isZero then some []
+      else invertTrans .sin (div one rhs) kName
+    | none => invertTrans .sin (div one rhs) kName
+  | .cot =>
+    -- cot u = 0 ⇔ cos u = 0 ⇔ u = π/2 + kπ
+    match rat? with
+    | some q =>
+      if q.isZero then some [add (div pi (ofInt 2)) (mul kk pi)]
+      else invertTrans .tan (div one rhs) kName
+    | none => invertTrans .tan (div one rhs) kName
 
 /-- Solve affine `u = val` for `v`. -/
 def solveAffineEq (u : Expr) (v : String) (val : Expr) : Option Expr :=

@@ -141,6 +141,13 @@ partial def trigRewrite1 (e : Expr) : Expr :=
   | atan a => atan (trigRewrite1 a)
   | asin a => asin (trigRewrite1 a)
   | acos a => acos (trigRewrite1 a)
+  | sec a => sec (trigRewrite1 a)
+  | csc a => csc (trigRewrite1 a)
+  | cot a => cot (trigRewrite1 a)
+  | factorial a => factorial (trigRewrite1 a)
+  | gamma a => gamma (trigRewrite1 a)
+  | floor a => floor (trigRewrite1 a)
+  | Expr.ite c t e => Expr.ite (trigRewrite1 c) (trigRewrite1 t) (trigRewrite1 e)
   | abs a => abs (trigRewrite1 a)
   | re a => re (trigRewrite1 a)
   | im a => im (trigRewrite1 a)
@@ -183,6 +190,9 @@ partial def integrateLinearTrig (e : Expr) (v : String) : Option Expr :=
   | sin inner => tryLin inner fun u => neg (cos u)
   | cos inner => tryLin inner fun u => sin u
   | tan inner => tryLin inner fun u => neg (ln (cos u))
+  | sec inner => tryLin inner fun u => ln (add (sec u) (tan u))
+  | csc inner => tryLin inner fun u => neg (ln (add (csc u) (cot u)))
+  | cot inner => tryLin inner fun u => ln (sin u)
   | mul (const c) body =>
     match integrateLinearTrig body v with
     | some F => some (simplify (mul (const c) F))

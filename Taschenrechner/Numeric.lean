@@ -55,9 +55,43 @@ def floatToRat (x : Float) (digits : Nat) : RatConst :=
     let den := Nat.pow 10 digits
     RatConst.normalize ⟨n, den⟩
 
+/-- Lanczos approximation of Γ(z) for real `z` (reflection for z < 1/2). -/
+partial def gammaFloat (z : Float) : Option Float :=
+  if z.isNaN || z.isInf then none
+  else if z < 0.5 then
+    let pi := Float.acos (-1.0)
+    let s := Float.sin (pi * z)
+    if Float.abs s < 1e-15 then none
+    else
+      match gammaFloat (1.0 - z) with
+      | some g => some (pi / (s * g))
+      | none => none
+  else
+    let z := z - 1.0
+    let p : Array Float := #[
+      0.99999999999980993,
+      676.5203681218851,
+      -1259.1392167224028,
+      771.32342877765313,
+      -176.61502916214059,
+      12.507343278686905,
+      -0.13857109526572012,
+      9.9843695780195716e-6,
+      1.5056327351493116e-7]
+    let x :=
+      Id.run do
+        let mut acc := p[0]!
+        for i in [1:p.size] do
+          acc := acc + p[i]! / (z + i.toFloat)
+        pure acc
+    let t := z + 7.5
+    let pi := Float.acos (-1.0)
+    some (Float.sqrt (2.0 * pi) * Float.pow t (z + 0.5) * Float.exp (-t) * x)
+
 /--
   Numeric evaluation of a ground expression to real/imag floats.
-  Supports rationals, +, −, *, /, ^, sin, cos, tan, exp, ln, sqrt, atan, asin, acos, re, im, conj.
+  Supports rationals, +, −, *, /, ^, trig, exp, ln, sqrt, inverse trig,
+  sec/csc/cot, factorial/gamma, floor, piecewise, re, im, conj.
 -/
 partial def evalFloats? (e : Expr) : Option (Float × Float) :=
   match simplify e with
@@ -170,6 +204,78 @@ partial def evalFloats? (e : Expr) : Option (Float × Float) :=
     match evalFloats? a with
     | some (r, i) => some (r, -i)
     | none => none
+  | sec a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 then
+        let c := Float.cos r
+        if Float.abs c < 1e-15 then none else some (1.0 / c, 0)
+      else none
+    | none => none
+  | csc a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 then
+        let s := Float.sin r
+        if Float.abs s < 1e-15 then none else some (1.0 / s, 0)
+      else none
+    | none => none
+  | cot a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i == 0 then
+        let s := Float.sin r
+        if Float.abs s < 1e-15 then none else some (Float.cos r / s, 0)
+      else none
+    | none => none
+  | factorial a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i != 0 then none
+      else if r ≥ 0 && Float.abs (r - Float.floor r) < 1e-9 then
+        let n := Float.floor r |>.toUInt64.toNat
+        if n ≤ 20 then some ((factNat n).toFloat, 0)
+        else
+          match gammaFloat (r + 1.0) with
+          | some g => some (g, 0)
+          | none => none
+      else
+        match gammaFloat (r + 1.0) with
+        | some g => some (g, 0)
+        | none => none
+    | none => none
+  | gamma a =>
+    match evalFloats? a with
+    | some (r, i) =>
+      if i != 0 then none
+      else
+        match gammaFloat r with
+        | some g => some (g, 0)
+        | none => none
+    | none => none
+  | floor a =>
+    match evalFloats? a with
+    | some (r, i) => if i == 0 then some (Float.floor r, 0) else none
+    | none => none
+  | Expr.ite c t e =>
+    let pick (b : Bool) := if b then evalFloats? t else evalFloats? e
+    match c with
+    | eq a b =>
+      match evalFloats? a, evalFloats? b with
+      | some (ar, ai), some (br, bi) =>
+        pick (Float.abs (ar - br) < 1e-9 && Float.abs (ai - bi) < 1e-9)
+      | _, _ => none
+    | lt a b =>
+      match evalFloats? a, evalFloats? b with
+      | some (ar, ai), some (br, bi) =>
+        if ai == 0 && bi == 0 then pick (ar < br) else none
+      | _, _ => none
+    | le a b =>
+      match evalFloats? a, evalFloats? b with
+      | some (ar, ai), some (br, bi) =>
+        if ai == 0 && bi == 0 then pick (ar ≤ br) else none
+      | _, _ => none
+    | _ => none
   | _ => none
 
 /-- Numeric sqrt for non-negative reals (and principal for negatives → i√). -/

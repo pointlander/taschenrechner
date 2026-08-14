@@ -210,6 +210,16 @@ partial def exprToBox (e : Expr) : Box :=
   | atan a => Box.funcCall "atan" (exprToBox a)
   | asin a => Box.funcCall "asin" (exprToBox a)
   | acos a => Box.funcCall "acos" (exprToBox a)
+  | sec a => Box.funcCall "sec" (exprToBox a)
+  | csc a => Box.funcCall "csc" (exprToBox a)
+  | cot a => Box.funcCall "cot" (exprToBox a)
+  | factorial a => Box.funcCall "factorial" (exprToBox a)
+  | gamma a => Box.funcCall "gamma" (exprToBox a)
+  | floor a => Box.funcCall "floor" (exprToBox a)
+  | Expr.ite c t e =>
+    Box.funcCall "if" (Box.hcat (exprToBox c)
+      (Box.hcat (Box.text ", ") (Box.hcat (exprToBox t)
+        (Box.hcat (Box.text ", ") (exprToBox e) 0) 0) 0) 0)
   | abs a =>
     let inner := exprToBox a
     if inner.height == 1 then Box.text s!"|{inner.lines[0]!}|"

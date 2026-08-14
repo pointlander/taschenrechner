@@ -540,7 +540,8 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | none => false
 #guard
   match toGnuplotFormula? (div (sin x) (cos x)) "x" with
-  | some s => s.contains "sin" && s.contains "cos"
+  | some s =>
+      (s.contains "sin" && s.contains "cos") || s.contains "tan"
   | none => false
 #guard
   match toGnuplotFormula? (exp (mul (negOne) (pow x (ofInt 2)))) "x" with
@@ -1120,5 +1121,67 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard
   let env := Env.empty.setAssume "k" SignPred.integer
   applyAssumes env (sin (mul (var "k") piE)) == zero
+
+-- sec / csc / cot, factorial / gamma, floor, piecewise
+#guard ratFloor ⟨5, 2⟩ == 2
+#guard ratFloor ⟨-3, 2⟩ == -2
+#guard ratFloor ⟨-4, 2⟩ == -2
+#guard ratFloor ⟨-1, 2⟩ == -1
+#guard parseEq "sec(0)" (1 : Expr)
+#guard parseEq "csc(pi/2)" (1 : Expr)
+#guard parseEq "cot(pi/4)" (1 : Expr)
+#guard parseEq "5!" (120 : Expr)
+#guard parseEq "factorial(4)" (24 : Expr)
+#guard parseEq "gamma(5)" (24 : Expr)
+#guard parseEq "gamma(1)" (1 : Expr)
+#guard parseEq "floor(5/2)" (2 : Expr)
+#guard parseEq "floor(-3/2)" (ofInt (-2))
+#guard parseEq "if(1<0, 7, 8)" (8 : Expr)
+#guard parseEq "if(1=1, 7, 8)" (7 : Expr)
+#guard parseEq "piecewise(0>1, 1, 0<1, 2, 3)" (2 : Expr)
+#guard simplify (sec zero) == one
+#guard simplify (factorial (ofNat 6)) == ofNat 720
+#guard simplify (gamma (ofNat 4)) == ofNat 6
+#guard simplify (gamma (ofRat ⟨1, 2⟩)) == sqrt piE
+#guard simplify (floor (ofRat ⟨7, 3⟩)) == ofInt 2
+#guard simplify (Expr.ite (lt (ofInt 2) (ofInt 1)) (ofInt 9) (ofInt 4)) == ofInt 4
+#guard simplify (sec (neg x)) == sec x
+#guard simplify (csc (neg x)) == neg (csc x)
+#guard simplify (cot (neg x)) == neg (cot x)
+#guard
+  match parse "sec(x)" with
+  | .ok e => e == sec x
+  | _ => false
+#guard
+  match parse "(x+1)!" with
+  | .ok e => e == simplify (factorial (x + 1))
+  | _ => false
+#guard
+  match parse "if(x>0, x, -x)" with
+  | .ok e =>
+      match e with
+      | Expr.ite c t els => c == lt zero x && t == x && els == neg x
+      | _ => false
+  | _ => false
+#guard checkAntiderivative (sec x) "x"
+#guard checkAntiderivative (csc x) "x"
+#guard checkAntiderivative (cot x) "x"
+#guard verifyDerivative (sec x) (mul (sec x) (tan x)) "x"
+#guard
+  match parse "solve(sec(x)=1)" with
+  | .ok e => (prettySolution e).contains "ℤ"
+  | _ => false
+#guard
+  match parse "N(gamma(1/2), 4)" with
+  | .ok e =>
+      match eval? e with
+      | some c =>
+          match CplxConst.toRat? c with
+          | some q =>
+              let f := ratToFloat q
+              Float.abs (f - 1.7725) < 0.002
+          | none => false
+      | none => false
+  | _ => false
 
 end Taschenrechner.Tests

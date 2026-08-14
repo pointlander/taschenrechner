@@ -204,6 +204,13 @@ partial def substEnv (env : Env) (e : Expr) : Expr :=
   | atan a => atan (substEnv env a)
   | asin a => asin (substEnv env a)
   | acos a => acos (substEnv env a)
+  | sec a => sec (substEnv env a)
+  | csc a => csc (substEnv env a)
+  | cot a => cot (substEnv env a)
+  | factorial a => factorial (substEnv env a)
+  | gamma a => gamma (substEnv env a)
+  | floor a => floor (substEnv env a)
+  | Expr.ite c t e => Expr.ite (substEnv env c) (substEnv env t) (substEnv env e)
   | abs a => abs (substEnv env a)
   | re a => re (substEnv env a)
   | im a => im (substEnv env a)
@@ -335,6 +342,13 @@ partial def applyAssumes (env : Env) : Expr → Expr
   | atan a => atan (applyAssumes env a)
   | asin a => asin (applyAssumes env a)
   | acos a => acos (applyAssumes env a)
+  | sec a => sec (applyAssumes env a)
+  | csc a => csc (applyAssumes env a)
+  | cot a => cot (applyAssumes env a)
+  | factorial a => factorial (applyAssumes env a)
+  | gamma a => gamma (applyAssumes env a)
+  | floor a => floor (applyAssumes env a)
+  | Expr.ite c t e => Expr.ite (applyAssumes env c) (applyAssumes env t) (applyAssumes env e)
   | abs a =>
     let a := applyAssumes env a
     match signOf env a with

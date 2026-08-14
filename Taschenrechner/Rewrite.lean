@@ -37,6 +37,29 @@ def rewriteRoot (e : Expr) : Option Expr :=
       if isTwo r && isTwo s && c.isNegOne && u == v then some one else none
     | mul (const c) (pow (sinh u) (const r)), pow (cosh v) (const s) =>
       if isTwo r && isTwo s && c.isNegOne && u == v then some one else none
+    -- 1 + tan²u → sec²u
+    | const c, pow (tan u) (const r) =>
+      if c.isOne && isTwo r then some (pow (sec u) (ofInt 2)) else none
+    | pow (tan u) (const r), const c =>
+      if c.isOne && isTwo r then some (pow (sec u) (ofInt 2)) else none
+    -- 1 + cot²u → csc²u
+    | const c, pow (cot u) (const r) =>
+      if c.isOne && isTwo r then some (pow (csc u) (ofInt 2)) else none
+    | pow (cot u) (const r), const c =>
+      if c.isOne && isTwo r then some (pow (csc u) (ofInt 2)) else none
+    -- a² + a·b → a(a+b)
+    | pow u (const r), mul a b =>
+      if isTwo r then
+        if u == a then some (mul u (add u b))
+        else if u == b then some (mul u (add u a))
+        else none
+      else none
+    | mul a b, pow u (const r) =>
+      if isTwo r then
+        if u == a then some (mul u (add u b))
+        else if u == b then some (mul u (add u a))
+        else none
+      else none
     | _, _ => none
   -- exp(a)*exp(b) → exp(a+b)
   | mul (exp a) (exp b) => some (exp (add a b))
@@ -79,6 +102,27 @@ def rewriteRoot (e : Expr) : Option Expr :=
     if c.isNegOne then some (cos u) else none
   | tan (mul (const c) u) =>
     if c.isNegOne then some (neg (tan u)) else none
+  | sec (mul (const c) u) =>
+    if c.isNegOne then some (sec u) else none
+  | csc (mul (const c) u) =>
+    if c.isNegOne then some (neg (csc u)) else none
+  | cot (mul (const c) u) =>
+    if c.isNegOne then some (neg (cot u)) else none
+  -- reciprocal / quotient spellings
+  | pow (cos u) (const r) =>
+    if r.isNegOne then some (sec u) else none
+  | pow (sin u) (const r) =>
+    if r.isNegOne then some (csc u) else none
+  | pow (tan u) (const r) =>
+    if r.isNegOne then some (cot u) else none
+  | mul (sin u) (pow (cos v) (const r)) =>
+    if r.isNegOne && u == v then some (tan u) else none
+  | mul (cos u) (pow (sin v) (const r)) =>
+    if r.isNegOne && u == v then some (cot u) else none
+  | mul (cos u) (csc v) => if u == v then some (cot u) else none
+  | mul (csc v) (cos u) => if u == v then some (cot u) else none
+  | mul (sin u) (sec v) => if u == v then some (tan u) else none
+  | mul (sec v) (sin u) => if u == v then some (tan u) else none
   -- exp(-ln u) → 1/u ; exp(k·ln u) → u^k
   | exp (mul (const c) (ln u)) =>
     match CplxConst.toRat? c with
@@ -107,6 +151,13 @@ partial def rewrite1 (e : Expr) : Expr :=
     | atan a => atan (rewrite1 a)
     | asin a => asin (rewrite1 a)
     | acos a => acos (rewrite1 a)
+    | sec a => sec (rewrite1 a)
+    | csc a => csc (rewrite1 a)
+    | cot a => cot (rewrite1 a)
+    | factorial a => factorial (rewrite1 a)
+    | gamma a => gamma (rewrite1 a)
+    | floor a => floor (rewrite1 a)
+    | Expr.ite c t e => Expr.ite (rewrite1 c) (rewrite1 t) (rewrite1 e)
     | abs a => abs (rewrite1 a)
     | re a => re (rewrite1 a)
     | im a => im (rewrite1 a)
@@ -155,6 +206,13 @@ partial def expandHyperbolic (e : Expr) : Expr :=
   | atan a => atan (expandHyperbolic a)
   | asin a => asin (expandHyperbolic a)
   | acos a => acos (expandHyperbolic a)
+  | sec a => sec (expandHyperbolic a)
+  | csc a => csc (expandHyperbolic a)
+  | cot a => cot (expandHyperbolic a)
+  | factorial a => factorial (expandHyperbolic a)
+  | gamma a => gamma (expandHyperbolic a)
+  | floor a => floor (expandHyperbolic a)
+  | Expr.ite c t e => Expr.ite (expandHyperbolic c) (expandHyperbolic t) (expandHyperbolic e)
   | abs a => abs (expandHyperbolic a)
   | re a => re (expandHyperbolic a)
   | im a => im (expandHyperbolic a)

@@ -323,6 +323,14 @@ inductive Expr where
   | atan  : Expr → Expr
   | asin  : Expr → Expr
   | acos  : Expr → Expr
+  | sec   : Expr → Expr
+  | csc   : Expr → Expr
+  | cot   : Expr → Expr
+  | factorial : Expr → Expr
+  | gamma : Expr → Expr
+  | floor : Expr → Expr
+  /-- `if c then t else e`. Conditions are relations (`=`, `<`, `≤`). -/
+  | ite   : Expr → Expr → Expr → Expr
   | abs   : Expr → Expr
   | re    : Expr → Expr
   | im    : Expr → Expr
@@ -349,6 +357,20 @@ def ofRat (r : RatConst) : Expr := const (CplxConst.ofRat r)
 def ofInt (n : Int) : Expr := const (CplxConst.ofInt n)
 def ofNat (n : Nat) : Expr := ofInt n
 def ofCplx (c : CplxConst) : Expr := const c
+
+/-- `n!` as a natural. -/
+def factNat : Nat → Nat
+  | 0 => 1
+  | n'+1 => (n'+1) * factNat n'
+
+/-- Nonnegative integer constant, if any. -/
+def asNat? : Expr → Option Nat
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q =>
+      if q.den == 1 && q.num ≥ 0 then some q.num.toNat else none
+    | none => none
+  | _ => none
 
 def neg (e : Expr) : Expr := mul negOne e
 
@@ -378,8 +400,10 @@ partial def freeVars : Expr → List String
   | var v => [v]
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       (freeVars a ++ freeVars b).eraseDups
+  | ite c t e => (freeVars c ++ freeVars t ++ freeVars e).eraseDups
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
+  | exp e | ln e | atan e | asin e | acos e | sec e | csc e | cot e
+  | factorial e | gamma e | floor e | abs e | re e | im e | conj e =>
       freeVars e
   | mat rows =>
     rows.toList.foldl (fun acc row =>
@@ -392,8 +416,10 @@ partial def dependsOn (e : Expr) (v : String) : Bool :=
   | var name => name == v
   | add a b | mul a b | pow a b | eq a b | lt a b | le a b =>
       dependsOn a v || dependsOn b v
+  | ite c t e => dependsOn c v || dependsOn t v || dependsOn e v
   | sin a | cos a | tan a | sinh a | cosh a | tanh a
-  | exp a | ln a | atan a | asin a | acos a | abs a | re a | im a | conj a =>
+  | exp a | ln a | atan a | asin a | acos a | sec a | csc a | cot a
+  | factorial a | gamma a | floor a | abs a | re a | im a | conj a =>
       dependsOn a v
   | mat rows => rows.any (fun row => row.any (fun e => dependsOn e v))
 
@@ -415,6 +441,13 @@ partial def beq : Expr → Expr → Bool
   | atan a, atan b => beq a b
   | asin a, asin b => beq a b
   | acos a, acos b => beq a b
+  | sec a, sec b => beq a b
+  | csc a, csc b => beq a b
+  | cot a, cot b => beq a b
+  | factorial a, factorial b => beq a b
+  | gamma a, gamma b => beq a b
+  | floor a, floor b => beq a b
+  | ite c1 t1 e1, ite c2 t2 e2 => beq c1 c2 && beq t1 t2 && beq e1 e2
   | abs a, abs b => beq a b
   | re a, re b => beq a b
   | im a, im b => beq a b
@@ -456,6 +489,13 @@ partial def subst (e : Expr) (v : String) (val : Expr) : Expr :=
   | atan a => atan (subst a v val)
   | asin a => asin (subst a v val)
   | acos a => acos (subst a v val)
+  | sec a => sec (subst a v val)
+  | csc a => csc (subst a v val)
+  | cot a => cot (subst a v val)
+  | factorial a => factorial (subst a v val)
+  | gamma a => gamma (subst a v val)
+  | floor a => floor (subst a v val)
+  | ite c t e => ite (subst c v val) (subst t v val) (subst e v val)
   | abs a => abs (subst a v val)
   | re a => re (subst a v val)
   | im a => im (subst a v val)
@@ -561,9 +601,11 @@ partial def termDegree (e : Expr) (v : String) : Int :=
     | none => termDegree base v
   | pow base _ => termDegree base v
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
+  | exp e | ln e | atan e | asin e | acos e | sec e | csc e | cot e
+  | factorial e | gamma e | floor e | abs e | re e | im e | conj e =>
       -- transcendental: sort after polynomials of same “priority”
       100 + termDegree e v
+  | ite c t e => max (termDegree c v) (max (termDegree t v) (termDegree e v))
   | eq a b | lt a b | le a b => max (termDegree a v) (termDegree b v)
   | mat _ => 0
   | add _ _ => 0
@@ -637,6 +679,16 @@ partial def toString : Expr → String
   | atan e => s!"atan({toString e})"
   | asin e => s!"asin({toString e})"
   | acos e => s!"acos({toString e})"
+  | sec e => s!"sec({toString e})"
+  | csc e => s!"csc({toString e})"
+  | cot e => s!"cot({toString e})"
+  | factorial e =>
+    match e with
+    | const _ | var _ => s!"{toString e}!"
+    | _ => s!"({toString e})!"
+  | gamma e => s!"gamma({toString e})"
+  | floor e => s!"floor({toString e})"
+  | ite c t e => s!"if({toString c}, {toString t}, {toString e})"
   | abs e => s!"|{toString e}|"
   | re e => s!"re({toString e})"
   | im e => s!"im({toString e})"

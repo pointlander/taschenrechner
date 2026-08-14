@@ -105,8 +105,10 @@ partial def invClearFactors : Expr → List Expr
   | pow base e => invClearFactors base ++ invClearFactors e
   | add a b => invClearFactors a ++ invClearFactors b
   | sin e | cos e | tan e | sinh e | cosh e | tanh e
-  | exp e | ln e | atan e | asin e | acos e | abs e | re e | im e | conj e =>
+  | exp e | ln e | atan e | asin e | acos e | sec e | csc e | cot e
+  | factorial e | gamma e | floor e | abs e | re e | im e | conj e =>
       invClearFactors e
+  | Expr.ite c t e => invClearFactors c ++ invClearFactors t ++ invClearFactors e
   | eq a b | lt a b | le a b => invClearFactors a ++ invClearFactors b
   | _ => []
 
@@ -219,6 +221,15 @@ def tableIntegral (e : Expr) (v : String) : Option Expr :=
       some (sub (mul (var v) (acos (var v)))
         (pow (sub one (pow (var v) (ofInt 2))) (ofRat ⟨1, 2⟩)))
     else none
+  | sec (var name) =>
+    -- ∫ sec x = ln|sec x + tan x|
+    if name == v then some (ln (add (sec (var v)) (tan (var v)))) else none
+  | csc (var name) =>
+    -- ∫ csc x = −ln|csc x + cot x|
+    if name == v then some (neg (ln (add (csc (var v)) (cot (var v))))) else none
+  | cot (var name) =>
+    -- ∫ cot x = ln|sin x|
+    if name == v then some (ln (sin (var v))) else none
   | _ => none
 
 /-! ### Radical (square-root quadratic) integral table -/
@@ -620,6 +631,9 @@ where
     | acos inner =>
       tryLin inner fun u =>
         sub (mul u (acos u)) (pow (sub one (pow u (ofInt 2))) (ofRat ⟨1, 2⟩))
+    | sec inner => tryLin inner fun u => ln (add (sec u) (tan u))
+    | csc inner => tryLin inner fun u => neg (ln (add (csc u) (cot u)))
+    | cot inner => tryLin inner fun u => ln (sin u)
     | pow (sin inner) (const r) =>
       -- ∫ sin², cos² not fully general; skip unless r=1
       if r.isOne then tryLin inner fun u => neg (cos u) else none

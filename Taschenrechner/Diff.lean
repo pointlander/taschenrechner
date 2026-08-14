@@ -58,6 +58,17 @@ where
     | acos a, v =>
       -- (acos u)' = −u' / √(1 − u²)
       neg (div (diffRaw a v) (pow (sub one (pow a (ofInt 2))) (ofRat ⟨1, 2⟩)))
+    | sec a, v =>
+      mul (mul (sec a) (tan a)) (diffRaw a v)
+    | csc a, v =>
+      neg (mul (mul (csc a) (cot a)) (diffRaw a v))
+    | cot a, v =>
+      neg (mul (pow (csc a) (ofInt 2)) (diffRaw a v))
+    | factorial _a, _v => zero  -- discrete; no digamma
+    | gamma _a, _v => zero      -- Γ' needs digamma
+    | floor _a, _v => zero      -- 0 a.e.
+    | Expr.ite c t e, v =>
+      Expr.ite c (diffRaw t v) (diffRaw e v)
     | abs a, v =>
       -- d/dx |u| = u' · u / |u|  (real; undefined at 0)
       mul (div a (abs a)) (diffRaw a v)

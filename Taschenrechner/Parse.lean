@@ -14,7 +14,10 @@
   Juxtaposition denotes multiplication: `2x`, `(x+1)(x-2)`, `sin(x)cos(x)`.
 
   Built-in calls (desugared while parsing):
-    sin, cos, tan, exp, ln, log, sqrt
+    sin, cos, tan, sec, csc, cot, exp, ln, log, sqrt
+    asin, acos, atan, sinh, cosh, tanh
+    factorial / postfix n!, gamma, floor
+    if / ite / piecewise
     diff(e) | diff(e, v)     — differentiate
     int(e)  | int(e, v)      — integrate (fails if no antiderivative)
     simplify(e), expand(e)
@@ -53,6 +56,7 @@ inductive Token where
   | eq | lt | le | gt | ge
   | lparen | rparen | comma
   | lbracket | rbracket | semicolon
+  | bang
   | eof
   deriving Repr, DecidableEq, Inhabited
 
@@ -76,6 +80,7 @@ def Token.toString : Token → String
   | .lbracket => "["
   | .rbracket => "]"
   | .semicolon => ";"
+  | .bang => "!"
   | .eof => "<eof>"
 
 instance : ToString Token where
@@ -185,6 +190,7 @@ def tokenize (input : String) : Except String (Array Token) := do
       | '[' => out := out.push .lbracket; i := i + 1
       | ']' => out := out.push .rbracket; i := i + 1
       | ';' => out := out.push .semicolon; i := i + 1
+      | '!' => out := out.push .bang; i := i + 1
       | _ => throw s!"unexpected character '{c}' at position {i}"
   pure (out.push .eof)
 
@@ -229,6 +235,13 @@ def integrateDefiniteCall (e : Expr) (v : String) (lo hi : Expr) : Except String
   | .notElementary msg => throw s!"not elementary: {msg}"
   | .failure msg => throw s!"integration failed: {msg}"
 
+/-- `piecewise(c1,v1,c2,v2,…,default)` → nested `ite`. Even length: default 0. -/
+def piecewiseToIte (args : List Expr) : Expr :=
+  match args with
+  | [] => Expr.zero
+  | [e] => e
+  | c :: v :: rest => Expr.ite c v (piecewiseToIte rest)
+
 /-- Desugar built-in function / CAS forms. -/
 def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except String Expr := do
   let n := name.toLower
@@ -247,6 +260,15 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "arctan", [e] => pure (Expr.atan e)
   | "asin", [e] | "arcsin", [e] => pure (Expr.asin e)
   | "acos", [e] | "arccos", [e] => pure (Expr.acos e)
+  | "sec", [e] => pure (Expr.sec e)
+  | "csc", [e] | "cosec", [e] => pure (Expr.csc e)
+  | "cot", [e] | "cotan", [e] => pure (Expr.cot e)
+  | "factorial", [e] | "fact", [e] => pure (Expr.factorial e)
+  | "gamma", [e] | "gammafn", [e] => pure (Expr.gamma e)
+  | "floor", [e] => pure (Expr.floor e)
+  | "if", [c, t, e] | "ite", [c, t, e] => pure (Expr.ite c t e)
+  | "piecewise", args | "pw", args =>
+      pure (piecewiseToIte args)
   | "re", [e] => pure (Expr.re e)
   | "im", [e] => pure (Expr.im e)
   | "conj", [e] => pure (Expr.conj e)
@@ -683,6 +705,10 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "sin", _ | "cos", _ | "tan", _ | "sinh", _ | "cosh", _ | "tanh", _
   | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "asin", _ | "arcsin", _ | "acos", _ | "arccos", _
+  | "if", _ | "ite", _ =>
+      throw s!"{name} expects if(cond, then, else), got {args.length} args"
+  | "sec", _ | "csc", _ | "cosec", _ | "cot", _ | "cotan", _
+  | "factorial", _ | "fact", _ | "gamma", _ | "gammafn", _ | "floor", _
   | "re", _ | "im", _ | "conj", _ | "abs", _ | "cabs", _
   | "rewrite", _ | "hyperexpand", _ | "hexpand", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -835,7 +861,10 @@ def isBuiltinName (name : String) : Bool :=
   n == "sin" || n == "cos" || n == "tan" || n == "sinh" || n == "cosh" || n == "tanh"
     || n == "exp" || n == "ln" || n == "log"
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "asin" || n == "arcsin"
-    || n == "acos" || n == "arccos" || n == "re" || n == "im" || n == "conj"
+    || n == "acos" || n == "arccos" || n == "sec" || n == "csc" || n == "cosec"
+    || n == "cot" || n == "cotan" || n == "factorial" || n == "fact"
+    || n == "gamma" || n == "gammafn" || n == "floor" || n == "if" || n == "ite"
+    || n == "piecewise" || n == "pw" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "cabs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "rewrite" || n == "hyperexpand" || n == "hexpand"
     || n == "ascii" || n == "art" || n == "pretty"
@@ -934,6 +963,15 @@ partial def parseUnary (env : Env) (p : Parser) : Except String (Expr × Parser)
 /-- Right-associative exponentiation: `a^b^c` = `a^(b^c)`. -/
 partial def parsePower (env : Env) (p : Parser) : Except String (Expr × Parser) := do
   let (lhs, p) ← parseAtom env p
+  -- postfix factorial binds tighter than ^ : 2^3! = 2^(3!)
+  let (lhs, p) :=
+    Id.run do
+      let mut e := lhs
+      let mut p := p
+      while p.peek == .bang do
+        e := Expr.factorial e
+        p := p.advance
+      pure (e, p)
   match p.peek with
   | .caret =>
     let (rhs, p) ← parseUnary env p.advance
@@ -1316,7 +1354,9 @@ def helpText : String :=
     ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
-    functions   sin cos tan sinh cosh tanh exp ln log sqrt atan asin acos abs cabs\n\
+    functions   sin cos tan sec csc cot sinh cosh tanh exp ln log sqrt\n\
+                atan asin acos abs cabs  factorial/n!  gamma  floor\n\
+                if(c,t,e)  ite(c,t,e)  piecewise(c1,v1,…,default)\n\
                 re im conj  rewrite(e)  hyperexpand(e)  ascii(e)\n\
                 plot  plot()  gnuplot   — gnuplot command-line shell\n\
                 plot(f)  plot(f,a,b)  plot(f,x,a,b)  then gnuplot CLI (quit to return)\n\
