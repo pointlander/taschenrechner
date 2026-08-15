@@ -3,11 +3,13 @@
 
   * `cancel`  — cancel common factors in products / quotients (integer powers)
   * `together`— put rational expressions in one variable over a common denominator
-  * `normalForm` — simplify ∘ cancel ∘ together (default free var `"x"`)
+  * `normalForm` — simplify ∘ cancel ∘ together over ℚ(x) or K(x)
+    (K a real multiquadratic field, e.g. ℚ(√2))
   * `isZeroExpr` — stronger zero test for RREF pivots and verification
 -/
 import Taschenrechner.Simplify
 import Taschenrechner.RatInt
+import Taschenrechner.AlgNum
 
 namespace Taschenrechner.Expr
 
@@ -144,9 +146,12 @@ def cancel (e : Expr) : Expr :=
   let e0 := simplify (cancel1 (simplify e))
   -- When the expression is rational in the primary free var, cancel via poly GCD
   let v := primaryVar e0
-  match RatFn.ofExpr? e0 v with
-  | some r => simplify (RatFn.toExpr (RatFn.simplify r) v)
-  | none => e0
+  match AlgRatFn.ofExpr? e0 v with
+  | some r => simplify (AlgRatFn.toExpr r v)
+  | none =>
+    match RatFn.ofExpr? e0 v with
+    | some r => simplify (RatFn.toExpr (RatFn.simplify r) v)
+    | none => e0
 
 /--
   Put a rational expression in free variable `v` over a common denominator
@@ -154,28 +159,31 @@ def cancel (e : Expr) : Expr :=
 -/
 def together (e : Expr) (v : String := "x") : Expr :=
   let e := simplify e
-  match RatFn.ofExpr? e v with
-  | some r =>
-    -- ofExpr? already simplifies; rebuild canonical poly/poly form
-    RatFn.toExpr (RatFn.simplify r) v
+  match AlgRatFn.ofExpr? e v with
+  | some r => AlgRatFn.toExpr r v
   | none =>
-    -- try termwise: sum of rationals
-    let terms := flattenAdd e
-    let rec collect (ts : List Expr) (acc : Option RatFn) : Option RatFn :=
-      match ts with
-      | [] => acc
-      | t :: rest =>
-        match RatFn.ofExpr? t v with
-        | none => none
-        | some r =>
-          let acc :=
-            match acc with
-            | none => some r
-            | some a => some (RatFn.add a r)
-          collect rest acc
-    match collect terms none with
-    | some r => RatFn.toExpr (RatFn.simplify r) v
-    | none => cancel e
+    match RatFn.ofExpr? e v with
+    | some r =>
+      -- ofExpr? already simplifies; rebuild canonical poly/poly form
+      RatFn.toExpr (RatFn.simplify r) v
+    | none =>
+      -- try termwise: sum of rationals
+      let terms := flattenAdd e
+      let rec collect (ts : List Expr) (acc : Option RatFn) : Option RatFn :=
+        match ts with
+        | [] => acc
+        | t :: rest =>
+          match RatFn.ofExpr? t v with
+          | none => none
+          | some r =>
+            let acc :=
+              match acc with
+              | none => some r
+              | some a => some (RatFn.add a r)
+            collect rest acc
+      match collect terms none with
+      | some r => RatFn.toExpr (RatFn.simplify r) v
+      | none => cancel e
 
 /--
   Full algebraic normal form:
@@ -183,9 +191,12 @@ def together (e : Expr) (v : String := "x") : Expr :=
 -/
 def normalForm (e : Expr) (v : String := "x") : Expr :=
   let e := simplify e
-  let e := cancel e
-  let e := together e v
-  simplify e
+  match AlgRatFn.ofExpr? e v with
+  | some r => simplify (AlgRatFn.toExpr r v)
+  | none =>
+    let e := cancel e
+    let e := together e v
+    simplify e
 
 /-- Stronger zero test for pivots / verification. -/
 def isZeroExpr (e : Expr) (v : String := "x") : Bool :=
@@ -200,6 +211,9 @@ def isZeroExpr (e : Expr) (v : String := "x") : Bool :=
       | const c => c.isZero
       | _ =>
         e1 == zero ||
+          match AlgRatFn.ofExpr? e1 v with
+          | some r => r.num.isZero
+          | none =>
           match RatFn.ofExpr? e1 v with
           | some r => r.num.isZero
           | none =>

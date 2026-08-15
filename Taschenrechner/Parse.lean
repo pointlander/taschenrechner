@@ -1382,7 +1382,8 @@ def helpText : String :=
                 dsolve(A)  Y'=A Y via expm\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
-                nf(e)/normal(e)  euler(e)\n\
+                nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\
+                euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
                 N(e)  N(e, digits)  numeric(e)  — float approx, default 6 digits\n\
                 assume(x>0)  assume(x, pos)  forget(x)  assumptions\n\

@@ -4,7 +4,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 
 - Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
 - **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
-- Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`)
+- Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`) over ℚ(x) and **ℚ(√d)(x)**
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
 - Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
@@ -58,6 +58,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | Module | Role |
 |--------|------|
 | `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
+| `Taschenrechner.AlgNum` | Multiquadratic algebraics `Σ c√κ` and `nf` over K(x) |
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
@@ -142,12 +143,15 @@ Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `
 |------|----------------|
 | `cancel(e)` | Cancel common factors in products/quotients (integer powers + poly GCD for rationals) |
 | `together(e)` | Put a sum of rationals over a common denominator (`RatFn`) |
-| `nf(e)` / `normal(e)` | `simplify` → `cancel` → `together` → `simplify` |
+| `nf(e)` / `normal(e)` | `simplify` → `cancel` → `together` over **ℚ(x)** or a multiquadratic **K(x)** (e.g. ℚ(√2)) |
 
 ```bash
 lake exe taschenrechner 'cancel((x^2-1)/(x-1))'   # → 1 + x
 lake exe taschenrechner 'together(1/x + 1/(x+1))' # → (1+2x)/(x+x²)
 lake exe taschenrechner 'nf(1/x + 2/x)'           # → 3/x
+lake exe taschenrechner 'nf((x+sqrt(2))*(x-sqrt(2)))'  # → x² − 2
+lake exe taschenrechner 'nf(1/sqrt(2))'           # → √2 / 2
+lake exe taschenrechner 'nf((sqrt(2)*x+2)/(x+sqrt(2)))'  # → √2
 lake exe taschenrechner 'subst(x^2+1, x, 3)'      # → 10
 lake exe taschenrechner 'eval(x^2+1, x, 4)'       # → 17
 lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i

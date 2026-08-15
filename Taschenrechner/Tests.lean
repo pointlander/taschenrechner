@@ -3,6 +3,7 @@
   These are type-checked / evaluated at compile time via `#guard`.
 -/
 import Taschenrechner.Expr
+import Taschenrechner.AlgNum
 import Taschenrechner.Simplify
 import Taschenrechner.Diff
 import Taschenrechner.Integrate
@@ -1182,6 +1183,41 @@ def parseEq (s : String) (expected : Expr) : Bool :=
               Float.abs (f - 1.7725) < 0.002
           | none => false
       | none => false
+  | _ => false
+
+-- Algebraic numbers / nf in ℚ(√2)
+#guard AlgNum.ofSqrtRat? ⟨8, 1⟩ == some (AlgNum.scale (RatConst.ofInt 2) ⟨[⟨RatConst.one, 2⟩]⟩)
+#guard simplify (sqrt (ofInt 8)) == simplify (mul (ofInt 2) (sqrt (ofInt 2)))
+#guard simplify (mul (sqrt (ofInt 2)) (sqrt (ofInt 2))) == ofInt 2
+#guard simplify (div one (sqrt (ofInt 2))) == simplify (div (sqrt (ofInt 2)) (ofInt 2))
+#guard simplify (mul (add one (sqrt (ofInt 2))) (sub one (sqrt (ofInt 2)))) == negOne
+#guard simplify (add (sqrt (ofInt 8)) (sqrt (ofInt 2))) == simplify (mul (ofInt 3) (sqrt (ofInt 2)))
+#guard
+  -- √(3+2√2) denests to 1+√2
+  simplify (sqrt (add (ofInt 3) (mul (ofInt 2) (sqrt (ofInt 2)))))
+    == simplify (add one (sqrt (ofInt 2)))
+#guard isZeroExpr (sub (mul (sqrt (ofInt 2)) (sqrt (ofInt 2))) (ofInt 2))
+#guard
+  match parse "nf((x+sqrt(2))*(x-sqrt(2)))" with
+  | .ok e => equivNF e (sub (pow x (ofInt 2)) (ofInt 2))
+  | _ => false
+#guard
+  match parse "nf(1/sqrt(2))" with
+  | .ok e => equivNF e (div (sqrt (ofInt 2)) (ofInt 2))
+  | _ => false
+#guard
+  match parse "nf((sqrt(2)*x+2)/(x+sqrt(2)))" with
+  | .ok e => equivNF e (sqrt (ofInt 2))
+  | _ => false
+#guard
+  match parse "nf(1/(x+sqrt(2)))" with
+  | .ok e =>
+      -- den rationalized: (x − √2)/(x² − 2)
+      equivNF e (div (sub x (sqrt (ofInt 2))) (sub (pow x (ofInt 2)) (ofInt 2)))
+  | _ => false
+#guard
+  match parse "nf((sqrt(2)+sqrt(8)))" with
+  | .ok e => equivNF e (mul (ofInt 3) (sqrt (ofInt 2)))
   | _ => false
 
 end Taschenrechner.Tests

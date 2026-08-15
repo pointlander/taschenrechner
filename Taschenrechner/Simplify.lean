@@ -4,6 +4,7 @@
 import Taschenrechner.Expr
 import Taschenrechner.Matrix
 import Taschenrechner.Rewrite
+import Taschenrechner.AlgNum
 
 namespace Taschenrechner.Expr
 
@@ -332,9 +333,9 @@ partial def simplify1 : Expr → Expr
       | some C => mat (C.map (fun row => row.map simplify1))
       | none => add a b
     | const ra, const rb => const (ra + rb)
-    | const r, e => if r.isZero then e else rebuildAdd (add (const r) e)
-    | e, const r => if r.isZero then e else rebuildAdd (add e (const r))
-    | _, _ => rebuildAdd (add a b)
+    | const r, e => if r.isZero then e else AlgNum.foldExpr (rebuildAdd (add (const r) e))
+    | e, const r => if r.isZero then e else AlgNum.foldExpr (rebuildAdd (add e (const r)))
+    | _, _ => AlgNum.foldExpr (rebuildAdd (add a b))
   | mul a b =>
     let a := simplify1 a
     let b := simplify1 b
@@ -357,12 +358,12 @@ partial def simplify1 : Expr → Expr
     | const r, _ =>
       if r.isZero then zero
       else if r.isOne then b
-      else rebuildMul (mul a b)
+      else AlgNum.foldExpr (rebuildMul (mul a b))
     | _, const r =>
       if r.isZero then zero
       else if r.isOne then a
-      else rebuildMul (mul a b)
-    | _, _ => rebuildMul (mul a b)
+      else AlgNum.foldExpr (rebuildMul (mul a b))
+    | _, _ => AlgNum.foldExpr (rebuildMul (mul a b))
   | pow a b =>
     let a := simplify1 a
     let b := simplify1 b
@@ -376,31 +377,34 @@ partial def simplify1 : Expr → Expr
     | _, const r =>
       if r.isZero then one
       else if r.isOne then a
-      else match a with
-        | const ra =>
-          -- integer powers of complex constants
-          if r.isReal && r.re.den == 1 then
-            match CplxConst.powInt ra r.re.num with
-            | some rc => const rc
-            | none => pow a b
-          else
-            -- exact rational n-th roots: 8^(1/3) → 2
-            match CplxConst.toRat? ra, CplxConst.toRat? r with
-            | some q, some e =>
-              if e.num == 1 && e.den > 1 then
-                match RatConst.nthRoot? q e.den with
-                | some s => const (CplxConst.ofRat s)
-                | none => pow a b
+      else
+        let e :=
+          match a with
+          | const ra =>
+            -- integer powers of complex constants
+            if r.isReal && r.re.den == 1 then
+              match CplxConst.powInt ra r.re.num with
+              | some rc => const rc
+              | none => pow a b
+            else
+              -- exact rational n-th roots: 8^(1/3) → 2
+              match CplxConst.toRat? ra, CplxConst.toRat? r with
+              | some q, some e =>
+                if e.num == 1 && e.den > 1 then
+                  match RatConst.nthRoot? q e.den with
+                  | some s => const (CplxConst.ofRat s)
+                  | none => pow a b
+                else pow a b
+              | _, _ => pow a b
+          | pow base e =>
+            -- (x^m)^n = x^(mn) only for integer n (√(x²) must stay for |x| / assume)
+            match CplxConst.toRat? r with
+            | some q =>
+              if q.den == 1 then pow base (mul e b)
               else pow a b
-            | _, _ => pow a b
-        | pow base e =>
-          -- (x^m)^n = x^(mn) only for integer n (√(x²) must stay for |x| / assume)
-          match CplxConst.toRat? r with
-          | some q =>
-            if q.den == 1 then pow base (mul e b)
-            else pow a b
-          | none => pow a b
-        | _ => pow a b
+            | none => pow a b
+          | _ => pow a b
+        AlgNum.foldExpr e
     | const r, _ =>
       if r.isOne then one
       else if r.isZero then zero  -- 0^e for e≠0; e=0 already handled

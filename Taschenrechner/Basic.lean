@@ -2,6 +2,7 @@
   Root re-exports for the Taschenrechner computer algebra system.
 -/
 import Taschenrechner.Expr
+import Taschenrechner.AlgNum
 import Taschenrechner.Simplify
 import Taschenrechner.Rewrite
 import Taschenrechner.Normal
