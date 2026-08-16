@@ -1385,7 +1385,7 @@ def helpText : String :=
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\
                 euler(e)\n\
                 subst(e, v, a)  eval(e)  eval(e, v, a)  at(e, v, a)\n\
-                N(e)  N(e, digits)  numeric(e)  — float approx, default 6 digits\n\
+                N(e)  N(e, digits)  numeric(e)  — IEEE binary64 → rational (default 6, max 12)\n\
                 assume(x>0)  assume(x, pos)  forget(x)  assumptions\n\
                 solve(exp(x)=2)  solve(sin(x)=1/2)  (k ∈ ℤ for trig families)\n\
   \n\

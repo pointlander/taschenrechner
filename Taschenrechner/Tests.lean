@@ -671,6 +671,32 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "N(1/2)" with
   | .ok e => simplify e == ofRat ⟨1, 2⟩
   | _ => false
+#guard floatToExactRat? (1.0 : Float) == some RatConst.one
+#guard floatToExactRat? (0.5 : Float) == some ⟨1, 2⟩
+#guard floatToExactRat? (2.0 : Float) == some ⟨2, 1⟩
+#guard floatToExactRat? (-2.0 : Float) == some ⟨-2, 1⟩
+#guard floatToExactRat? (0.0 : Float) == some RatConst.zero
+#guard floatToExactRat? (3.0 : Float) == some ⟨3, 1⟩
+#guard roundDivAway 5 2 == 3   -- 2.5 → 3
+#guard roundDivAway (-5) 2 == -3
+#guard roundRatToDigits ⟨1, 2⟩ 1 == RatConst.normalize ⟨5, 10⟩
+#guard floatToRat (0.5 : Float) 1 == RatConst.normalize ⟨5, 10⟩
+#guard floatToRat (1.0 / 10.0) 6 == ⟨1, 10⟩  -- 0.1 binary64 rounds to 1/10
+#guard floatToRat (1.25 : Float) 1 == ⟨13, 10⟩
+#guard floatToRat (-1.25 : Float) 1 == ⟨-13, 10⟩
+#guard
+  -- 12-digit cap: extra digits are ignored
+  floatToRat (Float.acos (-1.0)) 20 == floatToRat (Float.acos (-1.0)) 12
+#guard
+  match parse "N(pi, 2)" with
+  | .ok e =>
+      match eval? e with
+      | some c =>
+          match CplxConst.toRat? c with
+          | some q => q == ⟨314, 100⟩ || Float.abs (ratToFloat q - 3.14) < 0.001
+          | none => false
+      | none => false
+  | _ => false
 #guard
   match parse "series(sin(x), 3)" with
   | .ok e =>

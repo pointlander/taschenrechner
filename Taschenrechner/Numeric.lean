@@ -1,7 +1,9 @@
 /-
   Floating-point numeric evaluation.
 
-  * `N(e)` / `N(e, digits)` — approximate a ground expression to a rounded rational
+  * `N(e)` / `N(e, digits)` — evaluate in IEEE-754 binary64, decode the
+    exact dyadic rational, then round to `digits` places after the decimal
+    (default 6, **max 12**). Ties go away from zero.
   * Decimals parse as exact rationals; many print back as decimals (den | 2^a 5^b)
 -/
 import Taschenrechner.Expr
@@ -12,6 +14,9 @@ import Taschenrechner.Eval
 namespace Taschenrechner
 
 open Expr
+
+/-- Hard cap on `N(e, digits)` (binary64 has ~15–16 significant digits). -/
+def maxNDigits : Nat := 12
 
 /-- Convert `Int` to `Float`. -/
 def intToFloat (n : Int) : Float :=
@@ -25,35 +30,85 @@ def ratToFloat (r : RatConst) : Float :=
 def cplxToFloats (c : CplxConst) : Float × Float :=
   (ratToFloat c.re, ratToFloat c.im)
 
+/-- Signed `± num/den`. -/
+def signedRat (neg : Bool) (num den : Nat) : RatConst :=
+  RatConst.normalize ⟨if neg then - (num : Int) else (num : Int), den⟩
+
+/--
+  IEEE-754 binary64 fields: `(signIsNeg, expBits, fracBits)`.
+  Layout: 1 sign + 11 exponent + 52 fraction.
+-/
+def ieeeParts (x : Float) : Bool × Nat × Nat :=
+  let bits := x.toBits
+  let signNeg := (bits >>> 63) != (0 : UInt64)
+  let expBits := ((bits >>> 52) &&& (2047 : UInt64)).toNat
+  let frac := (bits &&& (((1 : UInt64) <<< 52) - 1)).toNat
+  (signNeg, expBits, frac)
+
+/--
+  Exact dyadic rational represented by a finite IEEE-754 binary64 value.
+  `none` for NaN / ±∞.
+-/
+def floatToExactRat? (x : Float) : Option RatConst :=
+  if !x.isFinite then none
+  else
+    let (signNeg, expBits, frac) := ieeeParts x
+    if expBits == 0 then
+      -- ±0 or subnormal: (−1)^s · frac · 2^(1−1023−52) = frac / 2^1074
+      if frac == 0 then some RatConst.zero
+      else some (signedRat signNeg frac (Nat.pow 2 1074))
+    else
+      -- normal: (−1)^s · (1 + frac/2^52) · 2^(exp−1023)
+      --        = (−1)^s · (2^52 + frac) · 2^(exp−1075)
+      let mantissa := Nat.pow 2 52 + frac
+      let e : Int := (expBits : Int) - 1075
+      if e ≥ 0 then
+        some (signedRat signNeg (mantissa * Nat.pow 2 e.toNat) 1)
+      else
+        some (signedRat signNeg mantissa (Nat.pow 2 e.natAbs))
+
+/-- Round `num/den` to the nearest integer; ties away from zero. -/
+def roundDivAway (num : Int) (den : Nat) : Int :=
+  if den == 0 then 0
+  else
+    let a := num.natAbs
+    let q := a / den
+    let r := a % den
+    let q' := if r * 2 ≥ den then q + 1 else q
+    if num ≥ 0 then (q' : Int) else - (q' : Int)
+
+/-- Round a rational to `digits` places after the decimal (capped at `maxNDigits`). -/
+def roundRatToDigits (q : RatConst) (digits : Nat) : RatConst :=
+  let digits := min digits maxNDigits
+  let q := RatConst.normalize q
+  if q.isZero then q
+  else
+    let scale := Nat.pow 10 digits
+    let n := roundDivAway (q.num * (scale : Int)) q.den
+    RatConst.normalize ⟨n, scale⟩
+
 /-- Round a non-negative float to nearest `Nat` (clamped). -/
 def floatToNatRound (x : Float) : Nat :=
-  if x < 0 then 0
-  else if x.isNaN || x.isInf then 0
-  else (Float.floor (x + 0.5)).toUInt64.toNat
+  match floatToExactRat? x with
+  | none => 0
+  | some q =>
+    let n := roundDivAway q.num q.den
+    if n < 0 then 0 else n.toNat
 
-/-- Round float to nearest `Int`. -/
+/-- Round float to nearest `Int` (ties away from zero). -/
 def floatToIntRound (x : Float) : Int :=
-  if x.isNaN then 0
-  else if x ≥ 0 then (floatToNatRound x : Int)
-  else -((floatToNatRound (-x) : Int))
+  match floatToExactRat? x with
+  | none => 0
+  | some q => roundDivAway q.num q.den
 
-/-- `10^n` as Float (n small). -/
-def tenPowFloat (n : Nat) : Float :=
-  Float.pow 10.0 n.toFloat
-
-/-- Round `x` to `digits` digits after the decimal point as a rational. -/
+/--
+  Round an IEEE-754 binary64 value to a rational with `digits` places
+  after the decimal (default callers use 6; **max 12**).
+-/
 def floatToRat (x : Float) (digits : Nat) : RatConst :=
-  let digits := min digits 12  -- stay within float / UInt64 comfort
-  if x.isNaN then RatConst.zero
-  else if x.isInf then
-    -- cannot represent ∞ as RatConst; use a large sentinel? better zero + error upstream
-    RatConst.zero
-  else
-    let scale := tenPowFloat digits
-    let scaled := x * scale
-    let n := floatToIntRound scaled
-    let den := Nat.pow 10 digits
-    RatConst.normalize ⟨n, den⟩
+  match floatToExactRat? x with
+  | none => RatConst.zero
+  | some q => roundRatToDigits q digits
 
 /-- Lanczos approximation of Γ(z) for real `z` (reflection for z < 1/2). -/
 partial def gammaFloat (z : Float) : Option Float :=
@@ -324,8 +379,9 @@ def floatsToExpr (reF imF : Float) (digits : Nat) : Expr :=
     simplify (add (ofRat r) (mul (ofRat i) I))
 
 /--
-  Numerically evaluate `e` to `digits` decimal places (default 6).
-  Returns a rational (or complex rational) approximation as an `Expr`.
+  Numerically evaluate `e` in IEEE-754 binary64, then round to a rational
+  with `digits` places after the decimal (default 6, max `maxNDigits` = 12).
+  Ground expressions that already live in ℚ(i) are returned exactly.
 -/
 def numericEval (e : Expr) (digits : Nat := 6) : Except String Expr :=
   let e := simplify e

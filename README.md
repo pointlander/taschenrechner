@@ -3,7 +3,7 @@
 A small **computer algebra system** written in [Lean 4](https://lean-lang.org/), supporting:
 
 - Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
-- **Numeric mode**: `N(sin(1), 6)` float approximation to a rounded rational
+- **Numeric mode**: `N(sin(1), 6)` IEEE-754 binary64, then rounded to a rational (max 12 decimals)
 - Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`) over ℚ(x) and **ℚ(√d)(x)**
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
@@ -164,8 +164,8 @@ lake exe taschenrechner 'eval(2+3*i)'             # → 2+3*i
 | `subst(e, v, a)` / `subs(...)` | Replace free `v` by `a`, then simplify |
 | `eval(e)` | Exact eval in ℚ(i) when ground; else simplify |
 | `eval(e, v, a)` / `at(e, v, a)` | Substitute then exact-eval if possible |
-| `N(e)` / `numeric(e)` | Float approx of ground expr (default 6 digits after decimal) |
-| `N(e, n)` | Same with `n` digits (max 12); result is a rounded rational |
+| `N(e)` / `numeric(e)` | IEEE-754 binary64 eval, then round to a rational (default 6 decimals) |
+| `N(e, n)` | Same with `n` places after the decimal (**max 12**); ties away from 0 |
 
 Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is `2^a·5^b` print as decimals (e.g. `1/2` → `0.5`); others stay as fractions (`1/3`).
 
