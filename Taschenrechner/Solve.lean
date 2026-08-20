@@ -1,7 +1,8 @@
 /-
-  Scalar polynomial solving and factoring over ℚ.
+  Scalar polynomial solving and factoring over ℚ and K = ℚ(√κ₁, …).
 
-  * `factor` — factor polynomials / rationals in one variable (and small integers)
+  * `factor` — factor polynomials / rationals in one variable (and small integers);
+    over K, linear/quadratic splitting including `√d`
   * `roots` / `solve` — rational roots, quadratic formula, binomial n-th roots, Cardano cubics
   * `coeff` / `collect` — coefficient extraction and poly collection
 -/
@@ -113,9 +114,30 @@ def factorsToExpr (c : RatConst) (facs : List (Poly × Nat)) (v : String) : Expr
   else if body == Expr.one then Expr.ofRat c
   else mul (Expr.ofRat c) body
 
+/-- Group equal monic algebraic factors with multiplicity. -/
+def groupAlgFactors (fs : List AlgPoly) : List (AlgPoly × Nat) :=
+  let rec insert (p : AlgPoly) : List (AlgPoly × Nat) → List (AlgPoly × Nat)
+    | [] => [(p, 1)]
+    | (q, m) :: rest =>
+      if p == q then (q, m + 1) :: rest
+      else (q, m) :: insert p rest
+  fs.foldl (fun acc p => insert (AlgPoly.monic p) acc) []
+
+/-- Product of algebraic poly factors with multiplicities. -/
+def factorsToExprAlg (c : AlgNum) (facs : List (AlgPoly × Nat)) (v : String) : Expr :=
+  let body :=
+    facs.foldl (fun acc (p, m) =>
+      let pe := AlgPoly.toExpr p v
+      let pe := if m == 1 then pe else pow pe (Expr.ofNat m)
+      if acc == Expr.one then pe else mul acc pe) Expr.one
+  if c.isOne then body
+  else if c.isZero then Expr.zero
+  else if body == Expr.one then AlgNum.toExpr c
+  else mul (AlgNum.toExpr c) body
+
 /-! ### Factor -/
 
-/-- Factor a univariate polynomial/rational expression over ℚ in variable `v`. -/
+/-- Factor a univariate polynomial/rational expression over K (or ℚ) in `v`. -/
 def factorIn (e : Expr) (v : String) : Option Expr :=
   let e := simplify e
   -- pure integer constant
@@ -131,24 +153,40 @@ def factorIn (e : Expr) (v : String) : Option Expr :=
         some (div (factorInt q.num) (factorInt (Int.ofNat q.den)))
     | none => some e  -- complex constant: leave
   | _ =>
-    match RatFn.ofExpr? e v with
-    | none => none
+    match AlgRatFn.ofExpr? e v with
     | some r =>
-      let r := RatFn.simplify r
+      let r := AlgRatFn.canceled r
       if r.num.isZero then some Expr.zero
       else
-        let (cn, nFacs) := Poly.factorOverQ r.num
-        let (cd, dFacs) := Poly.factorOverQ r.den
-        let nG := groupFactors nFacs
-        let dG := groupFactors dFacs
+        let (cn, nFacs) := AlgPoly.factorOverK r.num
+        let (cd, dFacs) := AlgPoly.factorOverK r.den
+        let nG := groupAlgFactors nFacs
+        let dG := groupAlgFactors dFacs
         -- Do not `simplify` the product: that would reassemble integers
         -- (2²·3 → 12) and can expand linear factors.
-        let numE := factorsToExpr cn nG v
+        let numE := factorsToExprAlg cn nG v
         if r.den.isOne || (dFacs.isEmpty && cd.isOne) then
           some numE
         else
-          let denE := factorsToExpr cd dG v
+          let denE := factorsToExprAlg cd dG v
           some (div numE denE)
+    | none =>
+      match RatFn.ofExpr? e v with
+      | none => none
+      | some r =>
+        let r := RatFn.simplify r
+        if r.num.isZero then some Expr.zero
+        else
+          let (cn, nFacs) := Poly.factorOverQ r.num
+          let (cd, dFacs) := Poly.factorOverQ r.den
+          let nG := groupFactors nFacs
+          let dG := groupFactors dFacs
+          let numE := factorsToExpr cn nG v
+          if r.den.isOne || (dFacs.isEmpty && cd.isOne) then
+            some numE
+          else
+            let denE := factorsToExpr cd dG v
+            some (div numE denE)
 
 def factor (e : Expr) (v : String := "x") : Expr :=
   match factorIn e v with

@@ -1,13 +1,15 @@
 /-
-  Integration of rational functions over ℚ(x) — the base case of the Risch algorithm.
+  Integration of rational functions over ℚ(x) and K(x)
+  (K a real multiquadratic field, e.g. ℚ(√2)) — the base case of Risch.
 
   Steps:
   1. Polynomial division
   2. Yun square-free factorization + Hermite reduction
-  3. Logarithmic / arctangent part via partial fractions over ℚ
-     and Rothstein–Trager residues (rational roots of the resultant)
+  3. Logarithmic / arctangent part via partial fractions over ℚ or K
+     and Rothstein–Trager residues (rational roots of the resultant) over ℚ
 -/
 import Taschenrechner.Poly
+import Taschenrechner.AlgNum
 import Taschenrechner.Simplify
 
 namespace Taschenrechner
@@ -392,7 +394,7 @@ where
   a rational `G`) → PF of the square-free proper remainder when factors are
   degree ≤ 2 over ℚ.
 -/
-def apart (e : Expr) (v : String := "x") : Option Expr :=
+def apartQ (e : Expr) (v : String := "x") : Option Expr :=
   match RatFn.ofExpr? e v with
   | none => none
   | some r =>
@@ -431,11 +433,292 @@ def apart (e : Expr) (v : String := "x") : Option Expr :=
             | none =>
               some (Expr.simplify (Expr.add head (Expr.div (Poly.toExpr B v) (Poly.toExpr C v))))
 
-/-- `apart` with fallback to simplified input. -/
-def apartOrSimplify (e : Expr) (v : String := "x") : Expr :=
-  match apart e v with
-  | some a => a
-  | none => Expr.simplify e
+/-! ### Rational functions over K = AlgNum -/
+
+/-- `(g, s, t)` with `s*a + t*b = g` over K[x]. -/
+partial def egcdAlgPoly (a b : AlgPoly) : AlgPoly × AlgPoly × AlgPoly :=
+  let rec go (a b s0 t0 s1 t1 : AlgPoly) (fuel : Nat) : AlgPoly × AlgPoly × AlgPoly :=
+    match fuel with
+    | 0 => (AlgPoly.strip a, s0, t0)
+    | fuel'+1 =>
+      let b := AlgPoly.strip b
+      if b.isZero then (AlgPoly.strip a, s0, t0)
+      else
+        let (q, r) := AlgPoly.divMod a b
+        go b r s1 t1 (AlgPoly.sub s0 (AlgPoly.mul q s1)) (AlgPoly.sub t0 (AlgPoly.mul q t1)) fuel'
+  go (AlgPoly.strip a) (AlgPoly.strip b) AlgPoly.one AlgPoly.zero AlgPoly.zero AlgPoly.one 128
+
+def modInverseAlg (a m : AlgPoly) : Option AlgPoly :=
+  let (g, s, _) := egcdAlgPoly a m
+  if g.isZero then none
+  else if g.deg > 0 then none
+  else
+    match AlgNum.inv (AlgPoly.lc g) with
+    | some inv => some (AlgPoly.strip (AlgPoly.scale inv (AlgPoly.modPoly s m)))
+    | none => none
+
+def integrateAlgPoly (p : AlgPoly) (v : String) : Expr :=
+  let p := AlgPoly.strip p
+  if p.isZero then Expr.zero
+  else
+    Id.run do
+      let mut acc : Expr := Expr.zero
+      for i in [:p.coeffs.size] do
+        let c := p.coeffs[i]!
+        if !c.isZero then
+          let k := i + 1
+          match AlgNum.div c (AlgNum.ofInt k) with
+          | none => pure ()
+          | some ck =>
+            let xp :=
+              if k == 1 then Expr.var v
+              else Expr.pow (Expr.var v) (Expr.ofInt k)
+            let term := if ck.isOne then xp else Expr.mul (AlgNum.toExpr ck) xp
+            acc := Expr.add acc term
+      pure (Expr.simplify acc)
+
+/-- Solve `a x ≡ b (mod m)` for `deg x < deg m` over K. -/
+def solveCongruenceAlg (a b m : AlgPoly) : Option AlgPoly :=
+  let a := AlgPoly.modPoly a m
+  let b := AlgPoly.modPoly b m
+  let g := AlgPoly.gcd a m
+  if !(AlgPoly.modPoly b g |>.isZero) then none
+  else if g.deg == 0 then
+    match modInverseAlg a m with
+    | none => none
+    | some inv => some (AlgPoly.strip (AlgPoly.modPoly (AlgPoly.mul inv b) m))
+  else
+    match AlgPoly.exactDiv a g, AlgPoly.exactDiv b g, AlgPoly.exactDiv m g with
+    | some a', some b', some m' =>
+      match modInverseAlg a' m' with
+      | none => none
+      | some inv => some (AlgPoly.strip (AlgPoly.modPoly (AlgPoly.mul inv b') m))
+    | _, _, _ => none
+
+/--
+  Hermite reduction of proper A/D over K.
+  Returns `(G, B, C)` where `A/D = G' + B/C` and `C` is square-free.
+-/
+partial def hermiteReduceK (A D : AlgPoly) : AlgRatFn × AlgPoly × AlgPoly :=
+  let A := AlgPoly.strip A
+  let D0 := AlgPoly.strip D
+  if D0.isZero then (AlgRatFn.zero, A, AlgPoly.one)
+  else
+    let lead := AlgPoly.lc D0
+    let D := AlgPoly.monic D0
+    let A :=
+      match AlgNum.inv lead with
+      | some inv => AlgPoly.scale inv A
+      | none => A
+    let (_c, sfs) := AlgPoly.squareFreeFactor D
+    let D := sfs.foldl (fun acc (s, m) => AlgPoly.mul acc (AlgPoly.powNat s m)) AlgPoly.one
+    reduce A D sfs AlgRatFn.zero
+where
+  reduce (A D : AlgPoly) (sfs : List (AlgPoly × Nat)) (G : AlgRatFn) :
+      AlgRatFn × AlgPoly × AlgPoly :=
+    match sfs.find? (fun (_, m) => m ≥ 2) with
+    | none =>
+      let r := AlgRatFn.canceled ⟨A, D⟩
+      (G, r.num, r.den)
+    | some (V, m) =>
+      let m1 := m - 1
+      let Vm := AlgPoly.powNat V m
+      let U := match AlgPoly.exactDiv D Vm with | some u => u | none => AlgPoly.one
+      let UV' := AlgPoly.mul U (AlgPoly.differentiate V)
+      match AlgNum.inv (AlgNum.ofInt m1) with
+      | none => (G, A, D)
+      | some invm1 =>
+        let rhs := AlgPoly.scale (AlgNum.neg invm1) (AlgPoly.modPoly A V)
+        match solveCongruenceAlg UV' rhs V with
+        | none => (G, AlgPoly.strip A, AlgPoly.strip D)
+        | some B =>
+          let B := AlgPoly.strip B
+          let Bp := AlgPoly.differentiate B
+          let inner :=
+            AlgPoly.sub (AlgPoly.mul Bp V)
+              (AlgPoly.scale (AlgNum.ofInt m1) (AlgPoly.mul B (AlgPoly.differentiate V)))
+          let numer := AlgPoly.sub A (AlgPoly.mul U inner)
+          match AlgPoly.exactDiv numer V with
+          | none => (G, AlgPoly.strip A, AlgPoly.strip D)
+          | some Anew =>
+            let Dnew := match AlgPoly.exactDiv D V with | some d => d | none => D
+            let G := AlgRatFn.add G ⟨B, AlgPoly.powNat V m1⟩
+            let sfs' :=
+              sfs.map (fun (s, e) => if s == V then (s, e - 1) else (s, e))
+                |>.filter (fun (_, e) => e > 0)
+            reduce Anew Dnew sfs' G
+
+/-- ∫ (a x + b) / (x² + p x + q) dx over K, irreducible quadratic (negative disc). -/
+def integrateQuadraticK (a b p q : AlgNum) (v : String) : Option Expr :=
+  let two := AlgNum.ofInt 2
+  let halfA := match AlgNum.div a two with | some h => h | none => AlgNum.zero
+  let F : AlgPoly := ⟨#[q, p, AlgNum.one]⟩
+  let logPart : Expr :=
+    if halfA.isZero then Expr.zero
+    else Expr.mul (AlgNum.toExpr halfA) (Expr.ln (AlgPoly.toExpr F v))
+  let k := AlgNum.sub b (AlgNum.mul halfA p)
+  if k.isZero then some (Expr.simplify logPart)
+  else
+    let p2 := match AlgNum.div p two with | some h => h | none => AlgNum.zero
+    let r := AlgNum.sub q (AlgNum.mul p2 p2)
+    let disc := AlgNum.sub (AlgNum.mul p p) (AlgNum.scale (RatConst.ofInt 4) q)
+    -- Real roots: caller should have split into linears.
+    if (AlgPoly.splitQuadratic? ⟨#[q, p, AlgNum.one]⟩).isSome then none
+    else if disc.isZero then none
+    else
+      match AlgNum.toRat? r with
+      | some rq => if rq.num < 0 then none else continueAtan p2 r k logPart v
+      | none => continueAtan p2 r k logPart v
+where
+  continueAtan (p2 r k : AlgNum) (logPart : Expr) (v : String) : Option Expr :=
+    if r.isZero then none
+    else
+      let sExpr : Expr :=
+        match AlgNum.sqrt? r with
+        | some s => AlgNum.toExpr s
+        | none => Taschenrechner.sqrt (AlgNum.toExpr r)
+      let u := Expr.add (Expr.var v) (AlgNum.toExpr p2)
+      let atanArg := Expr.div u sExpr
+      let atanPart := Expr.div (Expr.atan atanArg) sExpr
+      let term := Expr.mul (AlgNum.toExpr k) atanPart
+      some (Expr.simplify (Expr.add logPart term))
+
+/-- Integrate A/F with deg A < deg F, F monic, deg 1 or 2 over K. -/
+def integrateSimpleFactorK (A F : AlgPoly) (v : String) : Option Expr :=
+  let A := AlgPoly.strip A
+  let F := AlgPoly.monic (AlgPoly.strip F)
+  if F.deg == 1 then
+    let c := AlgPoly.coeff A 0
+    if c.isZero then some Expr.zero
+    else
+      let L := Expr.ln (AlgPoly.toExpr F v)
+      some (Expr.simplify (if c.isOne then L else Expr.mul (AlgNum.toExpr c) L))
+  else if F.deg == 2 then
+    integrateQuadraticK (AlgPoly.coeff A 1) (AlgPoly.coeff A 0)
+      (AlgPoly.coeff F 1) (AlgPoly.coeff F 0) v
+  else
+    none
+
+/-- Partial fractions of proper `B/C` over distinct monic factors of `C`. -/
+def partialFractionsK (B C : AlgPoly) (factors : List AlgPoly) :
+    Option (List (AlgPoly × AlgPoly)) :=
+  Id.run do
+    let mut out : List (AlgPoly × AlgPoly) := []
+    for Fi in factors do
+      let Gi := match AlgPoly.exactDiv C Fi with | some g => g | none => AlgPoly.zero
+      if Gi.isZero then return none
+      match modInverseAlg Gi Fi with
+      | none => return none
+      | some invG =>
+        out := (AlgPoly.strip (AlgPoly.modPoly (AlgPoly.mul B invG) Fi),
+                AlgPoly.monic Fi) :: out
+    pure (some out)
+
+def partialFractionsToExprK (parts : List (AlgPoly × AlgPoly)) (v : String) : Expr :=
+  parts.foldl (fun acc (Ai, Fi) =>
+    let term :=
+      if Fi.isOne then AlgPoly.toExpr Ai v
+      else if Ai.isZero then Expr.zero
+      else Expr.div (AlgPoly.toExpr Ai v) (AlgPoly.toExpr Fi v)
+    if acc == Expr.zero then term else Expr.add acc term) Expr.zero
+
+/-- Deduplicate monic factors, preserving order. -/
+def uniqueAlgFacs (facs : List AlgPoly) : List AlgPoly :=
+  facs.foldl (fun acc f =>
+    let f := AlgPoly.monic (AlgPoly.strip f)
+    if acc.any (· == f) then acc else acc ++ [f]) []
+
+/--
+  Partial fraction decomposition of a rational expression in `v` over K(x).
+-/
+def apartK (e : Expr) (v : String := "x") : Option Expr :=
+  match AlgRatFn.ofExpr? (Expr.simplify e) v with
+  | none => none
+  | some r =>
+    let r := AlgRatFn.canceled r
+    if r.den.isZero then none
+    else if r.num.isZero then some Expr.zero
+    else
+      let (Q, R) := AlgPoly.divMod (AlgPoly.strip r.num) (AlgPoly.strip r.den)
+      let polyPart :=
+        if Q.isZero then Expr.zero else AlgPoly.toExpr Q v
+      if R.isZero then some (Expr.simplify polyPart)
+      else
+        let (G, B, C) := hermiteReduceK R r.den
+        let gExpr := AlgRatFn.toExpr G v
+        let head :=
+          if polyPart == Expr.zero then gExpr
+          else if gExpr == Expr.zero then polyPart
+          else Expr.add polyPart gExpr
+        if B.isZero then some (Expr.simplify head)
+        else
+          let C := AlgPoly.monic (AlgPoly.strip C)
+          let (_c, facs) := AlgPoly.factorOverK C
+          let facs := uniqueAlgFacs facs
+          if facs.isEmpty then
+            some (Expr.simplify (Expr.add head
+              (Expr.div (AlgPoly.toExpr B v) (AlgPoly.toExpr C v))))
+          else if facs.any (fun f => f.deg > 2) then
+            some (Expr.simplify (Expr.add head
+              (Expr.div (AlgPoly.toExpr B v) (AlgPoly.toExpr C v))))
+          else
+            match partialFractionsK B C facs with
+            | some parts =>
+              let pf := partialFractionsToExprK parts v
+              some (Expr.simplify (Expr.add head pf))
+            | none =>
+              some (Expr.simplify (Expr.add head
+                (Expr.div (AlgPoly.toExpr B v) (AlgPoly.toExpr C v))))
+
+/-- ∫ (A/D) dx with A, D ∈ K[x]. -/
+partial def integrateRationalAlgPoly (A D : AlgPoly) (v : String) : Option Expr :=
+  if D.isZero then none
+  else
+    let (Q, R) := AlgPoly.divMod (AlgPoly.strip A) (AlgPoly.strip D)
+    let polyPart := integrateAlgPoly Q v
+    if R.isZero then some polyPart
+    else
+      let (G, B, C) := hermiteReduceK R D
+      let gExpr := AlgRatFn.toExpr G v
+      if B.isZero then
+        some (Expr.simplify (Expr.add polyPart gExpr))
+      else
+        let C := AlgPoly.monic (AlgPoly.strip C)
+        let (_c, facs0) := AlgPoly.factorOverK C
+        let facs := uniqueAlgFacs facs0
+        if facs.isEmpty || facs.any (fun f => f.deg > 2) then
+          if C.deg == 2 then
+            match integrateSimpleFactorK B C v with
+            | some L => some (Expr.simplify (Expr.add polyPart (Expr.add gExpr L)))
+            | none => none
+          else none
+        else
+          match partialFractionsK B C facs with
+          | none => none
+          | some parts =>
+            Id.run do
+              let mut acc : Expr := Expr.zero
+              let mut ok := true
+              for (Ai, Fi) in parts do
+                match integrateSimpleFactorK Ai Fi v with
+                | none => ok := false
+                | some e => acc := Expr.add acc e
+              if ok then
+                pure (some (Expr.simplify (Expr.add polyPart (Expr.add gExpr acc))))
+              else if C.deg == 2 then
+                match integrateSimpleFactorK B C v with
+                | some L =>
+                  pure (some (Expr.simplify (Expr.add polyPart (Expr.add gExpr L))))
+                | none => pure none
+              else pure none
+
+/-- Integrate if `e` is rational in `v` over K(x). -/
+def integrateRationalAlg (e : Expr) (v : String) : Option Expr :=
+  match AlgRatFn.ofExpr? (Expr.simplify e) v with
+  | none => none
+  | some r =>
+    let r := AlgRatFn.canceled r
+    integrateRationalAlgPoly r.num r.den v
 
 /-! ### Public integration API -/
 
@@ -456,12 +739,29 @@ partial def integrateRationalPoly (A D : Poly) (v : String) : Option Expr :=
         | some L => some (Expr.simplify (Expr.add polyPart (Expr.add gExpr L)))
         | none => none
 
-/-- Integrate if `e` is rational in `v`. -/
+/-- Integrate if `e` is rational in `v` over ℚ(x) or K(x). -/
 def integrateRationalExpr (e : Expr) (v : String) : Option Expr :=
   match RatFn.ofExpr? e v with
-  | none => none
   | some r =>
     let r := RatFn.simplify r
-    integrateRationalPoly r.num r.den v
+    match integrateRationalPoly r.num r.den v with
+    | some F => some F
+    | none => integrateRationalAlg e v
+  | none => integrateRationalAlg e v
+
+/--
+  Partial fraction decomposition over ℚ(x) or K(x).
+  Prefers the algebraic path so real quadratics split as `(x ± √d)`.
+-/
+def apart (e : Expr) (v : String := "x") : Option Expr :=
+  match apartK e v with
+  | some a => some a
+  | none => apartQ e v
+
+/-- `apart` with fallback to simplified input. -/
+def apartOrSimplify (e : Expr) (v : String := "x") : Expr :=
+  match apart e v with
+  | some a => a
+  | none => Expr.simplify e
 
 end Taschenrechner

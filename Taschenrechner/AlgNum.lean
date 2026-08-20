@@ -3,7 +3,8 @@
   K = ℚ(√κ₁, √κ₂, …) with square-free kernels κᵢ.
 
   An element is stored uniquely as Σ cᵢ √κᵢ (cᵢ ∈ ℚ, κᵢ square-free).
-  This is the coefficient field for `nf` in K(x), e.g. ℚ(√2)(x).
+  This is the coefficient field for `nf` / `factor` / `apart` / rational `int`
+  in K(x), e.g. ℚ(√2)(x).
 -/
 import Taschenrechner.Expr
 
@@ -476,7 +477,7 @@ def toExpr (p : AlgPoly) (v : String) : Expr :=
   if p.isZero then Expr.zero
   else
     Id.run do
-      let mut acc : Expr := Expr.zero
+      let mut terms : List Expr := []
       for i in [:p.coeffs.size] do
         let c := p.coeffs[i]!
         if !c.isZero then
@@ -488,8 +489,198 @@ def toExpr (p : AlgPoly) (v : String) : Expr :=
             if i == 0 then AlgNum.toExpr c
             else if c.isOne then xp
             else Expr.mul (AlgNum.toExpr c) xp
-          acc := if acc == Expr.zero then term else Expr.add acc term
-      pure acc
+          terms := term :: terms
+      -- high degree first (matches `Poly.toExpr`)
+      match terms with
+      | [] => pure Expr.zero
+      | t :: ts => pure (ts.foldl Expr.add t)
+
+def ofInt (n : Int) : AlgPoly := ofConst (AlgNum.ofInt n)
+def ofRat (q : RatConst) : AlgPoly := ofConst (AlgNum.ofRat q)
+def ofNat (n : Nat) : AlgPoly := ofInt n
+
+def beq (a b : AlgPoly) : Bool :=
+  let a := strip a; let b := strip b
+  if a.coeffs.size != b.coeffs.size then false
+  else
+    Id.run do
+      for i in [:a.coeffs.size] do
+        if !(AlgNum.beq a.coeffs[i]! b.coeffs[i]!) then return false
+      pure true
+
+instance : BEq AlgPoly where beq := beq
+
+/-- Formal derivative. -/
+def differentiate (p : AlgPoly) : AlgPoly :=
+  let p := strip p
+  if p.coeffs.size ≤ 1 then zero
+  else
+    Id.run do
+      let mut cs : Array AlgNum := Array.empty
+      for i in [1:p.coeffs.size] do
+        cs := cs.push (AlgNum.mul p.coeffs[i]! (AlgNum.ofInt i))
+      pure (strip ⟨cs⟩)
+
+/-- Evaluate at an algebraic number (Horner). -/
+def eval (p : AlgPoly) (x : AlgNum) : AlgNum :=
+  let p := strip p
+  Id.run do
+    let mut acc := AlgNum.zero
+    let mut i := p.coeffs.size
+    while i > 0 do
+      i := i - 1
+      acc := AlgNum.add (AlgNum.mul acc x) p.coeffs[i]!
+    pure acc
+
+/-- Monic linear `x − r`. -/
+def linear (r : AlgNum) : AlgPoly := ⟨#[AlgNum.neg r, AlgNum.one]⟩
+
+/--
+  Square-free factorization: `p = c * ∏ s_i^{m_i}` with monic square-free `s_i`.
+  Yun-style via `gcd(p, p')` over the field K.
+-/
+partial def squareFreeFactor (p : AlgPoly) : AlgNum × List (AlgPoly × Nat) :=
+  let p := strip p
+  if p.isZero then (AlgNum.zero, [])
+  else
+    let c := lc p
+    let p := monic p
+    let g := gcd p (differentiate p)
+    if g.isOne || g.deg == 0 then
+      (c, [(p, 1)])
+    else
+      match exactDiv p g with
+      | none => (c, [(p, 1)])
+      | some h =>
+        let (_cg, gFacs) := squareFreeFactor g
+        let bumped := gFacs.map fun (s, m) => (s, m + 1)
+        let hRest :=
+          gFacs.foldl (fun acc (s, _) =>
+            match exactDiv acc s with
+            | some q => q
+            | none => acc) (monic h)
+        let extras :=
+          if hRest.isOne || hRest.deg ≤ 0 then []
+          else [(monic hRest, (1 : Nat))]
+        (c, bumped ++ extras)
+
+/-- Integer factors of `n` (including negatives), for root candidates. -/
+private def intFactors (n : Int) : List Int :=
+  let n := n.natAbs
+  if n == 0 then [0]
+  else
+    Id.run do
+      let mut fs : List Int := []
+      for i in [1:n+1] do
+        if n % i == 0 then
+          fs := (i : Int) :: (-(i : Int)) :: fs
+      pure fs
+
+/-- Unique-append an algebraic number. -/
+private def snocAlg (x : AlgNum) (xs : List AlgNum) : List AlgNum :=
+  if xs.any (AlgNum.beq x) then xs else xs ++ [x]
+
+/-- Candidate roots in K: rational-root theorem, coefficient terms, square roots. -/
+def candidateRoots (p : AlgPoly) : List AlgNum :=
+  let p := strip p
+  if p.isZero || p.deg ≤ 0 then []
+  else
+    let a0 := coeff p 0
+    let an := lc p
+    let ratCoeffs : List RatConst :=
+      a0.terms.map (·.coeff) ++ an.terms.map (·.coeff) ++ [RatConst.one]
+    let nums : List Int :=
+      ratCoeffs.foldl (fun acc q => acc ++ intFactors q.num) [0, 1, -1]
+    let dens : List Int :=
+      ratCoeffs.foldl (fun acc q => acc ++ intFactors q.num) [1]
+    Id.run do
+      let mut out : List AlgNum := []
+      for n in nums do
+        for d in dens do
+          if d != 0 then
+            let r := RatConst.normalize ⟨n, d.natAbs⟩
+            out := snocAlg (AlgNum.ofRat r) out
+            out := snocAlg (AlgNum.ofRat (RatConst.neg r)) out
+            if r.num > 0 then
+              match AlgNum.ofSqrtRat? r with
+              | some s =>
+                out := snocAlg s out
+                out := snocAlg (AlgNum.neg s) out
+              | none => pure ()
+      -- coefficient terms (√κ pieces) and −c₀/lc
+      for α in p.coeffs do
+        out := snocAlg α out
+        out := snocAlg (AlgNum.neg α) out
+        for t in α.terms do
+          let term : AlgNum := ⟨[t]⟩
+          out := snocAlg term out
+          out := snocAlg (AlgNum.neg term) out
+          if t.kernel > 1 then
+            let rt : AlgNum := ⟨[⟨RatConst.one, t.kernel⟩]⟩
+            out := snocAlg rt out
+            out := snocAlg (AlgNum.neg rt) out
+      match AlgNum.div (AlgNum.neg a0) an with
+      | some r => out := snocAlg r out
+      | none => pure ()
+      -- cap compile-time search
+      if out.length > 48 then pure (out.take 48) else pure out
+
+/-- Split a monic quadratic when `√disc` stays in a real multiquadratic field. -/
+def splitQuadratic? (p : AlgPoly) : Option (AlgPoly × AlgPoly) :=
+  let p := monic (strip p)
+  if p.deg != 2 then none
+  else
+    let b := coeff p 1
+    let c := coeff p 0
+    let disc := AlgNum.sub (AlgNum.mul b b) (AlgNum.scale (RatConst.ofInt 4) c)
+    match AlgNum.sqrt? disc with
+    | none => none
+    | some s =>
+      match AlgNum.div (AlgNum.neg (AlgNum.add b s)) (AlgNum.ofInt 2),
+            AlgNum.div (AlgNum.neg (AlgNum.sub b s)) (AlgNum.ofInt 2) with
+      | some r1, some r2 => some (linear r1, linear r2)
+      | _, _ => none
+
+/-- Linear factor `x − r` when `p(r) = 0`. -/
+def findLinear? (p : AlgPoly) : Option (AlgPoly × AlgPoly) :=
+  let p := monic (strip p)
+  if p.deg ≤ 1 then none
+  else
+    Id.run do
+      for r in candidateRoots p do
+        if (eval p r).isZero then
+          let lin := linear r
+          match exactDiv p lin with
+          | some rest => return some (lin, rest)
+          | none => pure ()
+      pure none
+
+/--
+  Factor into a leading coefficient and monic factors over K.
+  Peels linear factors, then splits quadratics when the discriminant is a square in
+  a real multiquadratic field (adjoining `√κ` as needed).
+-/
+partial def factorOverK (p : AlgPoly) : AlgNum × List AlgPoly :=
+  let p0 := strip p
+  if p0.isZero then (AlgNum.zero, [])
+  else if p0.deg == 0 then (lc p0, [])
+  else
+    let c := lc p0
+    (c, factorMonic (monic p0) [])
+where
+  factorMonic (p : AlgPoly) (acc : List AlgPoly) : List AlgPoly :=
+    let p := monic (strip p)
+    if p.isZero || p.isOne || p.deg ≤ 0 then acc
+    else if p.deg == 1 then p :: acc
+    else
+      match findLinear? p with
+      | some (lin, rest) => factorMonic rest (lin :: acc)
+      | none =>
+        if p.deg == 2 then
+          match splitQuadratic? p with
+          | some (a, b) => a :: b :: acc
+          | none => p :: acc
+        else p :: acc
 
 end AlgPoly
 
@@ -559,6 +750,20 @@ def simplify (r : AlgRatFn) : AlgRatFn :=
     let n := match AlgPoly.exactDiv r.num g with | some q => q | none => r.num
     let d := match AlgPoly.exactDiv r.den g with | some q => q | none => r.den
     -- make den monic
+    match AlgNum.inv (AlgPoly.lc d) with
+    | none => ⟨AlgPoly.strip n, AlgPoly.strip d⟩
+    | some inv => ⟨AlgPoly.scale inv n, AlgPoly.scale inv d⟩
+
+/-- Cancel `gcd(num, den)` without conjugate-clearing. -/
+def canceled (r : AlgRatFn) : AlgRatFn :=
+  let n := AlgPoly.strip r.num
+  let d := AlgPoly.strip r.den
+  if n.isZero then zero
+  else if d.isZero then ⟨n, d⟩
+  else
+    let g := AlgPoly.gcd n d
+    let n := match AlgPoly.exactDiv n g with | some q => q | none => n
+    let d := match AlgPoly.exactDiv d g with | some q => q | none => d
     match AlgNum.inv (AlgPoly.lc d) with
     | none => ⟨AlgPoly.strip n, AlgPoly.strip d⟩
     | some inv => ⟨AlgPoly.scale inv n, AlgPoly.scale inv d⟩

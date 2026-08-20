@@ -291,7 +291,32 @@ def suite : List Case := [
     check := fun e =>
       match asMat? e with
       | some rows => Mat.nrows rows == 1 && Mat.ncols rows == 0
-      | none => prettySolution e == "∅" }
+      | none => prettySolution e == "∅" },
+  -- factor / apart over K = ℚ(√2)
+  { name := "factor x²−2 over K"
+    input := "factor(x^2-2)"
+    check := fun e =>
+      equivNF e ((x - sqrt (ofInt 2)) * (x + sqrt (ofInt 2))) },
+  { name := "factor (x−√2)²"
+    input := "factor(x^2-2*sqrt(2)*x+2)"
+    check := fun e =>
+      equivNF e (pow (x - sqrt (ofInt 2)) (ofInt 2)) },
+  { name := "apart (x+√2)/(x²−2)"
+    input := "apart((x+sqrt(2))/(x^2-2))"
+    check := fun e =>
+      equivNF e (one / (x - sqrt (ofInt 2))) },
+  { name := "apart 1/(x²−2) splits"
+    input := "apart(1/(x^2-2))"
+    check := fun e =>
+      -- 1/(2√2) (1/(x−√2) − 1/(x+√2))  (or equivalent)
+      equivNF e (one / (x ^ (2 : Expr) - ofInt 2))
+        && match e with
+           | add _ _ => true
+           | mul _ _ => true
+           | _ =>
+             -- still split if it is a difference of two terms
+             let s := Expr.toString e
+             s.contains "√" || s.contains "sqrt" }
 ]
 
 structure CaseResult where

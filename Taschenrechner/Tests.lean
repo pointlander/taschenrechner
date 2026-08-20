@@ -1246,4 +1246,48 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => equivNF e (mul (ofInt 3) (sqrt (ofInt 2)))
   | _ => false
 
+-- Factor / apart / rational int over K = ℚ(√2)
+#guard
+  let p : AlgPoly := ⟨#[AlgNum.neg (AlgNum.ofInt 2), AlgNum.zero, AlgNum.one]⟩
+  let (_c, fs) := AlgPoly.factorOverK p
+  fs.length == 2 && fs.all (fun f => f.deg == 1)
+#guard
+  let s2 := AlgNum.sqrtNat 2
+  let p : AlgPoly :=
+    ⟨#[AlgNum.ofInt 2, AlgNum.neg (AlgNum.scale (RatConst.ofInt 2) s2), AlgNum.one]⟩
+  -- x² − 2√2 x + 2 = (x − √2)²
+  let (_c, fs) := AlgPoly.factorOverK p
+  groupAlgFactors fs == [(AlgPoly.linear s2, 2)]
+    || (fs.length == 2 && fs.all (fun f => f.deg == 1))
+#guard
+  match parse "factor(x^2-2)" with
+  | .ok e =>
+      equivNF e (mul (sub x (sqrt (ofInt 2))) (add x (sqrt (ofInt 2))))
+  | _ => false
+#guard
+  match parse "factor(x^2-2*sqrt(2)*x+2)" with
+  | .ok e =>
+      equivNF e (pow (sub x (sqrt (ofInt 2))) (ofInt 2))
+  | _ => false
+#guard
+  match parse "apart((x+sqrt(2))/(x^2-2))" with
+  | .ok e => equivNF e (div one (sub x (sqrt (ofInt 2))))
+  | _ => false
+#guard
+  match parse "apart(1/(x^2-2))" with
+  | .ok e =>
+      equivNF e (div one (sub (pow x (ofInt 2)) (ofInt 2)))
+  | _ => false
+#guard checkAntiderivative (div one (sub x (sqrt (ofInt 2)))) "x"
+#guard
+  match integrate (div (add x (sqrt (ofInt 2))) (sub (pow x (ofInt 2)) (ofInt 2))) "x" with
+  | .success F _ => verifyDerivative F
+      (div (add x (sqrt (ofInt 2))) (sub (pow x (ofInt 2)) (ofInt 2))) "x"
+  | _ => false
+#guard
+  match integrate (div one (sub (pow x (ofInt 2)) (ofInt 2))) "x" with
+  | .success F _ =>
+      verifyDerivative F (div one (sub (pow x (ofInt 2)) (ofInt 2))) "x"
+  | _ => false
+
 end Taschenrechner.Tests

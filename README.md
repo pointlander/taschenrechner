@@ -5,6 +5,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic expression trees with exact rational coefficients (decimals like `1.5` → `3/2`)  
 - **Numeric mode**: `N(sin(1), 6)` IEEE-754 binary64, then rounded to a rational (max 12 decimals)
 - Algebraic simplification, expansion, **rewrite identities**, and **normal forms** (`cancel` / `together` / `nf`) over ℚ(x) and **ℚ(√d)(x)**
+- **`factor` / `apart` / rational `int`** over **ℚ(√d)(x)** (linear/quadratic splitting, Hermite + partial fractions)
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
 - Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
@@ -58,7 +59,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | Module | Role |
 |--------|------|
 | `Taschenrechner.Expr` | AST (`Expr`), `RatConst`, complex `CplxConst` / `i` |
-| `Taschenrechner.AlgNum` | Multiquadratic algebraics `Σ c√κ` and `nf` over K(x) |
+| `Taschenrechner.AlgNum` | Multiquadratic algebraics `Σ c√κ`; `nf` / `factor` / `apart` / rational `int` over K(x) |
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
@@ -173,7 +174,7 @@ Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is
 
 | Form | What it does |
 |------|----------------|
-| `factor(e[, v])` | Factor poly/rational over ℚ; integers → `[prime, exp; …]` matrix |
+| `factor(e[, v])` | Factor poly/rational over ℚ or ℚ(√d); integers → `[prime, exp; …]` matrix |
 | `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational + quadratic) |
 | `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
@@ -187,6 +188,9 @@ Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `
 
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
+lake exe taschenrechner 'factor(x^2-2)'              # → (x−√2)(x+√2)
+lake exe taschenrechner 'factor(x^2-2*sqrt(2)*x+2)'  # → (x−√2)²
+lake exe taschenrechner 'apart((x+sqrt(2))/(x^2-2))' # → 1/(x−√2)
 lake exe taschenrechner 'solve(x^2=4, x)'             # → {2, -2}
 lake exe taschenrechner 'solve(x^3-2=0, x)'           # → 2^{1/3} and complex cube roots
 lake exe taschenrechner 'solve(x^3-3*x-1=0, x)'       # → 2 cos((acos(1/2) − 2πk)/3)
@@ -381,10 +385,12 @@ open Taschenrechner.Parse
    - Simple log patterns (`ln(x)^n / x`, `ln(x)^n`)
 2. **Heuristics** (if Risch returns undecided): reverse chain rule for non-linear args, by-parts
 
-**Not fully covered:** algebraic extensions (general radicals / algebraic curves), arbitrary nested towers, special functions beyond elementary.
+**Not fully covered:** nested algebraic extensions (`√p(x)`, algebraic curves), arbitrary nested towers, special functions beyond elementary. Rational functions over a *constant* multiquadratic field ℚ(√d) are handled (`factor` / `apart` / `int`).
 
 ```bash
 lake exe taschenrechner 'int 1/(x^2+1)'   # atan(x)
+lake exe taschenrechner 'int 1/(x^2-2)'    # logs in (x±√2)
+lake exe taschenrechner 'int 1/(x-sqrt(2))'
 lake exe taschenrechner 'int exp(x^2)'     # not elementary (Risch)
 lake exe taschenrechner 'int x*exp(x^2)'   # 1/2·exp(x^2)
 ```

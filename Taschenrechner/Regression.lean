@@ -36,7 +36,7 @@ structure Case where
   expect    : Expect
   deriving Repr
 
-/-- Canonical integration suite (45 cases including radical table). -/
+/-- Canonical integration suite (polynomials, Risch, trig, radicals, K(x)). -/
 def suite : List Case := [
   -- 1–5: polynomials / rationals (Risch)
   { name := "poly x^2",           integrand := "x^2",                 expect := .risch },
@@ -90,7 +90,11 @@ def suite : List Case := [
   { name := "1/sqrt(1-x^2)",      integrand := "1/sqrt(1-x^2)",       expect := .heuristic },
   { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .heuristic },
   { name := "sqrt(x^2+1)",        integrand := "sqrt(x^2+1)",         expect := .heuristic },
-  { name := "sqrt(x^2-1)",        integrand := "sqrt(x^2-1)",         expect := .heuristic }
+  { name := "sqrt(x^2-1)",        integrand := "sqrt(x^2-1)",         expect := .heuristic },
+  -- rational over K = ℚ(√2)
+  { name := "1/(x-sqrt(2))",      integrand := "1/(x-sqrt(2))",       expect := .risch },
+  { name := "(x+sqrt(2))/(x^2-2)", integrand := "(x+sqrt(2))/(x^2-2)", expect := .risch },
+  { name := "1/(x^2-2)",          integrand := "1/(x^2-2)",           expect := .risch }
 ]
 
 /-- Does a result match the expectation? -/
