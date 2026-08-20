@@ -1373,6 +1373,7 @@ def helpText : String :=
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions over ℚ and ℚ(√d))\n\
                 factor over ℚ(√d): factor(x^2-2) → (x−√2)(x+√2)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
+                int(R(x,sqrt(p(x))))  algebraic Risch, deg p ≤ 2 (Euler)\n\
                 int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 laurent(f, n)  laurent(f, a, n)  seriesadd/seriesmul(f,g,n)\n\

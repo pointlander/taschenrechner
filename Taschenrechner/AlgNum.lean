@@ -428,10 +428,20 @@ def monic (p : AlgPoly) : AlgPoly :=
     | some inv => scale inv p
 
 partial def gcd (a b : AlgPoly) : AlgPoly :=
-  let a := strip a; let b := strip b
-  if b.isZero then monic a
-  else if a.isZero then monic b
-  else gcd b (modPoly a b)
+  go (strip a) (strip b) 64
+where
+  go (a b : AlgPoly) (fuel : Nat) : AlgPoly :=
+    match fuel with
+    | 0 => monic (strip a)
+    | fuel'+1 =>
+      let a := strip a; let b := strip b
+      if b.isZero then monic a
+      else if a.isZero then monic b
+      else
+        let r := strip (modPoly a b)
+        -- No progress (non-field lc or unreduced remainder): stop.
+        if !r.isZero && r.deg ≥ b.deg then monic a
+        else go b r fuel'
 
 def exactDiv (a b : AlgPoly) : Option AlgPoly :=
   if b.isZero then none
@@ -776,6 +786,27 @@ def add (a b : AlgRatFn) : AlgRatFn :=
 
 def mul (a b : AlgRatFn) : AlgRatFn :=
   simplify ⟨AlgPoly.mul a.num b.num, AlgPoly.mul a.den b.den⟩
+
+def inv (r : AlgRatFn) : Option AlgRatFn :=
+  if r.num.isZero then none
+  else some (simplify ⟨r.den, r.num⟩)
+
+/-- Formal derivative of a rational function (quotient rule). -/
+def differentiate (r : AlgRatFn) : AlgRatFn :=
+  let r := simplify r
+  if r.den.isOne then ofPoly (AlgPoly.differentiate r.num)
+  else
+    let np := AlgPoly.differentiate r.num
+    let dp := AlgPoly.differentiate r.den
+    simplify ⟨
+      AlgPoly.sub (AlgPoly.mul np r.den) (AlgPoly.mul r.num dp),
+      AlgPoly.mul r.den r.den
+    ⟩
+
+def div (a b : AlgRatFn) : Option AlgRatFn :=
+  match inv b with
+  | some b' => some (mul a b')
+  | none => none
 
 def neg (a : AlgRatFn) : AlgRatFn := simplify ⟨AlgPoly.neg a.num, a.den⟩
 

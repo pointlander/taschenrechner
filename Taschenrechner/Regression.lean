@@ -85,12 +85,17 @@ def suite : List Case := [
   { name := "exp(x)+sin(x)",      integrand := "exp(x)+sin(x)",       expect := .risch },
   { name := "cos(x)-sin(x)",      integrand := "cos(x)-sin(x)",       expect := .risch },
   { name := "x^2*exp(x^3)",       integrand := "x^2*exp(x^3)",        expect := .risch },
-  -- radical table: 1/√ and √ (heuristic, verified)
-  { name := "1/sqrt(x^2+1)",      integrand := "1/sqrt(x^2+1)",       expect := .heuristic },
-  { name := "1/sqrt(1-x^2)",      integrand := "1/sqrt(1-x^2)",       expect := .heuristic },
-  { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .heuristic },
-  { name := "sqrt(x^2+1)",        integrand := "sqrt(x^2+1)",         expect := .heuristic },
-  { name := "sqrt(x^2-1)",        integrand := "sqrt(x^2-1)",         expect := .heuristic },
+  -- radical table / algebraic Risch (verified; either engine)
+  { name := "1/sqrt(x^2+1)",      integrand := "1/sqrt(x^2+1)",       expect := .elementary },
+  { name := "1/sqrt(1-x^2)",      integrand := "1/sqrt(1-x^2)",       expect := .elementary },
+  { name := "1/sqrt(x^2-1)",      integrand := "1/sqrt(x^2-1)",       expect := .elementary },
+  { name := "sqrt(x^2+1)",        integrand := "sqrt(x^2+1)",         expect := .elementary },
+  { name := "sqrt(x^2-1)",        integrand := "sqrt(x^2-1)",         expect := .elementary },
+  { name := "sqrt(x+1)",          integrand := "sqrt(x+1)",           expect := .risch },
+  { name := "1/sqrt(x+1)",        integrand := "1/sqrt(x+1)",         expect := .risch },
+  { name := "sqrt(x^2+x+1)",      integrand := "sqrt(x^2+x+1)",       expect := .risch },
+  { name := "1/sqrt(x^2+x+1)",    integrand := "1/sqrt(x^2+x+1)",     expect := .risch },
+  { name := "x/sqrt(x^2+1)",      integrand := "x/sqrt(x^2+1)",       expect := .risch },
   -- rational over K = ℚ(√2)
   { name := "1/(x-sqrt(2))",      integrand := "1/(x-sqrt(2))",       expect := .risch },
   { name := "(x+sqrt(2))/(x^2-2)", integrand := "(x+sqrt(2))/(x^2-2)", expect := .risch },

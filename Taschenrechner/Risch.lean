@@ -4,17 +4,19 @@
   Coverage:
   • Complete rational case ℚ(x)          — Hermite + Rothstein–Trager / PF
   • Rational case K(x)                   — Hermite + PF (deg ≤ 2 factors)
+  • Algebraic `R(x, √p(x))` deg p ≤ 2    — Euler substitution to K(t)
   • Risch DE for  ∫ r(x) exp(p(x)) dx    — decides elementary vs not
   • Log extensions of the form R(x, ln s(x)) for simple monomial patterns
   • Structure-based non-existence certificates (e.g. exp(x²))
 
-  Nested algebraic extensions (√p(x), algebraic curves) are not fully decided;
-  those fall through to the heuristic integrator or return `notElementary` /
-  `failure` as appropriate.
+  Nested towers and algebraic curves (deg p ≥ 3 square-free) are not fully
+  decided; those fall through to the heuristic integrator or return
+  `notElementary` / `failure` as appropriate.
 
   References: Bronstein, *Symbolic Integration I*; Risch (1969).
 -/
 import Taschenrechner.RatInt
+import Taschenrechner.AlgRisch
 import Taschenrechner.Diff
 import Taschenrechner.Trig
 import Taschenrechner.Complex
@@ -361,6 +363,10 @@ where
         match integrateRationalExpr e v with
         | some F => .elementary F
         | none =>
+          -- 1b. Algebraic R(x, √p(x)), deg p ≤ 2
+          match integrateAlgSqrt? e v with
+          | some F => .elementary F
+          | none =>
           -- 2. Linearity
           match e with
           | .add a b =>

@@ -82,6 +82,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
 | `Taschenrechner.RatInt` | Rational integration + `apart` (partial fractions) |
 | `Taschenrechner.Risch` | Transcendental Risch (exp/log/trig, non-existence) |
+| `Taschenrechner.AlgRisch` | Algebraic Risch: `R(x, √p(x))` with deg p ≤ 2 (Euler) |
 | `Taschenrechner.Integrate` | Structured `IntegrateResult`, verified `integrate` |
 | `Taschenrechner.Parse` | Lexer + recursive-descent parser (`parse`, `parseCommand`) |
 | `Taschenrechner.Env` | REPL bindings, `ans`, session save/load |
@@ -383,14 +384,17 @@ open Taschenrechner.Parse
    - **Complex scalars / exp**: `(a+bi)·f`, `exp((α+βi)x)` e.g. `∫ exp(i x) = -i exp(i x)`; `re`/`im`/`conj` of real-linear complex expressions
    - **Non-existence certificates**, e.g. `∫ exp(x²) dx` is not elementary; `∫ x·exp(x²) dx = ½ exp(x²)` is
    - Simple log patterns (`ln(x)^n / x`, `ln(x)^n`)
+   - **Algebraic** `R(x, √p(x))` with deg p ≤ 2: Euler substitution to a rational in K(t)
 2. **Heuristics** (if Risch returns undecided): reverse chain rule for non-linear args, by-parts
 
-**Not fully covered:** nested algebraic extensions (`√p(x)`, algebraic curves), arbitrary nested towers, special functions beyond elementary. Rational functions over a *constant* multiquadratic field ℚ(√d) are handled (`factor` / `apart` / `int`).
+**Not fully covered:** nested towers (`√(x+√2)` as a *second* radical in x), algebraic curves of genus ≥ 1 (`√(x³+…)`), special functions beyond elementary. Rational functions over a *constant* multiquadratic field ℚ(√d) are handled (`factor` / `apart` / `int`).
 
 ```bash
 lake exe taschenrechner 'int 1/(x^2+1)'   # atan(x)
 lake exe taschenrechner 'int 1/(x^2-2)'    # logs in (x±√2)
 lake exe taschenrechner 'int 1/(x-sqrt(2))'
+lake exe taschenrechner 'int sqrt(x+1)'
+lake exe taschenrechner 'int 1/sqrt(x^2+x+1)'
 lake exe taschenrechner 'int exp(x^2)'     # not elementary (Risch)
 lake exe taschenrechner 'int x*exp(x^2)'   # 1/2·exp(x^2)
 ```

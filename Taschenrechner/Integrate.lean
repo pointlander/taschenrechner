@@ -676,7 +676,16 @@ where
 def integrate (e : Expr) (v : String := "x") : IntegrateResult :=
   let e := simplify e
   match risch e v with
-  | .elementary F => acceptAntideriv F e v .risch
+  | .elementary F =>
+    match acceptAntideriv F e v .risch with
+    | .success F src => .success F src
+    | .notElementary r => .notElementary r
+    | .failure _ =>
+      -- Unverified algebraic/transcendental candidate: try the heuristic table.
+      match integrateRaw e v 64 with
+      | .success F2 _ => acceptAntideriv F2 e v .heuristic
+      | .notElementary r => .notElementary r
+      | .failure r => .failure r
   | .notElementary reason => .notElementary reason
   | .undecided _ =>
     match integrateRaw e v 64 with

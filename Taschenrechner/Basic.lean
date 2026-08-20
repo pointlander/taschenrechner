@@ -13,6 +13,7 @@ import Taschenrechner.Diff
 import Taschenrechner.Poly
 import Taschenrechner.BiPoly
 import Taschenrechner.RatInt
+import Taschenrechner.AlgRisch
 import Taschenrechner.Trig
 import Taschenrechner.Complex
 import Taschenrechner.Matrix

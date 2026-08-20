@@ -1290,4 +1290,11 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       verifyDerivative F (div one (sub (pow x (ofInt 2)) (ofInt 2))) "x"
   | _ => false
 
+-- Algebraic Risch: R(x, √p(x)), deg p ≤ 2
+#guard checkAntiderivative (sqrt (add x one)) "x"
+#guard checkAntiderivative (div one (sqrt (add x one))) "x"
+#guard checkAntiderivative (sqrt (add (add (pow x (ofInt 2)) x) one)) "x"
+#guard checkAntiderivative (div one (sqrt (add (add (pow x (ofInt 2)) x) one))) "x"
+#guard checkAntiderivative (div x (sqrt (add (pow x (ofInt 2)) one))) "x"
+
 end Taschenrechner.Tests
