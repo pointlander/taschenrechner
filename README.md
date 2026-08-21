@@ -18,7 +18,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
 - **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
-- **Limits**: two-sided & one-sided, ±∞ (`oo`), pole order / `classify`
+- **Limits**: two-sided & one-sided, ±∞ (`oo`), pole order / `classify`; **series** for elementary 0/0 (`sin(x)/x`, `(e^x−1)/x`, …)
 - **Radical integrals**: √(x²±a²), 1/√(a²−x²), … (verified)
 - **Partial fractions**: `apart` / `pf`
 - **Taylor / Maclaurin / Laurent series**: `taylor`, `series`, `laurent`, `seriesadd` / `seriesmul`
@@ -74,7 +74,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, `roots` |
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
-| `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`) |
+| `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
@@ -281,6 +281,9 @@ lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 
 
 ```bash
 lake exe taschenrechner 'limit((x^2-1)/(x-1), 1)'   # → 2  (removable)
+lake exe taschenrechner 'limit(sin(x)/x, 0)'         # → 1  (series)
+lake exe taschenrechner 'limit((1-cos(x))/x^2, 0)'   # → 1/2
+lake exe taschenrechner 'limit((1+1/x)^x, oo)'       # → e
 lake exe taschenrechner 'limright(1/x, 0)'           # → +∞
 lake exe taschenrechner 'limleft(1/x, 0)'            # → -∞
 lake exe taschenrechner 'poleorder(1/x^2, 0)'        # → 2

@@ -94,6 +94,32 @@ def suite : List Case := [
   { name := "limit side -1 = left"
     input := "limit(1/x, 0, -1)"
     check := fun e => isInfNeg e },
+  -- series-based elementary limits
+  { name := "sin(x)/x → 1"
+    input := "limit(sin(x)/x, 0)"
+    check := fun e => simplify e == ofInt 1 },
+  { name := "(1-cos(x))/x² → 1/2"
+    input := "limit((1-cos(x))/x^2, 0)"
+    check := fun e => simplify e == ofRat ⟨1, 2⟩ },
+  { name := "(exp(x)-1)/x → 1"
+    input := "limit((exp(x)-1)/x, 0)"
+    check := fun e => simplify e == ofInt 1 },
+  { name := "tan(x)/x → 1"
+    input := "limit(tan(x)/x, 0)"
+    check := fun e => simplify e == ofInt 1 },
+  { name := "ln(1+x)/x → 1"
+    input := "limit(ln(1+x)/x, 0)"
+    check := fun e => simplify e == ofInt 1 },
+  { name := "(1+x)^(1/x) → e"
+    input := "limit((1+x)^(1/x), 0)"
+    check := fun e =>
+      simplify e == exp one
+        || equivNF e (exp one) },
+  { name := "(1+1/x)^x at +∞ → e"
+    input := "limit((1+1/x)^x, oo)"
+    check := fun e =>
+      simplify e == exp one
+        || equivNF e (exp one) },
   -- PR P: Laurent series & series arithmetic
   { name := "laurent 1/x"
     input := "laurent(1/x, 2)"

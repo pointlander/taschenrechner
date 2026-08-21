@@ -6,6 +6,8 @@
   * ±∞ for rational functions via degree / leading coefficients
   * Pole order and singularity classification for rationals
   * Continuous elementary substitution when the limit is ground
+  * Elementary 0/0 and poles via truncated series about the point
+    (and `x → ±∞` via `t = 1/x`)
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -15,6 +17,7 @@ import Taschenrechner.RatInt
 import Taschenrechner.Eval
 import Taschenrechner.Normal
 import Taschenrechner.Solve
+import Taschenrechner.Series
 
 namespace Taschenrechner
 
@@ -344,6 +347,70 @@ partial def limitRatFinite (num den : Poly) (a : RatConst) (side : LimitSide) (f
                   let rs := if rightPos then "+∞" else "-∞"
                   .undetermined s!"two-sided limit does not exist (left {ls}, right {rs})"
 
+/-! ### Series-based limits -/
+
+/-- Sign of a ground real expression: `some true` if positive. -/
+def exprSignPos? (e : Expr) : Option Bool :=
+  match eval? (simplify e) with
+  | some c =>
+    match CplxConst.toRat? c with
+    | some q => if q.isZero then none else some (q.num > 0)
+    | none => none
+  | none => none
+
+/-- Dummy variable for the substitution `x = ±1/t` at infinity. -/
+def seriesInfVar : String := "__t"
+
+/--
+  Read a two-sided or one-sided limit from a Laurent series in the local
+  coordinate `u → 0`.
+-/
+def limitFromSeries (s : TruncSeries) (side : LimitSide) : LimitResult :=
+  let s := TruncSeries.strip s
+  if s.coeffs.isEmpty then .value zero
+  else if s.offset > 0 then .value zero
+  else if s.offset == 0 then
+    .value (simplify s.coeffs[0]!)
+  else
+    let k := s.offset.natAbs
+    let c := simplify s.coeffs[0]!
+    match exprSignPos? c with
+    | none =>
+      -- Even-order pole of unknown sign: still ±∞ both sides if we can
+      -- only say it diverges; leave undetermined.
+      .undetermined s!"series pole of order {k} (unknown leading sign)"
+    | some cPos =>
+      let rightPos := cPos
+      let leftPos := if k % 2 == 0 then cPos else !cPos
+      match side with
+      | .right => .infinity rightPos
+      | .left => .infinity leftPos
+      | .both =>
+        if rightPos == leftPos then .infinity rightPos
+        else
+          .undetermined s!"two-sided limit does not exist (series pole order {k})"
+
+/-- Series expansion of `e` about a finite point or at ±∞. -/
+def limitBySeries (e : Expr) (v : String) (pt : LimitPoint) (side : LimitSide) :
+    Option LimitResult :=
+  match pt with
+  | .finite a =>
+    match seriesAbout e v a seriesMaxDeg with
+    | some s => some (limitFromSeries s side)
+    | none => none
+  | .posInf =>
+    let t := seriesInfVar
+    let e' := subst e v (div one (var t))
+    match seriesAbout e' t zero seriesMaxDeg with
+    | some s => some (limitFromSeries s .right)
+    | none => none
+  | .negInf =>
+    let t := seriesInfVar
+    let e' := subst e v (neg (div one (var t)))
+    match seriesAbout e' t zero seriesMaxDeg with
+    | some s => some (limitFromSeries s .right)
+    | none => none
+
 /-- Limit of a rational expression (via `RatFn`) at a point. -/
 partial def limitRatFn (r : RatFn) (v : String) (pt : LimitPoint) (side : LimitSide)
     (fuel : Nat) : LimitResult :=
@@ -381,6 +448,9 @@ partial def limit (e : Expr) (v : String) (pt : LimitPoint) (side : LimitSide :=
     match RatFn.ofExpr? e v with
     | some r => limitRatFn r v pt side fuel
     | none =>
+      match limitBySeries e v pt side with
+      | some r => r
+      | none =>
       match pt with
       | .finite a =>
         let e' := simplify (subst e v a)

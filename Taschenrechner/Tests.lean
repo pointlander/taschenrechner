@@ -843,6 +843,28 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => e == neg (var "∞") || e == mul negOne (var "∞")
   | _ => false
 
+-- Series-based limits
+#guard
+  match limit (div (sin x) x) "x" (.finite (0 : Expr)) with
+  | .value r => simplify r == ofInt 1
+  | _ => false
+#guard
+  match limit (div (sub one (cos x)) (pow x (ofInt 2))) "x" (.finite (0 : Expr)) with
+  | .value r => simplify r == ofRat ⟨1, 2⟩
+  | _ => false
+#guard
+  match limit (div (sub (exp x) one) x) "x" (.finite (0 : Expr)) with
+  | .value r => simplify r == ofInt 1
+  | _ => false
+#guard
+  match parse "limit(sin(x)/x, 0)" with
+  | .ok e => simplify e == ofInt 1
+  | _ => false
+#guard
+  match parse "limit((exp(x)-1)/x, 0)" with
+  | .ok e => simplify e == ofInt 1
+  | _ => false
+
 -- Radical integrals 1/√(·)
 #guard checkAntiderivative (1 / sqrt (x ^ (2 : Expr) + 1)) "x"
 #guard checkAntiderivative (1 / sqrt (1 - x ^ (2 : Expr))) "x"
