@@ -1170,6 +1170,19 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "sum(k^10, k, 1, 5)" with
   | .ok e => simplify e == ofInt 10874275
   | _ => false
+#guard
+  match parse "sum(1/(k*(k+1)), k, 1, n)" with
+  | .ok e => equivNF e (div (var "n") (add (var "n") one))
+  | _ => false
+#guard
+  match parse "sum(k*2^k, k, 1, 5)" with
+  | .ok e => simplify e == ofInt 258
+  | _ => false
+#guard
+  match parse "sum(k*2^k, k, 1, n)" with
+  | .ok e =>
+      equivNF (simplify (subst e "n" (ofInt 3))) (ofInt 34)
+  | _ => false
 -- PR O: second-order ODE & linear systems
 #guard
   match parse "dsolve(y'' + y = 0)" with

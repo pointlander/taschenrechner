@@ -24,6 +24,7 @@ import Taschenrechner.Risch
 import Taschenrechner.Integrate
 import Taschenrechner.Series
 import Taschenrechner.Limit
+import Taschenrechner.Gosper
 import Taschenrechner.Sum
 import Taschenrechner.ODE
 import Taschenrechner.Env

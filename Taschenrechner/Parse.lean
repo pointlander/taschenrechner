@@ -1406,7 +1406,7 @@ def helpText : String :=
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at oo via t=1/x\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
-                sum(expr, k, lo, hi)  Faulhaber (all k^m via Bernoulli) / geometric\n\
+                sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
                 dsolve(eq)  (y'/yp; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
                 dsolve(A)  Y'=A Y via expm\n\

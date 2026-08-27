@@ -3,6 +3,7 @@
 
   * Polynomial summands via Faulhaber / Bernoulli numbers (all powers)
   * Geometric series ∑ r^k
+  * Hypergeometric terms via Gosper (rational t(k) and p(k)·r^k)
   * Constant summands
 -/
 import Taschenrechner.Expr
@@ -12,6 +13,7 @@ import Taschenrechner.RatInt
 import Taschenrechner.Solve
 import Taschenrechner.Normal
 import Taschenrechner.Eval
+import Taschenrechner.Gosper
 
 namespace Taschenrechner
 
@@ -136,10 +138,25 @@ def sumGeometric (r lo hi : Expr) : Option Expr :=
     let den := sub one r
     some (simplify (div num den))
 
+/-- Polynomial in `k` (not a non-constant rational). -/
+def asPolyForSum? (e : Expr) (k : String) : Option Poly :=
+  match RatFn.ofExpr? (simplify e) k with
+  | none => none
+  | some r =>
+    let r := RatFn.simplify r
+    if r.num.isZero then some Poly.zero
+    else if r.den.isOne then some (Poly.strip r.num)
+    else if r.den.deg == 0 then
+      match RatConst.inv (Poly.coeff r.den 0) with
+      | some inv => some (Poly.strip (Poly.scale inv r.num))
+      | none => none
+    else none
+
 /--
   Try to interpret `body` as a summand in free index `k`:
-  * polynomial in `k`
+  * polynomial in `k` (Faulhaber)
   * geometric `r^k` with `r` independent of `k`
+  * hypergeometric (Gosper)
   * constant (independent of `k`)
 -/
 def sumBody (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
@@ -153,9 +170,9 @@ def sumBody (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
       if name == k && !dependsOn base k then
         sumGeometric base lo hi
       else
-        match asPolyIn? body k with
+        match asPolyForSum? body k with
         | some p => sumPoly p lo hi
-        | none => none
+        | none => gosperSum body k lo hi
     | pow (var name) expn =>
       if name == k then
         match asRatConst expn with
@@ -163,21 +180,21 @@ def sumBody (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
           if q.den == 1 && q.num ≥ 0 then
             sumPowRange q.num.toNat lo hi
           else
-            match asPolyIn? body k with
+            match asPolyForSum? body k with
             | some p => sumPoly p lo hi
-            | none => none
+            | none => gosperSum body k lo hi
         | none =>
-          match asPolyIn? body k with
+          match asPolyForSum? body k with
           | some p => sumPoly p lo hi
-          | none => none
+          | none => gosperSum body k lo hi
       else
-        match asPolyIn? body k with
+        match asPolyForSum? body k with
         | some p => sumPoly p lo hi
-        | none => none
+        | none => gosperSum body k lo hi
     | _ =>
-      match asPolyIn? body k with
+      match asPolyForSum? body k with
       | some p => sumPoly p lo hi
-      | none => none
+      | none => gosperSum body k lo hi
 where
   asRatConst : Expr → Option RatConst
     | const c => CplxConst.toRat? c
@@ -237,7 +254,7 @@ def sumFinite (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
         | _, _ => some s
     | _, _ => some s
   | none =>
-    -- No Faulhaber/geometric form: try brute force on integer bounds
+    -- No Faulhaber/geometric/Gosper form: try brute force on integer bounds
     match asIntConstExpr lo, asIntConstExpr hi with
     | some a, some b => sumBrute body k a b
     | _, _ => none

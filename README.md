@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
-- **Finite sums** `sum` (Faulhaber via Bernoulli numbers, geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
+- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -76,7 +76,8 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Groebner` | Multivariate lex Gröbner bases (Buchberger); `groebner` / multi-var `solve` |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
-| `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric) |
+| `Taschenrechner.Gosper` | Hypergeometric summation (Gosper); `sum` of rationals and `p(k)·r^k` |
+| `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric, Gosper) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
@@ -244,7 +245,7 @@ lake exe taschenrechner 'expm(zeros(2))'              # → I
 
 | Form | What it does |
 |------|----------------|
-| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **numeric** if bounds are ints) |
+| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
 | `dsolve(eq)` | 1st-order (`y'`/`yp`) or 2nd-order const-coeff (`y''`/`ypp`); `g(x)=sin/cos` via undetermined coeff / VoP |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
@@ -262,6 +263,8 @@ lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
 lake exe taschenrechner 'sum(k, 1, 10, k)'             # → 55
 lake exe taschenrechner 'sum(k^7, k, 1, n)'            # Faulhaber (Bernoulli)
 lake exe taschenrechner 'sum(k^10, k, 1, 5)'           # numeric via closed form
+lake exe taschenrechner 'sum(1/(k*(k+1)), k, 1, n)'    # Gosper → n/(n+1)
+lake exe taschenrechner 'sum(k*2^k, k, 1, n)'          # Gosper → (n−1)2^{n+1}+2
 lake exe taschenrechner 'dsolve(y'\'' + y = 0)'         # → y = C·exp(-x)
 lake exe taschenrechner 'dsolve(y'\'' + y = x)'         # → y = C·exp(-x) + x − 1
 lake exe taschenrechner 'dsolve(yp + y = 0, 0, 1)'     # → y = exp(-x)

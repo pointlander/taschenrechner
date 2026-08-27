@@ -91,6 +91,17 @@ def suite : List Case := [
   { name := "sum k^10 Faulhaber numeric"
     input := "sum(k^10, k, 1, 5)"
     check := fun e => simplify e == ofInt 10874275 },
+  { name := "Gosper 1/(k(k+1))"
+    input := "sum(1/(k*(k+1)), k, 1, n)"
+    check := fun e => equivNF e (div (var "n") (add (var "n") one)) },
+  { name := "Gosper k·2^k numeric"
+    input := "sum(k*2^k, k, 1, 5)"
+    check := fun e => simplify e == ofInt 258 },
+  { name := "Gosper k·2^k closed"
+    input := "sum(k*2^k, k, 1, n)"
+    check := fun e =>
+      equivNF (simplify (subst e "n" (ofInt 3))) (ofInt 34)
+        && dependsOn e "n" },
   { name := "y' syntax dsolve"
     input := "dsolve(y' + y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

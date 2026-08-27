@@ -147,6 +147,22 @@ def eval (p : Poly) (x : RatConst) : RatConst :=
       acc := acc * x + p.coeffs[i]!
     pure acc
 
+/-- Composition `p ∘ q` (Horner). -/
+def compose (p q : Poly) : Poly :=
+  let p := strip p
+  Id.run do
+    let mut acc := zero
+    let mut i := p.coeffs.size
+    while i > 0 do
+      i := i - 1
+      acc := add (mul acc q) (ofConst p.coeffs[i]!)
+    pure (strip acc)
+
+/-- `p(X + h)`. -/
+def shift (p : Poly) (h : Int) : Poly :=
+  if h == 0 then strip p
+  else compose p (add X (ofInt h))
+
 /-- Polynomial division: `a = q*b + r` with deg r < deg b (or r=0). -/
 partial def divMod (a b : Poly) : Poly × Poly :=
   let b := strip b
