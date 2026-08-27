@@ -215,6 +215,22 @@ def parseEq (s : String) (expected : Expr) : Bool :=
             && rows[0]!.toList.any (· == pow (ofInt 2) (ofRat ⟨1, 3⟩))
       | none => false
   | _ => false
+#guard
+  (rootsPoly ⟨#[RatConst.one, RatConst.zero, RatConst.zero, RatConst.zero, RatConst.one]⟩).length == 4
+#guard
+  match parse "solve(x^4+1=0, x)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows.size == 1 && rows[0]!.size == 4
+      | none => false
+  | _ => false
+#guard
+  match parse "solve(x^4+x+1=0, x)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows => rows.size == 1 && rows[0]!.size == 4
+      | none => false
+  | _ => false
 
 -- Complex differentiation / integration
 #guard simplify (diff (I * x) "x") == I

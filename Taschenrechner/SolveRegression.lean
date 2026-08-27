@@ -253,6 +253,18 @@ def suite : List Case := [
               | mul _ (cos _) => true
               | _ => false
         | none => false },
+  { name := "Ferrari x⁴+1 four roots"
+    input := "solve(x^4+1=0, x)"
+    check := fun e => isRow e 4 },
+  { name := "Ferrari x⁴+x+1 four roots"
+    input := "solve(x^4+x+1=0, x)"
+    check := fun e => isRow e 4 },
+  { name := "Ferrari x⁴+4 four roots"
+    input := "solve(x^4+4=0, x)"
+    check := fun e => isRow e 4 },
+  { name := "eigvals companion of t⁴+1"
+    input := "eigvals([0, 0, 0, -1; 1, 0, 0, 0; 0, 1, 0, 0; 0, 0, 1, 0])"
+    check := fun e => isRow e 4 },
   { name := "solve exp(x)=1"
     input := "solve(exp(x)=1)"
     check := fun e => isRow e 1 && rowContains e [zero] },

@@ -2,7 +2,7 @@
   Characteristic polynomial, eigenvalues, and eigenspaces over Expr.
 
   * `charpoly A` = det(t I − A) (monic in `t` by default)
-  * `eigenvalues A` — roots of the char poly (rational + quadratic formula)
+  * `eigenvalues A` — roots of the char poly (rational, quadratic, cubic, quartic)
   * `eigenspace A λ` — nullspace of (A − λ I)
 -/
 import Taschenrechner.Simplify
@@ -50,7 +50,7 @@ def charpoly (A : Array (Array Expr)) (v : String := charVar) : Option Expr :=
 /--
   Eigenvalues of square `A`: roots of `charpoly` in `"t"`.
   Returns `none` if `A` is not square. May be a partial list if the char poly
-  has irreducible factors of degree ≥ 3.
+  has irreducible factors of degree ≥ 5.
 -/
 def eigenvalues (A : Array (Array Expr)) : Option (List Expr) :=
   match charpoly A charVar with

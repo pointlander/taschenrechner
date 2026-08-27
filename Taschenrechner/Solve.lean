@@ -3,7 +3,8 @@
 
   * `factor` — factor polynomials / rationals in one variable (and small integers);
     over K, linear/quadratic splitting including `√d`
-  * `roots` / `solve` — rational roots, quadratic formula, binomial n-th roots, Cardano cubics
+  * `roots` / `solve` — rational roots, quadratic formula, binomial n-th roots,
+    Cardano cubics, Ferrari quartics
   * `coeff` / `collect` — coefficient extraction and poly collection
 -/
 import Taschenrechner.Expr
@@ -335,6 +336,96 @@ def cubicRoots (a b c d : RatConst) : List Expr :=
     depressedCubicRoots p q |>.map fun t => simplify (sub t (ofRat shift))
   | _, _, _ => []
 
+/-- Quadratic formula for expressions (used by Ferrari). -/
+def quadraticRootsExpr (a b c : Expr) : List Expr :=
+  let a := simplify a
+  let b := simplify b
+  let c := simplify c
+  if a == zero then []
+  else
+    let disc := simplify (sub (pow b (ofInt 2)) (mul (ofInt 4) (mul a c)))
+    let s := simplify (sqrt disc)
+    let twoA := mul (ofInt 2) a
+    let nb := neg b
+    [simplify (div (add nb s) twoA), simplify (div (sub nb s) twoA)]
+
+/-- `±√z`. -/
+def signedSqrts (z : Expr) : List Expr :=
+  let s := simplify (sqrt z)
+  [s, simplify (neg s)]
+
+/-- Roots of the biquadratic `u⁴ + p u² + r = 0`. -/
+def biquadraticRoots (p r : RatConst) : List Expr :=
+  quadraticRoots 1 p r |>.flatMap signedSqrts
+
+/--
+  Ferrari: from a resolvent root `m`, the depressed quartic
+  `u⁴ + p u² + q u + r = 0` splits into two quadratics.
+-/
+def ferrariFromM (p q _r : RatConst) (m : Expr) : List Expr :=
+  let m := simplify m
+  let twoM := simplify (mul (ofInt 2) m)
+  if twoM == zero then []
+  else
+    let s := simplify (sqrt twoM)  -- √(2m)
+    if s == zero then []
+    else
+      let halfP := ofRat (p * ⟨1, 2⟩)
+      let qterm := simplify (div (ofRat q) (mul (ofInt 2) s))
+      let mid := simplify (add halfP m)
+      -- u² − s u + (p/2 + m + q/(2s))  and  u² + s u + (p/2 + m − q/(2s))
+      quadraticRootsExpr one (neg s) (add mid qterm)
+        ++ quadraticRootsExpr one s (sub mid qterm)
+
+/-- Depressed quartic `u⁴ + p u² + q u + r = 0`. -/
+def depressedQuarticRoots (p q r : RatConst) : List Expr :=
+  if q.isZero then biquadraticRoots p r
+  else
+    -- Resolvent: m³ + p m² + (p²/4 − r) m − q²/8 = 0
+    let c2 := p
+    let c1 := p * p * ⟨1, 4⟩ - r
+    let c0 := RatConst.neg (q * q) * ⟨1, 8⟩
+    let resolvent : Poly := ⟨#[c0, c1, c2, RatConst.one]⟩
+    let rats := rationalRoots resolvent
+    let ms : List Expr :=
+      if rats.isEmpty then cubicRoots 1 c2 c1 c0
+      else rats.map ofRat
+    Id.run do
+      for m in ms do
+        if m == zero then pure ()
+        else
+          let rs := ferrariFromM p q r m
+          if rs.length ≥ 4 then return rs
+      -- last resort: try every Cardano root
+      let rs :=
+        (if rats.isEmpty then [] else cubicRoots 1 c2 c1 c0)
+          |>.foldl (fun acc m => if acc.length ≥ 4 then acc else acc ++ ferrariFromM p q r m) []
+      pure rs
+
+/-- Ferrari: roots of `a x⁴ + b x³ + c x² + d x + e = 0`, `a ≠ 0`. -/
+def quarticRoots (a b c d e : RatConst) : List Expr :=
+  match RatConst.inv a with
+  | none => []
+  | some inva =>
+    let A := b * inva
+    let B := c * inva
+    let C := d * inva
+    let D := e * inva
+    match RatConst.div A (RatConst.ofInt 4) with
+    | none => []
+    | some α =>
+      let A2 := A * A
+      let A3 := A2 * A
+      let A4 := A2 * A2
+      -- p = B − 3A²/8,  q = C − AB/2 + A³/8
+      -- r = D − AC/4 + A²B/16 − 3A⁴/256
+      let p := B - RatConst.ofInt 3 * A2 * ⟨1, 8⟩
+      let q := C - A * B * ⟨1, 2⟩ + A3 * ⟨1, 8⟩
+      let r :=
+        D - A * C * ⟨1, 4⟩ + A2 * B * ⟨1, 16⟩
+          - RatConst.ofInt 3 * A4 * ⟨1, 256⟩
+      depressedQuarticRoots p q r |>.map fun u => simplify (sub u (ofRat α))
+
 /-- Monic `x^n + c` (no middle terms), `n ≥ 2`. -/
 def asBinomial? (p : Poly) : Option (Nat × RatConst) :=
   let p := Poly.monic (Poly.strip p)
@@ -363,7 +454,7 @@ def binomialRoots (n : Nat) (c0 : RatConst) : List Expr :=
 
 /--
   Roots of a univariate poly over ℚ: rational roots, quadratic formula,
-  binomial `x^n = a` (irrational n-th roots), and Cardano for irreducible cubics.
+  binomial `x^n = a` (irrational n-th roots), Cardano cubics, Ferrari quartics.
 -/
 def rootsPoly (p : Poly) : List Expr :=
   let p := Poly.strip p
@@ -385,10 +476,22 @@ def rootsPoly (p : Poly) : List Expr :=
           let c0 := Poly.coeff f 0
           out := quadraticRoots a b c0 ++ out
         else if let some (n, c0) := asBinomial? f then
-          out := binomialRoots n c0 ++ out
+          let br := binomialRoots n c0
+          if br.isEmpty && f.deg == 4 then
+            out := quarticRoots
+              (Poly.coeff f 4) (Poly.coeff f 3) (Poly.coeff f 2)
+              (Poly.coeff f 1) (Poly.coeff f 0)
+              ++ out
+          else
+            out := br ++ out
         else if f.deg == 3 then
           out := cubicRoots
             (Poly.coeff f 3) (Poly.coeff f 2) (Poly.coeff f 1) (Poly.coeff f 0)
+            ++ out
+        else if f.deg == 4 then
+          out := quarticRoots
+            (Poly.coeff f 4) (Poly.coeff f 3) (Poly.coeff f 2)
+            (Poly.coeff f 1) (Poly.coeff f 0)
             ++ out
         else
           pure ()
@@ -436,7 +539,7 @@ def solveScalar (e : Expr) (v : String) : ScalarSolveResult :=
     else if p.deg == 0 then .empty  -- non-zero constant
     else
       let rs := rootsPoly p
-      -- If deg > 2 irreducible pieces remain unsolved, still return what we found
+      -- If deg > 4 irreducible pieces remain unsolved, still return what we found
       .solutions (rs.map simplify)
 
 /-- Solve `lhs = rhs` in `v`. -/

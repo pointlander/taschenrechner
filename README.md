@@ -11,7 +11,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
 - **Assumptions**: `assume(x>0)` refines `√(x²)` / `|x|`; `forget(x)`
 - **Transcendental solve**: `solve(exp(x)=2)`, `solve(sin(x)=1/2)` (trig families in `k`)
-- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
+- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **quartics** (Ferrari); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **ASCII art** multi-line output for fractions, powers, matrices, and equations
 - **Plotting** via **gnuplot**: `plot(sin(x))` drops into the gnuplot CLI; `plotpng(f)` writes a PNG
@@ -71,7 +71,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
-| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, `roots` |
+| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, quartics, `roots` |
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
@@ -176,7 +176,7 @@ Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is
 | Form | What it does |
 |------|----------------|
 | `factor(e[, v])` | Factor poly/rational over ℚ or ℚ(√d); integers → `[prime, exp; …]` matrix |
-| `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational + quadratic) |
+| `roots(e[, v])` | Roots of `e=0` as a 1×n matrix (rational, quadratic, cubic, quartic) |
 | `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
 | `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
@@ -195,6 +195,8 @@ lake exe taschenrechner 'apart((x+sqrt(2))/(x^2-2))' # → 1/(x−√2)
 lake exe taschenrechner 'solve(x^2=4, x)'             # → {2, -2}
 lake exe taschenrechner 'solve(x^3-2=0, x)'           # → 2^{1/3} and complex cube roots
 lake exe taschenrechner 'solve(x^3-3*x-1=0, x)'       # → 2 cos((acos(1/2) − 2πk)/3)
+lake exe taschenrechner 'solve(x^4+1=0, x)'            # → four Ferrari roots
+lake exe taschenrechner 'solve(x^4+x+1=0, x)'          # → four Ferrari roots
 lake exe taschenrechner 'int(1/sqrt(1-x^2))'           # → asin(x)
 lake exe taschenrechner 'assume(x>0); sqrt(x^2)'        # → x
 lake exe taschenrechner 'solve(exp(x)=2)'               # → {ln(2)}

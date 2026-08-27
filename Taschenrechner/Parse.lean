@@ -1369,7 +1369,7 @@ def helpText : String :=
                 diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
-                solve: rationals, quadratics, x^n=a, Cardano cubics; systems; intervals\n\
+                solve: rationals, quadratics, x^n=a, Cardano cubics, Ferrari quartics; systems; intervals\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions over ℚ and ℚ(√d))\n\
                 factor over ℚ(√d): factor(x^2-2) → (x−√2)(x+√2)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
