@@ -231,6 +231,23 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some rows => rows.size == 1 && rows[0]!.size == 4
       | none => false
   | _ => false
+#guard
+  match parse "solve(x^2=1, y^2=1, z=x+y)" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "x = 1" && s.contains "y = 1" && s.contains "z = 2"
+        && s.contains "z = -2"
+  | _ => false
+#guard
+  match parse "groebner(x-1, x^2+y)" with
+  | .ok e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 2 &&
+            let s := prettySolution e
+            s.contains "x" && s.contains "y" && !s.contains "x²"
+      | none => false
+  | _ => false
 
 -- Complex differentiation / integration
 #guard simplify (diff (I * x) "x") == I

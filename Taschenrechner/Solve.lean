@@ -11,6 +11,7 @@ import Taschenrechner.Expr
 import Taschenrechner.Simplify
 import Taschenrechner.Poly
 import Taschenrechner.BiPoly
+import Taschenrechner.Groebner
 import Taschenrechner.RatInt
 import Taschenrechner.Normal
 import Taschenrechner.Matrix
@@ -1111,15 +1112,113 @@ def solveBivariate (e1 e2 : Expr) (vars? : Option (List String) := none) :
           | none =>
             throw "solve: could not solve nonlinear system (need polynomial eqs in 2 vars)"
 
+/-- Specialize every generator at `v = val`. -/
+def groebnerSpecialize (G : List MPoly) (v : String) (val : Expr) (rest : List String) :
+    List MPoly :=
+  G.filterMap fun p =>
+    MPoly.ofExpr? (simplify (subst (MPoly.toExpr p) v val)) rest
+
 /--
-  General multi-equation system: linear when possible; 2-eq polynomial via resultant.
+  Back-substitute a lex Gröbner basis: univariate in the smallest variable,
+  else linear in that variable, then recurse.
+-/
+partial def groebnerBacksolve (G : List MPoly) (vars : List String) (fuel : Nat) :
+    List (List (String × Expr)) :=
+  match fuel with
+  | 0 => []
+  | fuel'+1 =>
+    let G := G.filter (fun p => !p.isZero)
+    if G.any MPoly.isOne then []
+    else
+      match vars with
+      | [] => [[]]
+      | vs =>
+        let v := vs.getLast!
+        let rest := vs.dropLast
+        let uni := G.filterMap (fun p => MPoly.toUnivariate? p v) |>.filter (fun p => !p.isZero)
+        match uni with
+        | p0 :: ps =>
+          let g := Poly.strip (ps.foldl Poly.gcd p0)
+          if g.isZero then
+            groebnerBacksolve G rest fuel'
+          else if g.deg == 0 then []
+          else
+            (rootsPoly g).flatMap fun r =>
+              let G' := groebnerSpecialize G v r rest
+              groebnerBacksolve G' rest fuel' |>.map fun s => (v, simplify r) :: s
+        | [] =>
+          match G.findSome? (fun p => solveLinearInVar? (MPoly.toExpr p) v) with
+          | some rhs =>
+            let G' := groebnerSpecialize G v rhs rest
+            groebnerBacksolve G' rest fuel' |>.map fun s =>
+              let val := s.foldl (fun e (n, val) => subst e n val) rhs
+              (v, simplify val) :: s
+          | none =>
+            if G.all (fun p => !(MPoly.varsUsed p).contains v) then
+              groebnerBacksolve G rest fuel'
+            else []
+
+/-- Polynomial systems via a lex Gröbner basis and univariate back-substitution. -/
+def solveByGroebner (eqs : List Expr) (vars? : Option (List String) := none) :
+    Except String Expr :=
+  let rs := eqs.map asResidual
+  let vars :=
+    match vars? with
+    | some vs => vs
+    | none => collectVars rs
+  if vars.isEmpty then throw "solve: Gröbner: no variables"
+  else
+    match groebnerBasis rs vars with
+    | none => throw "solve: Gröbner: equations are not polynomials in the given variables"
+    | some G =>
+      if G.any MPoly.isOne then
+        pure (packSolutions [])
+      else
+        let sols := groebnerBacksolve G vars 24
+        let sols :=
+          sols.filter fun s =>
+            rs.all fun r =>
+              let e := simplify (s.foldl (fun acc (n, val) => subst acc n val) r)
+              isZeroExpr e "x" || e == zero
+        if sols.isEmpty then
+          throw "solve: Gröbner basis found but no finite solutions"
+        else
+          pure (packSolutions sols)
+
+/-- `groebner(eq, …)` — lex Gröbner generators as a column of expressions. -/
+def groebnerDispatch (eqs : List Expr) (vars? : Option (List String) := none) :
+    Except String Expr :=
+  let rs := eqs.map asResidual
+  let vars :=
+    match vars? with
+    | some vs => vs
+    | none => collectVars rs
+  if vars.isEmpty then throw "groebner: no variables"
+  else
+    match groebnerExprs rs vars with
+    | some e => pure e
+    | none => throw "groebner: expected polynomials in the given variables"
+
+/--
+  General multi-equation system: linear when possible; 2-eq polynomial via
+  resultant; otherwise lex Gröbner elimination.
 -/
 def solveSystem (eqs : List Expr) (vars? : Option (List String) := none) :
     Except String Expr :=
   if eqs.length == 2 then
-    solveBivariate eqs[0]! eqs[1]! vars?
+    match solveBivariate eqs[0]! eqs[1]! vars? with
+    | .ok s => pure s
+    | .error msg2 =>
+      match solveByGroebner eqs vars? with
+      | .ok s => pure s
+      | .error _ => throw msg2
   else
-    solveLinearSystem eqs vars?
+    match solveLinearSystem eqs vars? with
+    | .ok s => pure s
+    | .error msgL =>
+      match solveByGroebner eqs vars? with
+      | .ok s => pure s
+      | .error msgG => throw s!"solve: {msgL}; Gröbner: {msgG}"
 
 /-! ### Inequalities (univariate poly) + interval merge -/
 

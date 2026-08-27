@@ -12,6 +12,7 @@ import Taschenrechner.Solve
 import Taschenrechner.Diff
 import Taschenrechner.Poly
 import Taschenrechner.BiPoly
+import Taschenrechner.Groebner
 import Taschenrechner.RatInt
 import Taschenrechner.AlgRisch
 import Taschenrechner.Trig

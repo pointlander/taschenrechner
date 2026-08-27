@@ -11,7 +11,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
 - **Assumptions**: `assume(x>0)` refines `√(x²)` / `|x|`; `forget(x)`
 - **Transcendental solve**: `solve(exp(x)=2)`, `solve(sin(x)=1/2)` (trig families in `k`)
-- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **quartics** (Ferrari); **irrational** `x^n=a`; **linear & 2-var polynomial systems**; **intervals** `solve(x^2-1>0)`
+- **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **quartics** (Ferrari); **irrational** `x^n=a`; **linear & polynomial systems** (2-var resultant, ≥3-var lex Gröbner); **intervals** `solve(x^2-1>0)`
 - Textbook-style pretty-print: fractions, `√`, superscripts (`x²`), degree-sorted polys, `∞`
 - **ASCII art** multi-line output for fractions, powers, matrices, and equations
 - **Plotting** via **gnuplot**: `plot(sin(x))` drops into the gnuplot CLI; `plotpng(f)` writes a PNG
@@ -73,6 +73,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
 | `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, quartics, `roots` |
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
+| `Taschenrechner.Groebner` | Multivariate lex Gröbner bases (Buchberger); `groebner` / multi-var `solve` |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric) |
@@ -180,12 +181,13 @@ Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is
 | `solve(f[, x])` | Roots of scalar `f=0`; also `solve(A,b)` for matrices |
 | `solve(lhs=rhs[, x])` | Equation form (preferred) |
 | `solve(lhs, rhs, x)` | Solve `lhs = rhs` (3-arg form) |
-| `solve(eq1, eq2, …[, x, y, …])` | **System**: linear via RREF; **2-var polynomial** via sub / resultant |
+| `solve(eq1, eq2, …[, x, y, …])` | **System**: linear via RREF; 2-var polynomial via resultant; ≥3-var via lex Gröbner |
+| `groebner(eq, …)` / `gb(...)` | Lex Gröbner basis (column of generators); optional trailing variable order |
 | `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** → merged intervals with open/closed ends; print as `(-∞, -1) ∪ [1, ∞)` |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
 
-Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Systems require linear equations; inequalities are univariate polynomial. Internally intervals are n×4 rows `[lo, hi, loClosed, hiClosed]` (CLI pretty-prints unions); whole line → `ℝ`, empty → `∅`, scalar roots → `{…}`.
+Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Linear systems use RREF; polynomial systems use resultants (2-var) or lex Gröbner (≥3-var). Inequalities are univariate polynomial. Internally intervals are n×4 rows `[lo, hi, loClosed, hiClosed]` (CLI pretty-prints unions); whole line → `ℝ`, empty → `∅`, scalar roots → `{…}`.
 
 ```bash
 lake exe taschenrechner 'factor(x^2-1)'              # → (x-1)(x+1)
@@ -208,6 +210,8 @@ lake exe taschenrechner 'int(sec(x))'                   # → ln(sec x + tan x)
 lake exe taschenrechner 'solve(x^2-5*x+6=0, x)'       # → {3, 2}
 lake exe taschenrechner 'solve(x^2, 4, x)'            # → {2, -2}  (3-arg form)
 lake exe taschenrechner 'solve(x+y=1, x-y=3)'         # → x = 2, y = -1
+lake exe taschenrechner 'solve(x^2=1, y^2=1, z=x+y)'   # → four points via Gröbner
+lake exe taschenrechner 'groebner(x-1, x^2+y)'         # → x − 1, y + 1
 lake exe taschenrechner 'solve(x+y+z=6, x-y=1, y-z=1)' # → x = 3, y = 2, z = 1
 lake exe taschenrechner 'solve(x^2+y^2=1, x+y=1)'     # → {x=1,y=0}, {x=0,y=1}
 lake exe taschenrechner 'solve(y=x^2, x+y=2)'         # → {x=1,y=1}, {x=-2,y=4}

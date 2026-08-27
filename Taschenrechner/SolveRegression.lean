@@ -221,6 +221,22 @@ def suite : List Case := [
   { name := "linear system still named"
     input := "solve(x+y=1, x-y=3)"
     check := fun e => namedEq e "x" (ofInt 2) && namedEq e "y" (ofInt (-1)) },
+  -- Gröbner bases / 3-var polynomial systems
+  { name := "3-var x²=1, y²=1, z=x+y"
+    input := "solve(x^2=1, y^2=1, z=x+y)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "x = 1" && s.contains "y = 1" && s.contains "z = 2"
+        && s.contains "x = -1" && s.contains "y = -1" && s.contains "z = -2" },
+  { name := "groebner x-1, x²+y"
+    input := "groebner(x-1, x^2+y)"
+    check := fun e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 2 &&
+            let s := prettySolution e
+            s.contains "x" && s.contains "y" && !s.contains "x²"
+      | none => false },
   -- cubics / irrational n-th roots
   { name := "solve x³=8 rational cube"
     input := "solve(x^3-8=0, x)"

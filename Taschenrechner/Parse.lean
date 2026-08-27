@@ -451,6 +451,30 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
     | none => throw "expm: expected a matrix"
   | "solve", args => do
       solveDispatch (args.map (fun a => applyAssumes env (simplify a)))
+  | "groebner", args | "gb", args | "groebnerbasis", args => do
+      let args := args.map (fun a => applyAssumes env (simplify a))
+      let (eqs, varNames) :=
+        Id.run do
+          let mut es := args
+          let mut vs : List String := []
+          let mut done := false
+          while !done && !es.isEmpty do
+            match es.getLast? with
+            | some e =>
+              if isVar e then
+                match asVarName e with
+                | .ok name =>
+                  vs := name :: vs
+                  es := es.dropLast
+                | .error _ => done := true
+              else done := true
+            | none => done := true
+          pure (es, vs)
+      if eqs.isEmpty then throw "groebner: no polynomials"
+      else
+        match groebnerDispatch eqs (if varNames.isEmpty then none else some varNames) with
+        | .ok e => pure e
+        | .error msg => throw msg
   | "roots", [e] =>
     let v := Expr.primaryVar e
     pure (Expr.mat #[(roots e v).toArray])
@@ -874,6 +898,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
+    || n == "groebner" || n == "gb" || n == "groebnerbasis"
     || n == "apart" || n == "pf" || n == "partialfractions"
     || n == "taylor" || n == "maclaurin" || n == "series" || n == "laurent"
     || n == "seriesadd" || n == "sadd" || n == "seriesmul" || n == "smul"
@@ -1370,6 +1395,7 @@ def helpText : String :=
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
                 solve: rationals, quadratics, x^n=a, Cardano cubics, Ferrari quartics; systems; intervals\n\
+                groebner(eq, …) / gb(…)  lex Gröbner basis; solve uses it for ≥3-var polynomial systems\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions over ℚ and ℚ(√d))\n\
                 factor over ℚ(√d): factor(x^2-2) → (x−√2)(x+√2)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
