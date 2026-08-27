@@ -1,7 +1,7 @@
 /-
   Finite summation closed forms.
 
-  * Polynomial summands via Faulhaber formulas (powers 0…6)
+  * Polynomial summands via Faulhaber / Bernoulli numbers (all powers)
   * Geometric series ∑ r^k
   * Constant summands
 -/
@@ -20,50 +20,71 @@ open Expr
 /-- `n` as a free variable (default upper limit name). -/
 def sumN : Expr := var "n"
 
+/-- Highest power for which Bernoulli/Faulhaber is computed (arbitrary-precision, but slow). -/
+def faulhaberMaxM : Nat := 64
+
+/-- Binomial coefficient `C(n, k)`. -/
+def natBinom (n k : Nat) : Nat :=
+  if k > n then 0
+  else
+    let k := min k (n - k)
+    Id.run do
+      let mut r : Nat := 1
+      for i in [:k] do
+        r := r * (n - i) / (i + 1)
+      pure r
+
 /--
-  Closed form for ∑_{k=1}^n k^m as a polynomial expression in free var `nExpr`.
-  Supports m = 0…6.
+  Bernoulli numbers `B_0, …, B_m` with `B_1 = −1/2`
+  (power-sum convention: `∑_{k=0}^n C(n+1,k) B_k = 0` for `n ≥ 1`).
+-/
+def bernoulliList (m : Nat) : Array RatConst :=
+  Id.run do
+    let mut B : Array RatConst := Array.replicate (m + 1) RatConst.zero
+    B := B.set! 0 RatConst.one
+    for n in [1:m + 1] do
+      let mut s := RatConst.zero
+      for k in [:n] do
+        let c := RatConst.ofInt (Int.ofNat (natBinom (n + 1) k))
+        s := s + c * B[k]!
+      match RatConst.div (RatConst.neg s) (RatConst.ofInt (Int.ofNat (n + 1))) with
+      | some bn => B := B.set! n bn
+      | none => pure ()
+    pure B
+
+def bernoulli (n : Nat) : RatConst :=
+  (bernoulliList n)[n]!
+
+/--
+  Closed form for `∑_{k=1}^n k^m` as a polynomial in `nExpr`.
+
+  Faulhaber: `1/(m+1) ∑_{j=0}^m (-1)^j C(m+1,j) B_j n^{m+1−j}`
+  with `B_1 = −1/2`.
 -/
 def sumPowClosed (m : Nat) (nExpr : Expr) : Option Expr :=
-  let n := nExpr
-  let n2 := pow n (ofInt 2)
-  let n3 := pow n (ofInt 3)
-  let n4 := pow n (ofInt 4)
-  let n5 := pow n (ofInt 5)
-  let n6 := pow n (ofInt 6)
-  let n7 := pow n (ofInt 7)
-  match m with
-  | 0 =>
-    -- ∑ 1 = n
-    some n
-  | 1 =>
-    -- n(n+1)/2
-    some (simplify (div (mul n (add n one)) (ofInt 2)))
-  | 2 =>
-    -- n(n+1)(2n+1)/6
-    some (simplify (div (mul (mul n (add n one)) (add (mul (ofInt 2) n) one)) (ofInt 6)))
-  | 3 =>
-    -- [n(n+1)/2]^2
-    some (simplify (pow (div (mul n (add n one)) (ofInt 2)) (ofInt 2)))
-  | 4 =>
-    -- n(n+1)(2n+1)(3n²+3n−1)/30
-    let a := mul (mul n (add n one)) (add (mul (ofInt 2) n) one)
-    let b := add (add (mul (ofInt 3) n2) (mul (ofInt 3) n)) (ofInt (-1))
-    some (simplify (div (mul a b) (ofInt 30)))
-  | 5 =>
-    -- n²(n+1)²(2n²+2n−1)/12
-    let a := mul (pow n (ofInt 2)) (pow (add n one) (ofInt 2))
-    let b := add (add (mul (ofInt 2) n2) (mul (ofInt 2) n)) (ofInt (-1))
-    some (simplify (div (mul a b) (ofInt 12)))
-  | 6 =>
-    -- n(n+1)(2n+1)(3n⁴+6n³−3n+1)/42
-    let a := mul (mul n (add n one)) (add (mul (ofInt 2) n) one)
-    let b := add (add (add (mul (ofInt 3) n4) (mul (ofInt 6) n3))
-      (mul (ofInt (-3)) n)) one
-    some (simplify (div (mul a b) (ofInt 42)))
-  | _ =>
-    let _ := n5; let _ := n6; let _ := n7
-    none
+  if m > faulhaberMaxM then none
+  else
+    let Bs := bernoulliList m
+    let den := RatConst.ofInt (Int.ofNat (m + 1))
+    Id.run do
+      let mut acc : Expr := zero
+      for j in [:m + 1] do
+        let sign : Int := if j % 2 == 0 then 1 else -1
+        let bin := RatConst.ofInt (Int.ofNat (natBinom (m + 1) j))
+        let Bj := Bs[j]!
+        let raw := RatConst.ofInt sign * bin * Bj
+        match RatConst.div raw den with
+        | none => pure ()
+        | some ck =>
+          if !ck.isZero then
+            let p := m + 1 - j
+            let np :=
+              if p == 0 then one
+              else if p == 1 then nExpr
+              else pow nExpr (ofNat p)
+            let term := if ck.isOne then np else mul (ofRat ck) np
+            acc := add acc term
+      pure (some (simplify acc))
 
 /-- ∑_{k=1}^{hi} k^m − ∑_{k=1}^{lo−1} k^m. -/
 def sumPowRange (m : Nat) (lo hi : Expr) : Option Expr :=

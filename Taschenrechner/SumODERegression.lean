@@ -85,6 +85,12 @@ def suite : List Case := [
   { name := "numeric sum k²=1..5"
     input := "sum(k^2, k, 1, 5)"
     check := fun e => simplify e == ofInt 55 },
+  { name := "sum k^7 Faulhaber numeric"
+    input := "sum(k^7, k, 1, 10)"
+    check := fun e => simplify e == ofInt 18080425 },
+  { name := "sum k^10 Faulhaber numeric"
+    input := "sum(k^10, k, 1, 5)"
+    check := fun e => simplify e == ofInt 10874275 },
   { name := "y' syntax dsolve"
     input := "dsolve(y' + y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
-- **Finite sums** `sum` (Faulhaber + geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
+- **Finite sums** `sum` (Faulhaber via Bernoulli numbers, geometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -75,7 +75,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
-| `Taschenrechner.Sum` | Finite sums (Faulhaber powers 0–6, geometric) |
+| `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
@@ -240,7 +240,7 @@ lake exe taschenrechner 'expm(zeros(2))'              # → I
 
 | Form | What it does |
 |------|----------------|
-| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber / geometric; **numeric** if bounds are ints) |
+| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
 | `dsolve(eq)` | 1st-order (`y'`/`yp`) or 2nd-order const-coeff (`y''`/`ypp`); `g(x)=sin/cos` via undetermined coeff / VoP |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
@@ -256,6 +256,8 @@ Linear 1st-order: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Const-coeff
 ```bash
 lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
 lake exe taschenrechner 'sum(k, 1, 10, k)'             # → 55
+lake exe taschenrechner 'sum(k^7, k, 1, n)'            # Faulhaber (Bernoulli)
+lake exe taschenrechner 'sum(k^10, k, 1, 5)'           # numeric via closed form
 lake exe taschenrechner 'dsolve(y'\'' + y = 0)'         # → y = C·exp(-x)
 lake exe taschenrechner 'dsolve(y'\'' + y = x)'         # → y = C·exp(-x) + x − 1
 lake exe taschenrechner 'dsolve(yp + y = 0, 0, 1)'     # → y = exp(-x)

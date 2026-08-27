@@ -1140,6 +1140,19 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "sum(k^2, k, 1, 5)" with
   | .ok e => simplify e == ofInt 55
   | _ => false
+#guard bernoulli 0 == RatConst.one
+#guard bernoulli 1 == ⟨-1, 2⟩
+#guard bernoulli 2 == ⟨1, 6⟩
+#guard bernoulli 3 == RatConst.zero
+#guard bernoulli 4 == ⟨-1, 30⟩
+#guard
+  match parse "sum(k^7, k, 1, 10)" with
+  | .ok e => simplify e == ofInt 18080425
+  | _ => false
+#guard
+  match parse "sum(k^10, k, 1, 5)" with
+  | .ok e => simplify e == ofInt 10874275
+  | _ => false
 -- PR O: second-order ODE & linear systems
 #guard
   match parse "dsolve(y'' + y = 0)" with
