@@ -1,9 +1,11 @@
 /-
-  Characteristic polynomial, eigenvalues, and eigenspaces over Expr.
+  Characteristic polynomial, eigenvalues, eigenspaces, and Jordan form.
 
   * `charpoly A` = det(t I − A) (monic in `t` by default)
   * `eigenvalues A` — roots of the char poly (rational, quadratic, cubic, quartic)
   * `eigenspace A λ` — nullspace of (A − λ I)
+  * `jordanForm A` — `P⁻¹ A P = J` (Jordan blocks; charpoly must split)
+  * `expm A` — `P exp(J) P⁻¹` (diagonalizable or defective)
 -/
 import Taschenrechner.Simplify
 import Taschenrechner.Matrix
@@ -257,28 +259,277 @@ def entryExp (e : Expr) : Expr :=
     else Expr.exp (const c)
   | e => Expr.exp e
 
+/-! ### Jordan form (generalized eigenspaces) -/
+
+def jordanMaxN : Nat := 8
+
+def natFact : Nat → Nat
+  | 0 => 1
+  | n+1 => (n + 1) * natFact n
+
+def kerDim (K : Array (Array Expr)) : Nat :=
+  if K.isEmpty then 0 else ncols K
+
+def toColumns (M : Array (Array Expr)) : List (Array Expr) :=
+  let nc := kerDim M
+  if nc == 0 || nrows M == 0 then []
+  else (List.range nc).map (fun c => getColumn M c)
+
+def isZeroCol (v : Array Expr) : Bool :=
+  v.all isZeroE
+
+def columnRank (cols : List (Array Expr)) : Nat :=
+  if cols.isEmpty then 0
+  else
+    match fromColumns cols with
+    | none => 0
+    | some M => rank (simpMat M)
+
+def independentMod (span : List (Array Expr)) (v : Array Expr) : Bool :=
+  if isZeroCol v then false
+  else columnRank (span ++ [v]) > columnRank span
+
+def mulVec (M : Array (Array Expr)) (v : Array Expr) : Option (Array Expr) :=
+  match fromColumns [v] with
+  | none => none
+  | some c =>
+    match mul M c with
+    | none => none
+    | some r => some (getColumn (simpMat r) 0)
+
+def applyPow (B : Array (Array Expr)) (j : Nat) (v : Array Expr) : Option (Array Expr) :=
+  Id.run do
+    let mut w? : Option (Array Expr) := some v
+    for _ in [:j] do
+      match w? with
+      | none => pure ()
+      | some w => w? := mulVec B w
+    pure w?
+
+def asRatLam? (e : Expr) : Option RatConst :=
+  match simplify e with
+  | const c => CplxConst.toRat? c
+  | _ => none
+
+/-- How many times `(X − r)` divides `p`. -/
+def exactDivCount (p : Poly) (r : RatConst) : Nat :=
+  let lin : Poly := ⟨#[RatConst.neg r, RatConst.one]⟩
+  Id.run do
+    let mut q := Poly.strip p
+    let mut m : Nat := 0
+    for _ in [:q.coeffs.size] do
+      match Poly.exactDiv q lin with
+      | some q' =>
+        q := q'
+        m := m + 1
+      | none => return m
+    pure m
+
+def algMulOf (rs : List Expr) (lam : Expr) (cp? : Option Poly) : Nat :=
+  let listed := algMultiplicity rs lam
+  match asRatLam? lam, cp? with
+  | some r, some p => max listed (exactDivCount p r)
+  | _, _ => listed
+
+/-- Jordan block: `λ` on the diagonal, `1` on the superdiagonal. -/
+def jordanBlock (lam : Expr) (s : Nat) : Array (Array Expr) :=
+  let lam := simplify lam
+  Id.run do
+    let mut rows : Array (Array Expr) := Array.empty
+    for i in [:s] do
+      let mut row : Array Expr := Array.empty
+      for j in [:s] do
+        if i == j then row := row.push lam
+        else if j == i + 1 then row := row.push Expr.one
+        else row := row.push Expr.zero
+      rows := rows.push row
+    pure rows
+
+/-- Block-diagonal assembly. -/
+def blockDiag (bs : List (Array (Array Expr))) : Array (Array Expr) :=
+  let n := bs.foldl (fun acc b => acc + nrows b) 0
+  if n == 0 then #[]
+  else
+    Id.run do
+      let mut rows : Array (Array Expr) :=
+        Array.replicate n (Array.replicate n Expr.zero)
+      let mut off : Nat := 0
+      for b in bs do
+        let s := nrows b
+        for i in [:s] do
+          for j in [:s] do
+            let row := rows[off + i]!
+            rows := rows.set! (off + i) (row.set! (off + j) (get! b i j))
+        off := off + s
+      pure rows
+
 /--
-  Matrix exponential for diagonalizable `A`:
-  `expm(A) = P · exp(D) · P⁻¹` where `A = P D P⁻¹`.
+  `exp(t (λ I + N)) = e^{λ t} ∑ (t N)^k / k!`.
+  Superdiagonal `k` holds `e^{λ t} t^k / k!`.
+-/
+def expJordanBlock (lam : Expr) (s : Nat) (t : Expr) : Array (Array Expr) :=
+  let scale := entryExp (simplify (Expr.mul (simplify lam) t))
+  let t := simplify t
+  Id.run do
+    let mut rows : Array (Array Expr) := Array.empty
+    for i in [:s] do
+      let mut row : Array Expr := Array.empty
+      for j in [:s] do
+        if j < i then
+          row := row.push Expr.zero
+        else
+          let k := j - i
+          let tk :=
+            if k == 0 then Expr.one
+            else if k == 1 then t
+            else Expr.pow t (Expr.ofNat k)
+          let den := natFact k
+          let frac :=
+            if den == 1 then tk
+            else Expr.mul tk (Expr.ofRat ⟨1, den⟩)
+          row := row.push (simplify (Expr.mul scale frac))
+      rows := rows.push row
+    pure rows
+
+inductive JordanResult where
+  | ok (P : Array (Array Expr)) (J : Array (Array Expr)) (blocks : List (Expr × Nat))
+  | error (msg : String)
+  deriving Repr, Inhabited
+
+namespace JordanResult
+
+def toExpr? : JordanResult → Except String Expr
+  | .ok P J _ => pure (Expr.mat #[#[Expr.mat (simpMat P), Expr.mat (simpMat J)]])
+  | .error msg => throw msg
+
+end JordanResult
+
+/--
+  Jordan form of square `A` when the characteristic polynomial splits:
+  chains in `ker(A−λI)^k`, `P⁻¹ A P = J` block-diagonal.
+-/
+def jordanForm (A : Array (Array Expr)) : JordanResult :=
+  let n := nrows A
+  if n == 0 || n != ncols A then .error "jordan: expected square matrix"
+  else if n > jordanMaxN then .error s!"jordan: matrix larger than {jordanMaxN}×{jordanMaxN}"
+  else
+    match eigenvalues A with
+    | none => .error "jordan: could not compute eigenvalues"
+    | some rs =>
+      let cp? : Option Poly :=
+        match charpoly A charVar with
+        | none => none
+        | some e => asPolyIn? e charVar
+      let uniq := uniqueEigenvalues rs
+      if uniq.isEmpty then .error "jordan: no eigenvalues"
+      else
+        Id.run do
+          let mut cols : List (Array Expr) := []
+          let mut blocks : List (Expr × Nat) := []
+          for lam in uniq do
+            let alg := algMulOf rs lam cp?
+            if alg == 0 then
+              pure ()
+            else
+              match shiftByEigenvalue A (simplify lam) with
+              | none => return .error s!"jordan: shift failed for {lam}"
+              | some B0 =>
+                let B := simpMat B0
+                let mut kers : Array (Array (Array Expr)) := #[]
+                for k in [1:alg + 1] do
+                  match powNat B k with
+                  | none => return .error "jordan: matrix power failed"
+                  | some Bk =>
+                    let K := nullspace (simpMat Bk)
+                    kers := kers.push K
+                    if kerDim K ≥ alg then break
+                if kers.isEmpty then
+                  return .error s!"jordan: empty generalized eigenspace for {lam}"
+                let mut used : List (Array Expr) := []
+                for idx in [:kers.size] do
+                  let k := kers.size - idx
+                  let Kprev : List (Array Expr) :=
+                    if k ≤ 1 then [] else toColumns kers[k - 2]!
+                  let cands := toColumns kers[k - 1]!
+                  for v in cands do
+                    if independentMod (used ++ Kprev) v then
+                      match applyPow B (k - 1) v with
+                      | none => return .error "jordan: chain apply failed"
+                      | some v1 =>
+                        if isZeroCol v1 then
+                          pure ()
+                        else
+                          let mut chain : List (Array Expr) := []
+                          let mut ok := true
+                          for j in [:k] do
+                            match applyPow B (k - 1 - j) v with
+                            | none => ok := false
+                            | some pj => chain := chain ++ [pj]
+                          if !ok then
+                            return .error "jordan: incomplete chain"
+                          else
+                            cols := cols ++ chain
+                            used := used ++ chain
+                            blocks := blocks ++ [(simplify lam, k)]
+          if cols.length != n then
+            return .error s!"jordan: assembled {cols.length} columns, need {n}"
+          match fromColumns cols with
+          | none => return .error "jordan: failed to assemble P"
+          | some P0 =>
+            let P := simpMat P0
+            match det P with
+            | none => return .error "jordan: det(P) failed"
+            | some d =>
+              if isZeroE d then
+                return .error "jordan: P is singular"
+              else
+                let J := simpMat (blockDiag (blocks.map fun (lam, s) => jordanBlock lam s))
+                return .ok P J blocks
+
+/-- Jordan `P` only. -/
+def jordanModal (A : Array (Array Expr)) : Except String (Array (Array Expr)) :=
+  match jordanForm A with
+  | .ok P _ _ => pure P
+  | .error msg => throw msg
+
+/-- Jordan canonical matrix `J`. -/
+def jordanCanonical (A : Array (Array Expr)) : Except String (Array (Array Expr)) :=
+  match jordanForm A with
+  | .ok _ J _ => pure J
+  | .error msg => throw msg
+
+/-- `exp(t J)` for a Jordan matrix described by its blocks. -/
+def expJordanBlocks (blocks : List (Expr × Nat)) (t : Expr) : Array (Array Expr) :=
+  simpMat (blockDiag (blocks.map fun (lam, s) => expJordanBlock lam s t))
+
+/-- `P · M · P⁻¹`. -/
+def conjugate (P M : Array (Array Expr)) : Except String (Array (Array Expr)) :=
+  match inv P with
+  | none => throw "singular P"
+  | some Pinv =>
+    let Pinv := simpMat Pinv
+    match mul P M with
+    | none => throw "P·M shape error"
+    | some PM =>
+      match mul PM Pinv with
+      | none => throw "(P·M)·P⁻¹ shape error"
+      | some R => pure (simpMat R)
+
+/--
+  Matrix exponential: `expm(A) = P exp(J) P⁻¹` via Jordan form
+  (includes the diagonalizable case as 1×1 blocks).
 -/
 def expm (A : Array (Array Expr)) : Except String (Array (Array Expr)) :=
-  match diagonalize A with
-  | .defective msg => throw s!"expm: {msg}"
+  match jordanForm A with
   | .error msg => throw s!"expm: {msg}"
-  | .ok P D =>
-    match mapDiagonal D entryExp with
-    | none => throw "expm: bad diagonal"
-    | some eD =>
-      let eD := simpMat eD
-      match inv P with
-      | none => throw "expm: P is singular"
-      | some Pinv =>
-        let Pinv := simpMat Pinv
-        match mul P eD with
-        | none => throw "expm: P·exp(D) shape error"
-        | some PeD =>
-          match mul PeD Pinv with
-          | none => throw "expm: (P·exp(D))·P⁻¹ shape error"
-          | some R => pure (simpMat R)
+  | .ok P _ blocks =>
+    conjugate P (expJordanBlocks blocks Expr.one)
+
+/-- Fundamental matrix `expm(A x) = P exp(J x) P⁻¹`. -/
+def expmAt (A : Array (Array Expr)) (t : Expr) : Except String (Array (Array Expr)) :=
+  match jordanForm A with
+  | .error msg => throw msg
+  | .ok P _ blocks =>
+    conjugate P (expJordanBlocks blocks t)
 
 end Taschenrechner.Mat

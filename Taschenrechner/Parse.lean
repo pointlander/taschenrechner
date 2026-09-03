@@ -442,6 +442,13 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       | .ok D => pure (simplify (Expr.mat D))
       | .error msg => throw s!"diagform: {msg}"
     | none => throw "diagform: expected a matrix"
+  | "jordan", [e] | "jordanform", [e] | "jf", [e] =>
+    match asMat? e with
+    | some rows =>
+      match Mat.jordanForm rows |>.toExpr? with
+      | .ok r => pure r
+      | .error msg => throw s!"jordan: {msg}"
+    | none => throw "jordan: expected a matrix"
   | "expm", [e] | "matexp", [e] =>
     match asMat? e with
     | some rows =>
@@ -748,7 +755,8 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "eigenspace", _ | "eigenvectors", _ | "eigvec", _ =>
       throw s!"{name} expects 2 arguments (matrix, eigenvalue), got {args.length}"
   | "diagonalize", _ | "diag", _ | "diagonalise", _ | "modal", _ | "eigenmatrix", _
-  | "diagform", _ | "diagonalform", _ | "expm", _ | "matexp", _ =>
+  | "diagform", _ | "diagonalform", _ | "jordan", _ | "jordanform", _ | "jf", _
+  | "expm", _ | "matexp", _ =>
       throw s!"{name} expects 1 argument (square matrix), got {args.length}"
   | "coeff", _ =>
       throw s!"coeff expects coeff(e, n) or coeff(e, v, n), got {args.length} args"
@@ -915,6 +923,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "eigenspace" || n == "eigenvectors" || n == "eigvec"
     || n == "diagonalize" || n == "diag" || n == "diagonalise" || n == "modal"
     || n == "eigenmatrix" || n == "diagform" || n == "diagonalform"
+    || n == "jordan" || n == "jordanform" || n == "jf"
     || n == "expm" || n == "matexp"
     || n == "eye" || n == "zeros" || n == "ones" || n == "matrix" || n == "mat"
 
@@ -1391,7 +1400,7 @@ def helpText : String :=
                 det inv transpose/tp trace/tr rref rank nullity\n\
                 nullspace/null/ker  solve(A,b)  (general soln uses t1,t2,…)\n\
                 charpoly(A)  eigvals/eigen/eig(A)  eigenspace(A,λ)\n\
-                diagonalize(A)→[P,D]  modal(A)  diagform(A)  expm(A)\n\
+                diagonalize(A)→[P,D]  jordan(A)→[P,J]  modal(A)  diagform(A)  expm(A)\n\
                 eye zeros ones; A*B product, c*A scalar, A^n (n≥0)\n\
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
                 solve: rationals, quadratics, x^n=a, Cardano cubics, Ferrari quartics; systems; intervals\n\
@@ -1409,7 +1418,7 @@ def helpText : String :=
                 sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
                 dsolve(eq)  (y'/yp; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
-                dsolve(A)  Y'=A Y via expm\n\
+                dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\

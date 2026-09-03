@@ -25,7 +25,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Fraction-aware pretty-printing (`3/x`, `(1+2x)/(x+x²)`)
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
-- Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / expm**
+- Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / Jordan / expm**
 - **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **ODEs** `dsolve` (1st-order, 2nd-order const-coeff including **`y''+y=sin(x)`**, linear systems via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
@@ -63,7 +63,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Complex` | Euler expand, `cis`, `evalCplx?` |
 | `Taschenrechner.Matrix` | Matrix arithmetic, det, inv, transpose, trace |
 | `Taschenrechner.LinAlg` | RREF, rank, nullspace, general `solve(A,b)` |
-| `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, `expm` |
+| `Taschenrechner.Eigen` | Charpoly, eigenvalues, diagonalize, Jordan, `expm` |
 | `Taschenrechner.Simplify` | Constant folding, like-term collection, expand |
 | `Taschenrechner.Rewrite` | Identity rewrite table (trig/hyperbolic/abs/exp) |
 | `Taschenrechner.AsciiArt` | Multi-line ASCII layout (`asciiArt`, fractions/powers) |
@@ -230,8 +230,9 @@ lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
 | `eigvals(A)` / `eigen(A)` / `eig(A)` | Eigenvalues as a 1×k row (rational + quadratic) |
 | `eigenspace(A, λ)` / `eigvec(A, λ)` | Nullspace basis of `A − λI` |
 | `diagonalize(A)` | `[P, D]` with `P⁻¹ A P = D` (when diagonalizable) |
-| `modal(A)` / `diagform(A)` | Just `P` or just `D` |
-| `expm(A)` | `P exp(D) P⁻¹` for diagonalizable `A` |
+| `jordan(A)` / `jf(A)` | `[P, J]` Jordan form (`P⁻¹ A P = J`; defective OK if charpoly splits) |
+| `modal(A)` / `diagform(A)` | Just `P` or just `D` (diagonalizable) |
+| `expm(A)` | `P exp(J) P⁻¹` via Jordan form (defective OK) |
 
 ```bash
 lake exe taschenrechner 'charpoly([1, 0; 0, 2])'      # → t² − 3t + 2
@@ -239,6 +240,8 @@ lake exe taschenrechner 'eigvals([0, -1; 1, 0])'       # → [-i, i]
 lake exe taschenrechner 'eigenspace([1, 0; 0, 2], 2)' # → [0; 1]
 lake exe taschenrechner 'diagform([1, 0; 0, 2])'       # → diag(1,2) (order may vary)
 lake exe taschenrechner 'expm(zeros(2))'              # → I
+lake exe taschenrechner 'expm([0, 1; 0, 0])'           # → [1, 1; 0, 1]  (Jordan)
+lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 ```
 
 **Finite sums & ODEs**
@@ -256,7 +259,7 @@ lake exe taschenrechner 'expm(zeros(2))'              # → I
 | `dsolve(A, Y0)` | System with Y(0)=Y0 |
 | `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
 
-Linear 1st-order: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Systems require diagonalizable A.
+Linear 1st-order: `y' + P(x)*y = Q(x)`. Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Systems `Y'=AY` use Jordan `expm` (defective OK).
 
 ```bash
 lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
@@ -276,6 +279,7 @@ lake exe taschenrechner 'pi'                           # → π
 lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)
 lake exe taschenrechner 'dsolve([1,0;0,2])'            # → y1 = C1·exp(x), y2 = C2·exp(2x)
 lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 = 4·exp(2x)
+lake exe taschenrechner 'dsolve([0,1;0,0])'            # → y1 = C1 + C2·x, y2 = C2
 ```
 
 **Limits & radical integrals**

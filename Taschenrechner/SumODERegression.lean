@@ -188,7 +188,24 @@ def suite : List Case := [
     input := "dsolve([1, 0; 0, 2], [3; 4])"
     check := fun e =>
       let s := prettySolution e
-      s.contains "y1" && s.contains "y2" && !s.contains "C1" }
+      s.contains "y1" && s.contains "y2" && !s.contains "C1" },
+  { name := "dsolve defective nilpotent"
+    input := "dsolve([0, 1; 0, 0])"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y1" && s.contains "y2" && s.contains "x"
+        && (s.contains "C1" || s.contains "C2" || s.contains "C") },
+  { name := "dsolve defective IC"
+    input := "dsolve([0, 1; 0, 0], [1; 0])"
+    check := fun e =>
+      match asNamedSolution? e with
+      | some pairs =>
+          !pairs.any (fun p => dependsOn p.2 "C1" || dependsOn p.2 "C2")
+            && pairs.any (fun p => p.1 == "y1")
+            && pairs.any (fun p => p.1 == "y2")
+      | none =>
+          let s := prettySolution e
+          s.contains "y1" && !s.contains "C1" }
 ]
 
 structure CaseResult where

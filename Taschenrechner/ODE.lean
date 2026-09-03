@@ -5,7 +5,7 @@
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
   * Second-order constant-coeff: a y'' + b y' + c y = g(x)
     (undetermined coefficients for sin/cos; else variation of parameters)
-  * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via diagonalization)
+  * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form)
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -687,29 +687,13 @@ def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :
 /-! ### Linear systems Y' = A Y via expm -/
 
 /--
-  Fundamental matrix Φ(x) = expm(A x) = P · exp(D x) · P⁻¹
-  for constant diagonalizable A. Diagonalize A (not A·x) so eigenvalues stay constant.
+  Fundamental matrix Φ(x) = expm(A x) = P · exp(J x) · P⁻¹
+  for constant A (Jordan form; includes defective matrices).
 -/
 def fundamentalMatrix (A : Array (Array Expr)) (x : String) : Except String (Array (Array Expr)) :=
-  match Mat.diagonalize A with
-  | .defective msg => throw s!"dsolve: {msg}"
+  match Mat.expmAt A (var x) with
+  | .ok Phi => pure Phi
   | .error msg => throw s!"dsolve: {msg}"
-  | .ok P D =>
-    let xv := var x
-    match Mat.mapDiagonal D (fun lam => simplify (exp (mul (simplify lam) xv))) with
-    | none => throw "dsolve: bad diagonal in fundamental matrix"
-    | some eDx =>
-      let eDx := Mat.simpMat eDx
-      match Mat.inv P with
-      | none => throw "dsolve: modal matrix P is singular"
-      | some Pinv =>
-        let Pinv := Mat.simpMat Pinv
-        match Mat.mul P eDx with
-        | none => throw "dsolve: P·exp(Dx) shape error"
-        | some Pe =>
-          match Mat.mul Pe Pinv with
-          | none => throw "dsolve: Φ shape error"
-          | some Phi => pure (Mat.simpMat Phi)
 
 /-- Pack a solution column as named equations `y1 = …`, `y2 = …`. -/
 def packYEqs (Y : Array (Array Expr)) : Expr :=

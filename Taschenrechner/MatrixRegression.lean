@@ -217,7 +217,43 @@ def suite : List Case := [
                     Mat.nrows P == 2 && Mat.ncols P == 2
                       && Mat.nrows D == 2 && Mat.ncols D == 2
                 | _, _ => false)
-      | none => false }
+      | none => false },
+  { name := "expm nilpotent 2×2"
+    input := "expm([0, 1; 0, 0])"
+    check := fun e =>
+      isMat e 2 2
+        && entryEq e 0 0 (1 : Expr) && entryEq e 0 1 (1 : Expr)
+        && entryEq e 1 0 (0 : Expr) && entryEq e 1 1 (1 : Expr) },
+  { name := "expm Jordan λ=2"
+    input := "expm([2, 1; 0, 2])"
+    check := fun e =>
+      isMat e 2 2
+        && entryEq e 0 0 (exp (2 : Expr))
+        && entryEq e 1 1 (exp (2 : Expr))
+        && entryEq e 1 0 (0 : Expr)
+        && entryEq e 0 1 (exp (2 : Expr)) },
+  { name := "jordan nilpotent shape"
+    input := "jordan([0, 1; 0, 0])"
+    check := fun e =>
+      match asMat? e with
+      | some rows =>
+          Mat.nrows rows == 1 && Mat.ncols rows == 2
+            && (match asMat? (Mat.get! rows 0 0), asMat? (Mat.get! rows 0 1) with
+                | some P, some J =>
+                    Mat.nrows P == 2 && Mat.ncols J == 2
+                      && entryEq (Expr.mat J) 0 1 (1 : Expr)
+                | _, _ => false)
+      | none => false },
+  { name := "expm nilpotent 3×3"
+    input := "expm([0, 1, 0; 0, 0, 1; 0, 0, 0])"
+    check := fun e =>
+      isMat e 3 3
+        && entryEq e 0 0 (1 : Expr) && entryEq e 0 1 (1 : Expr)
+        && entryEq e 0 2 (ofRat ⟨1, 2⟩)
+        && entryEq e 1 1 (1 : Expr) && entryEq e 1 2 (1 : Expr)
+        && entryEq e 2 2 (1 : Expr)
+        && entryEq e 1 0 (0 : Expr) && entryEq e 2 0 (0 : Expr)
+        && entryEq e 2 1 (0 : Expr) }
 ]
 
 structure CaseResult where

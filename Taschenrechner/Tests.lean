@@ -1079,6 +1079,33 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | some rows => rows.size == 1 && rows[0]!.size == 2
       | none => false
   | _ => false
+#guard
+  let N := #[#[(0 : Expr), (1 : Expr)], #[(0 : Expr), (0 : Expr)]]
+  match Mat.expm N with
+  | .ok R =>
+      simplify (Mat.get! R 0 0) == ofInt 1
+        && simplify (Mat.get! R 1 1) == ofInt 1
+        && simplify (Mat.get! R 0 1) == ofInt 1
+        && simplify (Mat.get! R 1 0) == ofInt 0
+  | _ => false
+#guard
+  match parse "expm([0, 1; 0, 0])" with
+  | .ok e =>
+      match asMat? e with
+      | some R =>
+          simplify (Mat.get! R 0 0) == ofInt 1
+            && simplify (Mat.get! R 0 1) == ofInt 1
+            && simplify (Mat.get! R 1 0) == ofInt 0
+            && simplify (Mat.get! R 1 1) == ofInt 1
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve([0, 1; 0, 0])" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "y1" && s.contains "y2" && s.contains "x"
+        && s.contains "C"
+  | _ => false
 
 -- Finite sums
 #guard
