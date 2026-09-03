@@ -87,6 +87,12 @@ def suite : List Case := [
   { name := "homogeneous (x²+y²)/(x y)"
     input := "dsolve(yp = (x^2+y^2)/(x*y))"
     check := fun e => dependsOn e "C" && dependsOn e "y" },
+  { name := "exact (3 x y²) y' + (2x + y³) = 0"
+    input := "dsolve((3*x*y^2)*yp + (2*x + y^3) = 0)"
+    check := fun e => dependsOn e "C" && dependsOn e "y" && dependsOn e "x" },
+  { name := "exact (2 x y + 1) y' + y² + x = 0"
+    input := "dsolve((2*x*y+1)*yp + (y^2+x) = 0)"
+    check := fun e => dependsOn e "C" && dependsOn e "y" },
   { name := "dsolve yp-2*y=0"
     input := "dsolve(yp - 2*y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

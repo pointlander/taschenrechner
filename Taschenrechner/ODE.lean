@@ -4,6 +4,7 @@
   * First-order linear:  y' + P(x) y = Q(x)   → integrating factor
   * Bernoulli: y' + P(x) y = Q(x) y^n        → v = y^{1−n} reduces to linear
   * Homogeneous: y' = f(y/x)                  → v = y/x reduces to separable
+  * Exact: M dx + N dy = 0 when M_y = N_x     → F(x,y) = C (μ(x)/μ(y) if needed)
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
   * Second-order constant-coeff: a y'' + b y' + c y = g(x)
     (undetermined coefficients for sin/cos; else variation of parameters)
@@ -718,7 +719,164 @@ def orHomogeneous (e : Expr) (y x : String) : Except String Expr → Except Stri
     | .ok sol => .ok sol
     | .error _ => .error msg
 
-/-- First-order: linear, then separable, then Bernoulli, then homogeneous. -/
+/-! ### Exact: M dx + N dy = 0 -/
+
+def exactDelta (M N : Expr) (x y : String) : Expr :=
+  simplify (sub (diff M y) (diff N x))
+
+def isExactMN (M N : Expr) (x y : String) : Bool :=
+  let d := exactDelta M N x y
+  d == zero || isZeroExpr d x || isZeroExpr d y || equivNF (diff M y) (diff N x) x
+
+/-- `e(keep, other)` is independent of `other` at integer samples. -/
+def evalIndependentOf (e : Expr) (other keep : String) : Bool :=
+  let samples : List (Int × Int × Int) :=
+    [(2, 1, 3), (3, 1, 4), (4, 2, 5), (5, 1, 2), (3, 2, 4)]
+  Id.run do
+    let mut hits : Nat := 0
+    for (k0, o1, o2) in samples do
+      let e1 := subst (subst e keep (ofInt k0)) other (ofInt o1)
+      let e2 := subst (subst e keep (ofInt k0)) other (ofInt o2)
+      match eval? (simplify e1), eval? (simplify e2) with
+      | some a, some b =>
+        if a == b then hits := hits + 1
+        else return false
+      | _, _ => pure ()
+    pure (hits ≥ 2)
+
+/-- `e` does not depend on `other` (after simplify / normal form / eval). -/
+def independentOfVar (e : Expr) (other keep : String) : Bool :=
+  let e := simplify (Expr.normalForm e keep)
+  (!dependsOn e other && !dependsOnYp e) || evalIndependentOf e other keep
+
+/-- `exp(ln u) → u`, `exp(k ln u) → u^k`. -/
+def simpIntegratingFactor (μ : Expr) : Expr :=
+  match simplify μ with
+  | exp (ln u) => simplify u
+  | exp (mul (const c) (ln u)) =>
+    match CplxConst.toRat? c with
+    | some q =>
+      if q == RatConst.negOne then simplify (div one u)
+      else if q.den == 1 then simplify (pow u (ofInt q.num))
+      else simplify μ
+    | none => simplify μ
+  | e => e
+
+/-- Integrating factor `μ(x)` or `μ(y)` when `M_y − N_x` has the special form. -/
+def integratingFactor? (M N : Expr) (x y : String) : Option Expr :=
+  if isExactMN M N x y then some one
+  else
+    let Δ := exactDelta M N x y
+    if Δ == zero || isZeroExpr Δ x then some one
+    else
+      let r := simplify (Expr.cancel (div Δ N))
+      if independentOfVar r y x then
+        match integrate r x with
+        | .success iP _ => some (simpIntegratingFactor (exp iP))
+        | _ => none
+      else
+        let s := simplify (Expr.cancel (div (neg Δ) M))
+        if independentOfVar s x y then
+          match integrate s y with
+          | .success iP _ => some (simpIntegratingFactor (exp iP))
+          | _ => none
+        else none
+
+/-- Evaluate `e(xᵢ,yᵢ)` at integer samples; true if it is 0 whenever defined. -/
+def evalZeroXY (e : Expr) (x y : String) : Bool :=
+  let samples : List (Int × Int) :=
+    [(1, 1), (2, 1), (3, 2), (4, 1), (5, 3), (2, 3), (3, 1), (4, 3)]
+  Id.run do
+    let mut hits : Nat := 0
+    for (x0, y0) in samples do
+      let ev := subst (subst e x (ofInt x0)) y (ofInt y0)
+      match eval? (simplify ev) with
+      | some c =>
+        if c.isZero then hits := hits + 1
+        else return false
+      | none => pure ()
+    pure (hits ≥ 2)
+
+/-- Algebraic zero in either free variable. -/
+def isZeroXY (e : Expr) (x y : String) : Bool :=
+  let e := simplify (expand e)
+  e == zero || isZeroExpr e x || isZeroExpr e y
+    || equivNF e zero x || equivNF e zero y
+    || evalZeroXY e x y
+
+def cancelZeroXY (e : Expr) (x y : String) : Expr :=
+  let e := simplify (expand e)
+  if isZeroXY e x y then zero
+  else
+    let n := simplify (Expr.normalForm e x)
+    if isZeroXY n x y then zero
+    else
+      let n2 := simplify (Expr.normalForm e y)
+      if isZeroXY n2 x y then zero else e
+
+/-- Potential `F` with `F_x = M`, `F_y = N`. -/
+def exactPotential (M N : Expr) (x y : String) : Except String Expr :=
+  match integrate M x with
+  | .success Mx _ =>
+    let gp := cancelZeroXY (sub N (diff Mx y)) x y
+    if gp == zero then
+      pure (simplify Mx)
+    else if independentOfVar gp y x then
+      let c := simplify (subst gp y one)
+      pure (simplify (add Mx (mul c (var y))))
+    else
+      match integrate gp y with
+      | .success g _ => pure (simplify (add Mx g))
+      | .notElementary msg => throw s!"dsolve exact: ∫ g'(y) not elementary: {msg}"
+      | .failure msg => throw s!"dsolve exact: ∫ g'(y) failed: {msg}"
+  | .notElementary _ =>
+    match integrate N y with
+    | .success Ny _ =>
+      let hp := cancelZeroXY (sub M (diff Ny x)) x y
+      if hp == zero then
+        pure (simplify Ny)
+      else if independentOfVar hp x y then
+        let c := simplify (subst hp x one)
+        pure (simplify (add Ny (mul c (var x))))
+      else
+        match integrate hp x with
+        | .success h _ => pure (simplify (add Ny h))
+        | .notElementary msg => throw s!"dsolve exact: ∫ h'(x) not elementary: {msg}"
+        | .failure msg => throw s!"dsolve exact: ∫ h'(x) failed: {msg}"
+    | .notElementary msg => throw s!"dsolve exact: ∫ N dy not elementary: {msg}"
+    | .failure msg => throw s!"dsolve exact: ∫ N dy failed: {msg}"
+  | .failure msg => throw s!"dsolve exact: ∫ M dx failed: {msg}"
+
+/-- `N y' + M = 0` exact (or exact after `μ(x)` / `μ(y)`). Implicit `F(x,y) = C`. -/
+def dsolveExact (e : Expr) (y x : String) : Except String Expr :=
+  match linearInYp (equationToZero (simplify e)) y with
+  | none => throw "dsolve: not first-order in y'"
+  | some (N0, M0) =>
+    if dependsOnYp N0 || dependsOnYp M0 then
+      throw "dsolve: y' appears nonlinearly"
+    else if N0 == zero || isZeroExpr N0 x then
+      throw "dsolve exact: missing y' (N = 0)"
+    else
+      match integratingFactor? M0 N0 x y with
+      | none => throw "dsolve: not exact and no μ(x)/μ(y) integrating factor"
+      | some μ =>
+        let M := simplify (mul μ M0)
+        let N := simplify (mul μ N0)
+        if !isExactMN M N x y then
+          throw "dsolve exact: integrating factor did not make M_y = N_x"
+        else do
+          let F ← exactPotential M N x y
+          pure (tidyODESol (eq F odeC))
+
+/-- Try exact after another first-order method failed. -/
+def orExact (e : Expr) (y x : String) : Except String Expr → Except String Expr
+  | .ok sol => .ok sol
+  | .error msg =>
+    match dsolveExact e y x with
+    | .ok sol => .ok sol
+    | .error _ => .error msg
+
+/-- First-order: linear, separable, Bernoulli, homogeneous, then exact. -/
 def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
   match odeResidual e y x with
   | some (A, B, C) =>
@@ -726,7 +884,7 @@ def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
       match dsolveLinear A B C y x with
       | .ok sol => pure (tidyODESol sol)
       | .error e1 =>
-        orHomogeneous e y x <|
+        orExact e y x <| orHomogeneous e y x <|
           match dsolveSeparable A B C y x with
           | .ok sol => .ok (tidyODESol sol)
           | .error _ =>
@@ -734,7 +892,7 @@ def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
             | .ok sol => .ok sol
             | .error _ => .error e1
     else
-      orHomogeneous e y x <|
+      orExact e y x <| orHomogeneous e y x <|
         match dsolveSeparable A B C y x with
         | .ok sol => .ok (tidyODESol sol)
         | .error e2 =>
@@ -745,7 +903,7 @@ def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
     match dsolveBernoulli e y x with
     | .ok sol => pure sol
     | .error eB =>
-      match dsolveHomogeneous e y x with
+      match orExact e y x (orHomogeneous e y x (.error eB)) with
       | .ok sol => pure sol
       | .error _ =>
         throw s!"dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y; {eB}"

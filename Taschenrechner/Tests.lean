@@ -1185,6 +1185,14 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => dependsOn e "C" && dependsOn e "y"
   | _ => false
 #guard
+  match parse "dsolve((3*x*y^2)*yp + (2*x + y^3) = 0)" with
+  | .ok e => dependsOn e "C" && dependsOn e "y" && dependsOn e "x"
+  | _ => false
+#guard
+  match parse "dsolve((2*x*y+1)*yp + (y^2+x) = 0)" with
+  | .ok e => dependsOn e "C" && dependsOn e "y"
+  | _ => false
+#guard
   match parse "dsolve(yp = x*y)" with
   | .ok e =>
       match asEquation? e with
