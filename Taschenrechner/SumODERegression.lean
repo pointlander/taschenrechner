@@ -81,6 +81,12 @@ def suite : List Case := [
           !dependsOn r "C"
             && equivNF (simplify (subst r "x" (0 : Expr))) (1 : Expr)
       | none => false },
+  { name := "homogeneous (x+y)/(x-y)"
+    input := "dsolve(yp = (x+y)/(x-y))"
+    check := fun e => dependsOn e "C" && dependsOn e "y" && dependsOn e "x" },
+  { name := "homogeneous (x²+y²)/(x y)"
+    input := "dsolve(yp = (x^2+y^2)/(x*y))"
+    check := fun e => dependsOn e "C" && dependsOn e "y" },
   { name := "dsolve yp-2*y=0"
     input := "dsolve(yp - 2*y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

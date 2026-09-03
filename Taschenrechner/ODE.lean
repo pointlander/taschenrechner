@@ -3,6 +3,7 @@
 
   * First-order linear:  y' + P(x) y = Q(x)   → integrating factor
   * Bernoulli: y' + P(x) y = Q(x) y^n        → v = y^{1−n} reduces to linear
+  * Homogeneous: y' = f(y/x)                  → v = y/x reduces to separable
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
   * Second-order constant-coeff: a y'' + b y' + c y = g(x)
     (undetermined coefficients for sin/cos; else variation of parameters)
@@ -572,7 +573,152 @@ def dsolveBernoulli (e : Expr) (y x : String) : Except String Expr :=
           else throw "dsolve Bernoulli: expected v = …"
         | none => throw "dsolve Bernoulli: expected v = …"
 
-/-- First-order: linear, then separable, then Bernoulli. -/
+/-! ### Homogeneous: y' = f(y/x) -/
+
+def homVName : String := "__homv"
+
+private def dependsOnYp (e : Expr) : Bool :=
+  dependsOn e ypName || dependsOn e "y'" || dependsOn e "dy"
+
+/-- `A·y' + R = 0` with `A,R` free of `y'` (`R` may depend on `y`). -/
+partial def linearInYp (e : Expr) (_y : String) : Option (Expr × Expr) :=
+  go (simplify e)
+where
+  go : Expr → Option (Expr × Expr)
+  | add a b =>
+    match go a, go b with
+    | some (a1, r1), some (a2, r2) =>
+      some (simplify (add a1 a2), simplify (add r1 r2))
+    | _, _ => none
+  | mul (const c) rest =>
+    match go rest with
+    | some (a, r) =>
+      some (simplify (mul (const c) a), simplify (mul (const c) r))
+    | none => none
+  | mul rest (const c) => go (mul (const c) rest)
+  | var name =>
+    if isYppName name then none
+    else if isYpName name then some (one, zero)
+    else some (zero, var name)
+  | const c => some (zero, const c)
+  | e =>
+    if dependsOnYp e then
+      match e with
+      | mul a b =>
+        let aYp := dependsOnYp a
+        let bYp := dependsOnYp b
+        if aYp && !bYp then
+          match go a with
+          | some (aa, rr) =>
+            if rr == zero || isZeroExpr rr "x" then
+              some (simplify (mul aa b), zero)
+            else none
+          | none => none
+        else if bYp && !aYp then go (mul b a)
+        else none
+      | _ => none
+    else some (zero, e)
+
+/-- Right-hand side of `y' = F(x,y)`, if the ODE is first-order in `y'`. -/
+def firstOrderRhs? (e : Expr) (y : String) : Option Expr :=
+  match linearInYp (equationToZero (simplify e)) y with
+  | none => none
+  | some (A, R) =>
+    if A == zero || isZeroExpr A "x" then none
+    else if dependsOnYp A || dependsOnYp R then none
+    else some (simplify (neg (div R A)))
+
+def ratOfInts (n d : Int) : Expr :=
+  if d == 0 then zero
+  else if d < 0 then ofRat ⟨-n, d.natAbs⟩
+  else ofRat ⟨n, d.toNat⟩
+
+/--
+  Check `F(xᵢ,yᵢ) = f(yᵢ/xᵢ)` at integer samples (skips poles / unevaluable).
+-/
+def evalHomCheck (F f : Expr) (y x v : String) : Bool :=
+  let samples : List (Int × Int) :=
+    [(2, 1), (3, 1), (4, 1), (5, 2), (3, 2), (4, 3), (5, 3), (7, 2), (6, 1), (5, 1)]
+  Id.run do
+    let mut hits : Nat := 0
+    for (x0, y0) in samples do
+      if x0 == 0 then
+        pure ()
+      else
+        let Fx := subst (subst F x (ofInt x0)) y (ofInt y0)
+        let fv := subst f v (ratOfInts y0 x0)
+        match eval? (simplify Fx), eval? (simplify fv) with
+        | some a, some b =>
+          if a == b then hits := hits + 1
+          else return false
+        | _, _ => pure ()
+    pure (hits ≥ 2)
+
+/--
+  If `F(x,y)` is homogeneous of degree 0, return `f(v)` in `__homv`
+  such that `F(x,y) = f(y/x)`.
+-/
+def asHomogeneousF? (F : Expr) (y x : String) : Option Expr :=
+  let F := simplify F
+  if dependsOnYp F then none
+  else
+    let v := homVName
+    let F1 := simplify (subst (subst F x one) y (var v))
+    if dependsOn F1 x then none
+    else if evalHomCheck F F1 y x v then some F1
+    else none
+
+/--
+  Homogeneous `y' = f(y/x)`: `v = y/x` gives `x v' = f(v) − v`,
+  hence `dv/(f(v)−v) = dx/x`.
+-/
+def dsolveHomogeneous (e : Expr) (y x : String) : Except String Expr :=
+  match firstOrderRhs? e y with
+  | none => throw "dsolve: not first-order in y'"
+  | some F =>
+    match asHomogeneousF? F y x with
+    | none => throw "dsolve: right-hand side is not homogeneous of degree 0"
+    | some f =>
+      let v := homVName
+      let den := simplify (sub f (var v))
+      if den == zero || isZeroExpr den v then
+        pure (tidyODESol (eq (var y) (mul odeC (var x))))
+      else
+        let integrand := simplify (div one den)
+        match integrate integrand v with
+        | .success Gv _ =>
+          let rhs := simplify (add (ln (var x)) odeC)
+          let impl := explicitFromImplicit Gv rhs v
+          match asEquation? impl with
+          | some (lhs, vr) =>
+            if lhs == var v then
+              pure (tidyODESol (eq (var y) (mul vr (var x))))
+            else
+              match solveScalar (sub Gv rhs) v with
+              | .solutions (val :: _) =>
+                pure (tidyODESol (eq (var y) (mul (simplify val) (var x))))
+              | _ =>
+                let Gxy := subst Gv v (div (var y) (var x))
+                pure (tidyODESol (eq Gxy rhs))
+          | none =>
+            match solveScalar (sub Gv rhs) v with
+            | .solutions (val :: _) =>
+              pure (tidyODESol (eq (var y) (mul (simplify val) (var x))))
+            | _ =>
+              let Gxy := subst Gv v (div (var y) (var x))
+              pure (tidyODESol (eq Gxy rhs))
+        | .notElementary r => throw s!"dsolve homogeneous: ∫ dv/(f−v) not elementary: {r}"
+        | .failure r => throw s!"dsolve homogeneous: ∫ dv/(f−v) failed: {r}"
+
+/-- Try homogeneous after another first-order method failed. -/
+def orHomogeneous (e : Expr) (y x : String) : Except String Expr → Except String Expr
+  | .ok sol => .ok sol
+  | .error msg =>
+    match dsolveHomogeneous e y x with
+    | .ok sol => .ok sol
+    | .error _ => .error msg
+
+/-- First-order: linear, then separable, then Bernoulli, then homogeneous. -/
 def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
   match odeResidual e y x with
   | some (A, B, C) =>
@@ -580,24 +726,29 @@ def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
       match dsolveLinear A B C y x with
       | .ok sol => pure (tidyODESol sol)
       | .error e1 =>
-        match dsolveSeparable A B C y x with
-        | .ok sol => pure (tidyODESol sol)
-        | .error _ =>
-          match dsolveBernoulli e y x with
-          | .ok sol => pure sol
-          | .error _ => throw e1
+        orHomogeneous e y x <|
+          match dsolveSeparable A B C y x with
+          | .ok sol => .ok (tidyODESol sol)
+          | .error _ =>
+            match dsolveBernoulli e y x with
+            | .ok sol => .ok sol
+            | .error _ => .error e1
     else
-      match dsolveSeparable A B C y x with
-      | .ok sol => pure (tidyODESol sol)
-      | .error e2 =>
-        match dsolveBernoulli e y x with
-        | .ok sol => pure sol
-        | .error _ => throw e2
+      orHomogeneous e y x <|
+        match dsolveSeparable A B C y x with
+        | .ok sol => .ok (tidyODESol sol)
+        | .error e2 =>
+          match dsolveBernoulli e y x with
+          | .ok sol => .ok sol
+          | .error _ => .error e2
   | none =>
     match dsolveBernoulli e y x with
     | .ok sol => pure sol
     | .error eB =>
-      throw s!"dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y; {eB}"
+      match dsolveHomogeneous e y x with
+      | .ok sol => pure sol
+      | .error _ =>
+        throw s!"dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y; {eB}"
 
 /--
   Apply initial condition y(x0)=y0 to an explicit solution `y = f(x,C)`.

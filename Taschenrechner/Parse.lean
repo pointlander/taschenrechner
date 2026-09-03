@@ -1416,7 +1416,7 @@ def helpText : String :=
                 limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at oo via t=1/x\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
                 sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
-                dsolve(eq)  (y'/yp linear, Bernoulli y'+P y=Q y^n, separable; y''/ypp; C/C1/C2)\n\
+                dsolve(eq)  (y'/yp linear, Bernoulli, homogeneous y'=f(y/x), separable; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
                 dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
