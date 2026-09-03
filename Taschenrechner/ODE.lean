@@ -2,6 +2,7 @@
   Ordinary differential equations.
 
   * First-order linear:  y' + P(x) y = Q(x)   → integrating factor
+  * Bernoulli: y' + P(x) y = Q(x) y^n        → v = y^{1−n} reduces to linear
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
   * Second-order constant-coeff: a y'' + b y' + c y = g(x)
     (undetermined coefficients for sin/cos; else variation of parameters)
@@ -395,6 +396,209 @@ def dsolveSeparable (A B C : Expr) (y x : String) : Except String Expr :=
         | .notElementary r => throw s!"dsolve: ∫ dy/g not elementary: {r}"
         | .failure r => throw s!"dsolve: ∫ dy/g failed: {r}"
 
+/-! ### Bernoulli: y' + P(x) y = Q(x) y^n -/
+
+def mergeYPowers (a b : List (RatConst × Expr)) : List (RatConst × Expr) :=
+  let rec insert (ex : RatConst) (c : Expr) : List (RatConst × Expr) → List (RatConst × Expr)
+    | [] =>
+      let c := simplify c
+      if c == zero || isZeroExpr c "x" then [] else [(ex, c)]
+    | (ex', c') :: rest =>
+      if ex == ex' then
+        let s := simplify (add c c')
+        if s == zero || isZeroExpr s "x" then rest else (ex, s) :: rest
+      else (ex', c') :: insert ex c rest
+  b.foldl (fun acc (ex, c) => insert ex c acc) a
+
+def scaleYPowers (k : Expr) : List (RatConst × Expr) → List (RatConst × Expr)
+  | [] => []
+  | (ex, c) :: rest =>
+    let s := simplify (mul k c)
+    if s == zero || isZeroExpr s "x" then scaleYPowers k rest
+    else (ex, s) :: scaleYPowers k rest
+
+/-- Product of two y-power sums: only if one factor is free of `y`, or both monomials. -/
+def mulYPowers (pa pb : List (RatConst × Expr)) : Option (List (RatConst × Expr)) :=
+  let free (ps : List (RatConst × Expr)) : Option Expr :=
+    match ps with
+    | [] => some zero
+    | [(ex, c)] => if ex.isZero then some c else none
+    | _ =>
+      if ps.all (fun (ex, _) => ex.isZero) then
+        some (ps.foldl (fun acc (_, c) => add acc c) zero)
+      else none
+  match free pa, free pb with
+  | some ca, some cb => some [(RatConst.zero, simplify (mul ca cb))]
+  | some ca, none => some (scaleYPowers ca pb)
+  | none, some cb => some (scaleYPowers cb pa)
+  | none, none =>
+    match pa, pb with
+    | [(ea, ca)], [(eb, cb)] =>
+      some [(ea + eb, simplify (mul ca cb))]
+    | _, _ => none
+
+/--
+  Split a first-order residual into `A(x)·y' + Σ cᵢ(x) y^{eᵢ}`.
+  Fails if `y'` is nonlinear or mixed with `y`.
+-/
+partial def collectFirstOrder (e : Expr) (y : String) :
+    Option (Expr × List (RatConst × Expr)) :=
+  go (simplify e)
+where
+  go : Expr → Option (Expr × List (RatConst × Expr))
+  | add a b =>
+    match go a, go b with
+    | some (ya, pa), some (yb, pb) =>
+      some (simplify (add ya yb), mergeYPowers pa pb)
+    | _, _ => none
+  | mul (const c) rest =>
+    match go rest with
+    | some (yp, ps) => some (simplify (mul (const c) yp), scaleYPowers (const c) ps)
+    | none => none
+  | mul rest (const c) => go (mul (const c) rest)
+  | var name =>
+    if isYppName name then none
+    else if isYpName name then some (one, [])
+    else if name == y then some (zero, [(RatConst.one, one)])
+    else some (zero, [(RatConst.zero, var name)])
+  | const c =>
+    if c.isZero then some (zero, []) else some (zero, [(RatConst.zero, const c)])
+  | pow base (const r) =>
+    match CplxConst.toRat? r with
+    | none => none
+    | some q =>
+      match go base with
+      | none => none
+      | some (yp, ps) =>
+        if !(yp == zero || isZeroExpr yp "x") then none
+        else
+          match ps with
+          | [] => some (zero, [(RatConst.zero, pow base (const r))])
+          | [(ex, c)] =>
+            some (zero, [(ex * q, simplify (pow c (const r)))])
+          | _ => none
+  | e =>
+    if dependsOnYFamily e y then
+      match e with
+      | mul a b =>
+        match go a, go b with
+        | some (ya, pa), some (yb, pb) =>
+          let ya0 := ya == zero || isZeroExpr ya "x"
+          let yb0 := yb == zero || isZeroExpr yb "x"
+          if !ya0 && !yb0 then none
+          else if !ya0 then
+            -- y' * (y-free)
+            match pb with
+            | [] => some (simplify (mul ya yb), [])
+            | [(ex, c)] =>
+              if ex.isZero then some (simplify (mul ya c), []) else none
+            | _ => none
+          else if !yb0 then
+            match pa with
+            | [] => some (simplify (mul yb ya), [])
+            | [(ex, c)] =>
+              if ex.isZero then some (simplify (mul yb c), []) else none
+            | _ => none
+          else
+            match mulYPowers pa pb with
+            | some ps => some (zero, ps)
+            | none => none
+        | _, _ => none
+      | _ => none
+    else
+      some (zero, [(RatConst.zero, e)])
+
+/-- `y' + P y = Q y^n` with `n ≠ 0,1` and `P,Q` free of `y`. -/
+def bernoulliPQ? (e : Expr) (y x : String) : Option (Expr × Expr × RatConst) :=
+  match collectFirstOrder (equationToZero (simplify e)) y with
+  | none => none
+  | some (ypC, powers) =>
+    if ypC == zero || isZeroExpr ypC x then none
+    else if dependsOnYFamily ypC y then none
+    else
+      let powers :=
+        powers.filter fun (_, c) => !(c == zero || isZeroExpr c x)
+      if powers.any fun (_, c) => dependsOnYFamily c y then none
+      else if powers.any fun (ex, _) => ex.isZero then none
+      else
+        let lin := powers.find? fun (ex, _) => ex.isOne
+        let others := powers.filter fun (ex, _) => !ex.isOne
+        match others with
+        | [(n, Dn)] =>
+          if n.isOne || n.isZero then none
+          else
+            let B :=
+              match lin with
+              | some (_, b) => b
+              | none => zero
+            let P := simplify (div B ypC)
+            let Q := simplify (neg (div Dn ypC))
+            if dependsOn P y || dependsOn Q y then none
+            else some (P, Q, n)
+        | _ => none
+
+/-- Invert `v = y^{1−n}` to an explicit `y = …`. -/
+def yFromBernoulliV (vExpr : Expr) (n : RatConst) : Expr :=
+  let k := RatConst.one - n
+  if k == RatConst.negOne then simplify (div one vExpr)
+  else if k.isOne then simplify vExpr
+  else
+    match RatConst.inv k with
+    | none => pow vExpr (ofRat k)
+    | some invk => simplify (pow vExpr (ofRat invk))
+
+/--
+  Bernoulli `y' + P(x) y = Q(x) y^n` (`n ≠ 1`):
+  `v = y^{1−n}` satisfies `v' + (1−n) P v = (1−n) Q`.
+-/
+def dsolveBernoulli (e : Expr) (y x : String) : Except String Expr :=
+  match bernoulliPQ? e y x with
+  | none => throw "dsolve: not a Bernoulli equation y'+P y=Q y^n"
+  | some (P, Q, n) =>
+    let k := RatConst.one - n
+    if k.isZero then throw "dsolve: Bernoulli n=1 is linear"
+    else
+      let kE := ofRat k
+      let A := one
+      let B := simplify (mul kE P)
+      let C := simplify (neg (mul kE Q))
+      match dsolveLinear A B C "__bernv" x with
+      | .error msg => throw s!"dsolve Bernoulli: {msg}"
+      | .ok sol =>
+        match asEquation? sol with
+        | some (lhs, rhs) =>
+          if lhs == var "__bernv" then
+            pure (tidyODESol (eq (var y) (yFromBernoulliV rhs n)))
+          else throw "dsolve Bernoulli: expected v = …"
+        | none => throw "dsolve Bernoulli: expected v = …"
+
+/-- First-order: linear, then separable, then Bernoulli. -/
+def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
+  match odeResidual e y x with
+  | some (A, B, C) =>
+    if !dependsOn B y && !dependsOn A y && !dependsOn C y then
+      match dsolveLinear A B C y x with
+      | .ok sol => pure (tidyODESol sol)
+      | .error e1 =>
+        match dsolveSeparable A B C y x with
+        | .ok sol => pure (tidyODESol sol)
+        | .error _ =>
+          match dsolveBernoulli e y x with
+          | .ok sol => pure sol
+          | .error _ => throw e1
+    else
+      match dsolveSeparable A B C y x with
+      | .ok sol => pure (tidyODESol sol)
+      | .error e2 =>
+        match dsolveBernoulli e y x with
+        | .ok sol => pure sol
+        | .error _ => throw e2
+  | none =>
+    match dsolveBernoulli e y x with
+    | .ok sol => pure sol
+    | .error eB =>
+      throw s!"dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y; {eB}"
+
 /--
   Apply initial condition y(x0)=y0 to an explicit solution `y = f(x,C)`.
 -/
@@ -764,41 +968,10 @@ def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Ex
     match dsolveSecondOrder? e y x with
     | some (.ok sol) => pure (tidyODESol sol)
     | some (.error err) =>
-      -- Fall through to first-order only if not clearly second-order
-      match odeResidual e y x with
-      | some _ =>
-        -- first-order form also parses; try it
-        match odeResidual e y x with
-        | none => throw err
-        | some (A, B, C) =>
-          if !dependsOn B y && !dependsOn A y && !dependsOn C y then
-            match dsolveLinear A B C y x with
-            | .ok sol => pure (tidyODESol sol)
-            | .error _ =>
-              match dsolveSeparable A B C y x with
-              | .ok sol => pure (tidyODESol sol)
-              | .error e2 => throw s!"{err}; also: {e2}"
-          else
-            match dsolveSeparable A B C y x with
-            | .ok sol => pure (tidyODESol sol)
-            | .error e2 => throw s!"{err}; also: {e2}"
-      | none => throw err
-    | none =>
-      match odeResidual e y x with
-      | none =>
-        throw "dsolve: expected ODE in y'/y or y''/y'/y (use y', yp, y'', ypp) or a square matrix A for Y'=A Y"
-      | some (A, B, C) =>
-        if !dependsOn B y && !dependsOn A y && !dependsOn C y then
-          match dsolveLinear A B C y x with
-          | .ok sol => pure (tidyODESol sol)
-          | .error _ =>
-            match dsolveSeparable A B C y x with
-            | .ok sol => pure (tidyODESol sol)
-            | .error e => throw e
-        else
-          match dsolveSeparable A B C y x with
-          | .ok sol => pure (tidyODESol sol)
-          | .error e => throw e
+      match dsolveFirstOrder e y x with
+      | .ok sol => pure sol
+      | .error e2 => throw s!"{err}; also: {e2}"
+    | none => dsolveFirstOrder e y x
 
 /-- Solve ODE then apply y(x0)=y0. -/
 def dsolveIC (e : Expr) (y x : String) (x0 y0 : Expr) : Except String Expr := do

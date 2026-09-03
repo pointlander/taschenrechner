@@ -66,6 +66,21 @@ def suite : List Case := [
       match asEquation? e with
       | some _ => true
       | none => false },
+  { name := "Bernoulli yp = y²"
+    input := "dsolve(yp = y^2)"
+    check := fun e =>
+      isEqY e && dependsOn e "C" && dependsOn e "x" },
+  { name := "Bernoulli yp + y/x = y²"
+    input := "dsolve(yp + y/x = y^2)"
+    check := fun e => isEqY e && dependsOn e "C" },
+  { name := "Bernoulli IC y(0)=1"
+    input := "dsolve(yp = y^2, 0, 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && equivNF (simplify (subst r "x" (0 : Expr))) (1 : Expr)
+      | none => false },
   { name := "dsolve yp-2*y=0"
     input := "dsolve(yp - 2*y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

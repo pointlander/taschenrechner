@@ -1154,6 +1154,29 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | none => false
   | _ => false
 #guard
+  match parse "dsolve(yp = y^2)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => l == var "y" && dependsOn r "C" && dependsOn r "x"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp + y/x = y^2)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) => l == var "y" && dependsOn r "C"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(yp = y^2, 0, 1)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && equivNF (simplify (subst r "x" (0 : Expr))) (1 : Expr)
+      | none => false
+  | _ => false
+#guard
   match parse "dsolve(yp = x*y)" with
   | .ok e =>
       match asEquation? e with
