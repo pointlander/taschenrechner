@@ -1427,6 +1427,7 @@ def helpText : String :=
                 sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
                 dsolve(eq)  (y'/yp linear, Bernoulli, homogeneous, exact M dx+N dy=0, separable; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
+                dsolve(x^2*y''+x*yp-y=0)  Cauchy–Euler (indicial; x^k RHS)\n\
                 dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\

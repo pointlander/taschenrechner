@@ -8,6 +8,8 @@
   * Separable: y' = f(x) g(y)     → ∫ dy/g = ∫ f dx
   * Second-order constant-coeff: a y'' + b y' + c y = g(x)
     (undetermined coefficients for sin/cos; else variation of parameters)
+  * Cauchy–Euler: a x² y'' + b x y' + c y = g(x)  (indicial r(r−1)+b r+c=0;
+    x^k / polynomial RHS via undetermined coefficients; else VoP)
   * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form)
 -/
 import Taschenrechner.Expr
@@ -1095,12 +1097,12 @@ def particularTrig (a b c : RatConst) (amp : Expr) (ω : RatConst) (isSin : Bool
 
 /-- Variation of parameters for monic `y''+… = r` with basis `u1,u2`. -/
 def variationOfParameters (u1 u2 r : Expr) (x : String) : Except String Expr := do
-  let W := simplify (sub (mul u1 (diff u2 x)) (mul u2 (diff u1 x)))
+  let W := simplify (Expr.cancel (sub (mul u1 (diff u2 x)) (mul u2 (diff u1 x))))
   if W == zero then
     throw "dsolve: Wronskian vanished"
   else
-    let v1' := simplify (neg (div (mul u2 r) W))
-    let v2' := simplify (div (mul u1 r) W)
+    let v1' := simplify (Expr.cancel (neg (div (mul u2 r) W)))
+    let v2' := simplify (Expr.cancel (div (mul u1 r) W))
     let v1 ←
       match integrate v1' x with
       | .success F _ => pure (simplify F)
@@ -1182,20 +1184,181 @@ def dsolveConstCoeff2 (A B C D : Expr) (y x : String) : Except String Expr := do
   | _, _, _ =>
     throw "dsolve: second-order solver requires constant rational coefficients"
 
-/-- Try second-order constant-coeff path when y'' is present with constant A,B,C. -/
+/-! ### Second-order Cauchy–Euler -/
+
+/-- `e` as a monomial `K · x^m` with rational `K, m` (including `m < 0`). -/
+def matchMonomialX? (e : Expr) (x : String) : Option (RatConst × RatConst) :=
+  match RatFn.ofExpr? (simplify (Expr.cancel e)) x with
+  | none => none
+  | some rf =>
+    let rf := RatFn.simplify rf
+    if rf.num.isZero then some (RatConst.zero, RatConst.zero)
+    else
+      let mon (p : Poly) : Bool :=
+        let p := Poly.strip p
+        if p.isZero then true
+        else
+          let d := p.deg.toNat
+          (List.range d).all (fun k => (Poly.coeff p k).isZero)
+      if mon rf.num && mon rf.den && !rf.den.isZero then
+        match RatConst.div (Poly.lc rf.num) (Poly.lc rf.den) with
+        | none => none
+        | some K => some (K, RatConst.ofInt (rf.num.deg - rf.den.deg))
+      else none
+
+/-- `e · x^n` is a rational constant (used to read β/x and γ/x²). -/
+def constTimesInvXn? (e : Expr) (x : String) (n : Nat) : Option RatConst :=
+  let e := simplify e
+  match asRatConstExpr? e with
+  | some c =>
+    if c.isZero || n == 0 then some c else none
+  | none =>
+    match matchMonomialX? e x with
+    | some (K, m) =>
+      if m == RatConst.neg (RatConst.ofInt n) then some K else none
+    | none =>
+      asRatConstExpr? (simplify (Expr.cancel (mul e (pow (var x) (ofInt n)))))
+
+/--
+  Monic Cauchy–Euler: `y'' + (β/x) y' + (γ/x²) y`.
+  Matches `a x² y'' + b x y' + c y` and the divided form `y'' + (b/x) y' + (c/x²) y`.
+-/
+def cauchyEulerMonic? (A B C : Expr) (x : String) : Option (RatConst × RatConst) :=
+  let A := simplify A
+  if A == zero then none
+  else
+    match constTimesInvXn? (div B A) x 1, constTimesInvXn? (div C A) x 2 with
+    | some β, some γ => some (β, γ)
+    | _, _ => none
+
+/-- `x^r`, with `x^0 → 1` and `x^1 → x`. -/
+def eulerXPow (x : String) (r : Expr) : Expr :=
+  let r := simplify r
+  if r == zero then one
+  else if r == one then var x
+  else pow (var x) r
+
+/-- Real fundamental solutions of a Cauchy–Euler indicial pair. -/
+def cauchyEulerBasis2 (r1 r2 : Expr) (x : String) : List Expr :=
+  let xv := var x
+  let r1 := simplify r1
+  let r2 := simplify r2
+  if r1 == r2 then
+    let u := eulerXPow x r1
+    [u, mul u (ln xv)]
+  else
+    match asComplexParts? r1, asComplexParts? r2 with
+    | some (a1, b1), some (a2, b2) =>
+      let mk (alpha beta : RatConst) : List Expr :=
+        let xa := eulerXPow x (ofRat alpha)
+        let arg :=
+          if beta.isOne then ln xv else mul (ofRat beta) (ln xv)
+        if alpha.isZero then
+          [cos arg, sin arg]
+        else
+          [mul xa (cos arg), mul xa (sin arg)]
+      if a1 == a2 && b1 == RatConst.neg b2 && !b1.isZero then
+        mk a1 (if b1.num < 0 then RatConst.neg b1 else b1)
+      else if a1 == a2 && b2 == RatConst.neg b1 && !b2.isZero then
+        mk a1 (if b2.num < 0 then RatConst.neg b2 else b2)
+      else
+        [eulerXPow x r1, eulerXPow x r2]
+    | _, _ =>
+      [eulerXPow x r1, eulerXPow x r2]
+
+/--
+  Particular solution of the monic Euler operator for forcing `K · x^m`.
+  Ansatz `x^{m+2}`, times `ln x` / `(ln x)²` on indicial resonance.
+-/
+def particularEulerPower (β γ K m : RatConst) (x : String) : Expr :=
+  let s := m + RatConst.ofInt 2
+  let I_s := s * (s - RatConst.one) + β * s + γ
+  let xs := eulerXPow x (ofRat s)
+  if !I_s.isZero then
+    match RatConst.div K I_s with
+    | some a => simplify (mul (ofRat a) xs)
+    | none => zero
+  else
+    let Ip := s + s + β - RatConst.one
+    if !Ip.isZero then
+      match RatConst.div K Ip with
+      | some a => simplify (mul (ofRat a) (mul xs (ln (var x))))
+      | none => zero
+    else
+      match RatConst.div K (RatConst.ofInt 2) with
+      | some a =>
+        simplify (mul (ofRat a) (mul xs (pow (ln (var x)) (ofInt 2))))
+      | none => zero
+
+/-- Undetermined coefficients when the monic forcing is a sum of monomials `K x^m`. -/
+partial def particularEulerForce? (β γ : RatConst) (r : Expr) (x : String) : Option Expr :=
+  let r := simplify (Expr.cancel r)
+  match asPolynomialIn? r x with
+  | some p =>
+    let rec go (i : Nat) (acc : Expr) : Expr :=
+      match p.coeffs[i]? with
+      | none => simplify acc
+      | some k =>
+        if k.isZero then go (i + 1) acc
+        else go (i + 1) (add acc (particularEulerPower β γ k (RatConst.ofInt i) x))
+    some (go 0 zero)
+  | none =>
+    match r with
+    | add a b =>
+      match particularEulerForce? β γ a x, particularEulerForce? β γ b x with
+      | some u, some v => some (simplify (add u v))
+      | _, _ => none
+    | _ =>
+      match matchMonomialX? r x with
+      | some (K, m) => some (particularEulerPower β γ K m x)
+      | none => none
+
+/--
+  Solve Cauchy–Euler `A y'' + B y' + C y + D = 0` when
+  `B/A = β/x` and `C/A = γ/x²` with rational β, γ.
+-/
+def dsolveCauchyEuler2 (A B C D : Expr) (y x : String) : Except String Expr := do
+  match cauchyEulerMonic? A B C x with
+  | none => throw "dsolve: not a Cauchy–Euler equation"
+  | some (β, γ) =>
+    let roots := quadraticRoots RatConst.one (β - RatConst.one) γ
+    if roots.isEmpty then
+      throw "dsolve: could not solve indicial equation"
+    else
+      let r1 := roots[0]!
+      let r2 := if roots.length == 1 then roots[0]! else roots[1]!
+      match cauchyEulerBasis2 r1 r2 x with
+      | [u1, u2] =>
+        let yh := simplify (add (mul (odeCi 0) u1) (mul (odeCi 1) u2))
+        let g := simplify (neg D)
+        if g == zero || (match asRatConstExpr? D with | some d => d.isZero | none => false) then
+          pure (tidyODESol (eq (var y) yh))
+        else
+          let rMonic := simplify (Expr.cancel (div g A))
+          let yp ←
+            match particularEulerForce? β γ rMonic x with
+            | some yp => pure yp
+            | none => variationOfParameters u1 u2 rMonic x
+          pure (tidyODESol (eq (var y) (simplify (add yh yp))))
+      | _ => throw "dsolve: expected 2 basis functions"
+
+/-- Try second-order constant-coeff, then Cauchy–Euler, when y'' is present. -/
 def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
   match odeResidual2 e y with
   | none => none
   | some (A, B, C, D) =>
     let A := simplify A
     if A == zero then none
+    else if dependsOnYFamily D y then none
     else
       match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C with
       | some a, some _, some _ =>
         if a.isZero then none
-        else if dependsOnYFamily D y then none
         else some (dsolveConstCoeff2 A B C D y x)
-      | _, _, _ => none
+      | _, _, _ =>
+        match cauchyEulerMonic? A B C x with
+        | some _ => some (dsolveCauchyEuler2 A B C D y x)
+        | none => none
 
 /-! ### Linear systems Y' = A Y via expm -/
 
@@ -1266,8 +1429,9 @@ def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : Strin
 
   Order of attempts:
   1. Second-order constant-coefficient (`y''` / `ypp`)
-  2. First-order linear (integrating factor)
-  3. Separable first-order
+  2. Second-order Cauchy–Euler (`a x² y'' + b x y' + c y`)
+  3. First-order linear (integrating factor)
+  4. Separable first-order
 -/
 def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Expr :=
   -- Matrix argument → linear system Y' = A Y

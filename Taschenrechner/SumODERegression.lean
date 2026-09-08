@@ -232,7 +232,66 @@ def suite : List Case := [
             && pairs.any (fun p => p.1 == "y2")
       | none =>
           let s := prettySolution e
-          s.contains "y1" && !s.contains "C1" }
+          s.contains "y1" && !s.contains "C1" },
+  -- Cauchy–Euler second-order
+  { name := "Cauchy–Euler distinct real"
+    input := "dsolve(x^2*y'' + x*yp - y = 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let u1 := simplify (subst (subst r "C1" (1:Expr)) "C2" (0:Expr))
+            let u2 := simplify (subst (subst r "C1" (0:Expr)) "C2" (1:Expr))
+            (equivNF u1 x || equivNF u1 (div (1:Expr) x))
+              && (equivNF u2 x || equivNF u2 (div (1:Expr) x))
+              && !equivNF u1 u2
+      | none => false },
+  { name := "Cauchy–Euler repeated root"
+    input := "dsolve(x^2*y'' - 3*x*yp + 4*y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2"
+        && (Expr.toString e).contains "ln" },
+  { name := "Cauchy–Euler complex"
+    input := "dsolve(x^2*y'' + x*yp + y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2"
+        && (Expr.toString e).contains "ln"
+        && (Expr.toString e).contains "sin"
+        && (Expr.toString e).contains "cos" },
+  { name := "Cauchy–Euler x^3 forcing"
+    input := "dsolve(x^2*y'' - 2*x*yp + 2*y = x^3)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let yp := simplify (subst (subst r "C1" (0:Expr)) "C2" (0:Expr))
+            let want := simplify (div (pow (var "x") (ofInt 3)) (ofInt 2))
+            yp == want || equivNF yp want
+      | none => false },
+  { name := "Cauchy–Euler resonance ln"
+    input := "dsolve(x^2*y'' - 2*x*yp + 2*y = x^2)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          let yp := simplify (subst (subst r "C1" (0:Expr)) "C2" (0:Expr))
+          let want := simplify (mul (pow (var "x") (ofInt 2)) (ln (var "x")))
+          yp == want || equivNF yp want
+      | none => false },
+  { name := "Cauchy–Euler divided form"
+    input := "dsolve(y'' + yp/x - y/x^2 = 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let u1 := simplify (subst (subst r "C1" (1:Expr)) "C2" (0:Expr))
+            let u2 := simplify (subst (subst r "C1" (0:Expr)) "C2" (1:Expr))
+            (equivNF u1 x || equivNF u1 (div (1:Expr) x))
+              && (equivNF u2 x || equivNF u2 (div (1:Expr) x))
+              && !equivNF u1 u2
+      | none => false }
 ]
 
 structure CaseResult where
