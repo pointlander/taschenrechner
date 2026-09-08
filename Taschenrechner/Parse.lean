@@ -41,6 +41,7 @@ import Taschenrechner.Eigen
 import Taschenrechner.Env
 import Taschenrechner.AsciiArt
 import Taschenrechner.Plot
+import Taschenrechner.Unicode
 
 namespace Taschenrechner.Parse
 
@@ -53,7 +54,7 @@ inductive Token where
   | num   : RatConst → Token
   | ident : String → Token
   | plus | minus | star | slash | caret | middot
-  | eq | lt | le | gt | ge
+  | eq | ne | lt | le | gt | ge
   | lparen | rparen | comma
   | lbracket | rbracket | semicolon
   | bang
@@ -70,6 +71,7 @@ def Token.toString : Token → String
   | .caret => "^"
   | .middot => "·"
   | .eq => "="
+  | .ne => "≠"
   | .lt => "<"
   | .le => "≤"
   | .gt => ">"
@@ -90,12 +92,13 @@ instance : ToString Token where
 
 private def isAlpha (c : Char) : Bool :=
   ('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || c == '_'
+    || isUnicodeIdentStart c
 
 private def isDigit (c : Char) : Bool :=
   '0' ≤ c && c ≤ '9'
 
 private def isIdentCont (c : Char) : Bool :=
-  isAlpha c || isDigit c
+  isAlpha c || isDigit c || isUnicodeIdentCont c
 
 private def isSpace (c : Char) : Bool :=
   c == ' ' || c == '\t' || c == '\n' || c == '\r'
@@ -166,12 +169,13 @@ def tokenize (input : String) : Except String (Array Token) := do
     else
       match c with
       | '+' => out := out.push .plus; i := i + 1
-      | '-' => out := out.push .minus; i := i + 1
-      | '*' => out := out.push .star; i := i + 1
-      | '/' => out := out.push .slash; i := i + 1
+      | '-' | '−' | '–' => out := out.push .minus; i := i + 1
+      | '*' | '×' => out := out.push .star; i := i + 1
+      | '/' | '÷' => out := out.push .slash; i := i + 1
       | '^' => out := out.push .caret; i := i + 1
-      | '·' => out := out.push .middot; i := i + 1
-      | '=' => out := out.push .eq; i := i + 1
+      | '·' | '⋅' => out := out.push .middot; i := i + 1
+      | '=' | '≡' | '≈' => out := out.push .eq; i := i + 1
+      | '≠' => out := out.push .ne; i := i + 1
       | '<' =>
         if i + 1 < len && cs[i + 1]! == '=' then
           out := out.push .le; i := i + 2
@@ -184,13 +188,22 @@ def tokenize (input : String) : Except String (Array Token) := do
           out := out.push .gt; i := i + 1
       | '≤' => out := out.push .le; i := i + 1
       | '≥' => out := out.push .ge; i := i + 1
+      | '√' => out := out.push (.ident "sqrt"); i := i + 1
+      | '∫' => out := out.push (.ident "int"); i := i + 1
+      | '∑' => out := out.push (.ident "sum"); i := i + 1
+      | '∏' => out := out.push (.ident "product"); i := i + 1
+      | '∂' => out := out.push (.ident "diff"); i := i + 1
       | '(' => out := out.push .lparen; i := i + 1
       | ')' => out := out.push .rparen; i := i + 1
       | ',' => out := out.push .comma; i := i + 1
       | '[' => out := out.push .lbracket; i := i + 1
       | ']' => out := out.push .rbracket; i := i + 1
       | ';' => out := out.push .semicolon; i := i + 1
-      | '!' => out := out.push .bang; i := i + 1
+      | '!' =>
+        if i + 1 < len && cs[i + 1]! == '=' then
+          out := out.push .ne; i := i + 2
+        else
+          out := out.push .bang; i := i + 1
       | _ => throw s!"unexpected character '{c}' at position {i}"
   pure (out.push .eof)
 
@@ -989,6 +1002,9 @@ partial def parseExpr (env : Env) (p : Parser) : Except String (Expr × Parser) 
   | .ge =>
     let (rhs, p) ← parseSum env p.advance
     pure (Expr.le rhs lhs, p)  -- a ≥ b → b ≤ a
+  | .ne =>
+    let (rhs, p) ← parseSum env p.advance
+    pure (Expr.lt Expr.zero (Expr.abs (Expr.sub lhs rhs)), p)
   | _ => pure (lhs, p)
 
 partial def parseSum (env : Env) (p : Parser) : Except String (Expr × Parser) := do
@@ -1110,6 +1126,10 @@ partial def parseIdent (env : Env) (name : String) (p : Parser) : Except String 
     let (args, p) ← parseArgList env p.advance
     let e ← applyCall name args env
     pure (e, p)
+  else if lower == "sqrt" && p.peek != .lparen && p.peek.startsAtom then
+    -- prefix √x / sqrt x
+    let (e, p) ← parseUnary env p
+    pure (Taschenrechner.sqrt e, p)
   else if name == "i" || name == "I" then
     pure (Expr.I, p)
   else if Expr.isPiName name then
@@ -1181,6 +1201,7 @@ inductive Command where
   | load      : String → Command
   | help      : Command
   | gnuplot   : Command
+  | unicode   : Option String → Command
   deriving Repr
 
 private def isKeyword (k : String) : Bool :=
@@ -1188,6 +1209,7 @@ private def isKeyword (k : String) : Bool :=
     || k == "simplify" || k == "expand" || k == "cancel" || k == "together"
     || k == "nf" || k == "normal" || k == "help"
     || k == "vars" || k == "clear" || k == "save" || k == "load"
+    || k == "unicode" || k == "symbols" || k == "pick"
 
 private def isReservedFun (k : String) : Bool :=
   k == "sin" || k == "cos" || k == "tan" || k == "exp"
@@ -1322,6 +1344,14 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
     pure .help
   else if lower == "plot" || lower == "gnuplot" || lower == "gp" then
     pure .gnuplot
+  else if lower == "unicode" || lower == "symbols" || lower == "pick" then
+    pure (.unicode none)
+  else if lower.startsWith "unicode " then
+    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 8)))))
+  else if lower.startsWith "symbols " then
+    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 8)))))
+  else if lower.startsWith "pick " then
+    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 5)))))
   else if lower == "assume" || lower == "assumptions" then
     let e ← parse "assume()" env
     pure (.expr e)
@@ -1424,7 +1454,8 @@ def helpText : String :=
     numbers     0, 42, -3, 1.5, 0.25  (decimals → exact rationals)\n\
     constants   pi / π   i\n\
     variables   x, y, theta\n\
-    ops         +  -  *  /  ^  ·  =  <  <=  >  >=   and juxtaposition (2x, sin(x)cos(x))\n\
+    ops         +  -  *  /  ^  ·  ×  ÷  −  =  ≠  <  <=  >  >=  ≤  ≥   juxtaposition (2x, 2π)\n\
+    unicode     π ∞ √ ∫ ∑ ∏ ∂  and Greek (θ, λ, …);  REPL: unicode / symbols / pick\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
     functions   sin cos tan sec csc cot sinh cosh tanh exp ln log sqrt\n\
@@ -1495,6 +1526,8 @@ def helpText : String :=
     assume(x>0) / assume(x, pos)   session sign assumption\n\
     assume(k, int)                 k ∈ ℤ  (trig families)\n\
     forget(x) / assumptions        clear / list assumes\n\
+    unicode / symbols / pick       Unicode symbol picker (then type an expression)\n\
+    unicode <name>                 look up a glyph (pi, sqrt, sum, theta, …)\n\
     help\n\
   \n\
   Examples:\n\

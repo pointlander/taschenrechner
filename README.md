@@ -40,7 +40,7 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner 'plot(sin(x))'           # plot + gnuplot CLI (needs gnuplot)
 lake exe taschenrechner 'plotpng(sin(x), -6.28, 6.28)'  # → plot.png
-lake exe taschenrechner -i              # REPL
+lake exe taschenrechner -i              # REPL (unicode / symbols / pick)
 lake exe taschenrechner --help          # language help
 
 # Domain regression suites (also run as compile-time #guards)
@@ -139,7 +139,7 @@ diff(sin(x^2), x)    # CAS forms inside expressions
 int(x*exp(x))
 ```
 
-Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `sum`, `product`/`prod`, `dsolve`, `limit`/`limleft`/`limright`, `apart`, `help`.
+Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `sum`, `product`/`prod`, `dsolve`, `limit`/`limleft`/`limright`, `apart`, `unicode`/`symbols`/`pick`, `help`.
 
 **Normal forms**
 
@@ -270,6 +270,7 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 | `dsolve(A, g, x)` | Constant forcing `g` (independent `x`) |
 | `dsolve(A, g, Y0)` | Nonhomogeneous with Y(0)=Y0 |
 | `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
+| `unicode` / `symbols` / `pick` | REPL Unicode picker (`π`, `√`, `∫`, `∑`, `≤`, Greek, …); `unicode pi` looks up a glyph |
 
 Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Higher-order const-coeff: `aₙ y^{(n)}+…+a₀ y = g` (`g` constant; repeated `x^k e^{rx}` / `x^k cos/sin`). Systems `Y'=AY` use Jordan `expm` (defective OK); `Y'=AY+g` via `Yp=−A⁻¹g` or variation of parameters.
 
@@ -299,6 +300,9 @@ lake exe taschenrechner "dsolve(y*y'' - yp^2 = 0)"     # missing x → y = C2·e
 lake exe taschenrechner "dsolve(y''' - yp = 0)"        # → y = C1 + C2·exp(x) + C3·exp(-x)
 lake exe taschenrechner 'solve(sin(x)=0)'              # → {k·π}, k ∈ ℤ
 lake exe taschenrechner 'pi'                           # → π
+lake exe taschenrechner 'π*2'                          # → 2π
+lake exe taschenrechner '√(4)'                         # → 2
+lake exe taschenrechner '2×3'                          # → 6
 lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)
 lake exe taschenrechner 'dsolve([1,0;0,2])'            # → y1 = C1·exp(x), y2 = C2·exp(2x)
 lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 = 4·exp(2x)

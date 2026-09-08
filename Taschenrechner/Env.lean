@@ -6,6 +6,7 @@
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
+import Taschenrechner.Unicode
 
 namespace Taschenrechner
 
@@ -449,15 +450,17 @@ def isForbiddenBinding (name : String) : Bool :=
     || n == "simplify" || n == "expand" || n == "euler"
     || n == "save" || n == "load" || n == "assume" || n == "forget"
     || n == "unassume" || n == "assumptions" || n == "pi" || name == "π"
+    || n == "unicode" || n == "symbols" || n == "pick"
 
 /-- Valid identifier for a binding name. -/
 def isBindingName (name : String) : Bool :=
   match name.toList with
   | [] => false
   | c :: rest =>
-    (('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || c == '_')
+    (('a' ≤ c && c ≤ 'z') || ('A' ≤ c && c ≤ 'Z') || c == '_' || isUnicodeIdentStart c)
       && rest.all fun d =>
-        ('a' ≤ d && d ≤ 'z') || ('A' ≤ d && d ≤ 'Z') || ('0' ≤ d && d ≤ '9') || d == '_'
+        ('a' ≤ d && d ≤ 'z') || ('A' ≤ d && d ≤ 'Z') || ('0' ≤ d && d ≤ '9')
+          || d == '_' || isUnicodeIdentCont d
 
 /--
   Assign `name := rhs` under `env`.

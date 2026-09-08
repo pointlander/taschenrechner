@@ -22,6 +22,7 @@ import Taschenrechner.Limit
 import Taschenrechner.Matrix
 import Taschenrechner.Sum
 import Taschenrechner.ODE
+import Taschenrechner.Unicode
 
 namespace Taschenrechner.Tests
 
@@ -193,6 +194,46 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "pi" with
   | .ok e => e == piE
   | _ => false
+#guard
+  match parse "π" with
+  | .ok e => e == piE
+  | _ => false
+#guard
+  match parse "∞" with
+  | .ok e => e == var "∞"
+  | _ => false
+#guard
+  match parse "2×3" with
+  | .ok e => simplify e == ofInt 6
+  | _ => false
+#guard
+  match parse "6÷2" with
+  | .ok e => simplify e == ofInt 3
+  | _ => false
+#guard
+  match parse "√(4)" with
+  | .ok e => simplify e == ofInt 2
+  | _ => false
+#guard
+  match parse "2≤3" with
+  | .ok e =>
+      match e with
+      | le a b => a == ofInt 2 && b == ofInt 3
+      | _ => false
+  | _ => false
+#guard
+  match parse "θ" with
+  | .ok e => e == var "θ"
+  | _ => false
+#guard (uniLookup? "pi").isSome
+#guard
+  match uniLookup? "sqrt" with
+  | some s => s.glyph == "√"
+  | none => false
+#guard
+  match uniByIndex? 1 with
+  | some s => s.glyph == "−"
+  | none => false
 #guard simplify (acos (negOne)) == piE
 #guard simplify (sin piE) == zero
 #guard simplify (cos piE) == negOne

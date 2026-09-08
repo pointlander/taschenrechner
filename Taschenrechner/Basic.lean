@@ -28,6 +28,7 @@ import Taschenrechner.Gosper
 import Taschenrechner.Sum
 import Taschenrechner.ODE
 import Taschenrechner.Env
+import Taschenrechner.Unicode
 import Taschenrechner.Parse
 import Taschenrechner.AsciiArt
 import Taschenrechner.Plot

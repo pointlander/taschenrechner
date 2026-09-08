@@ -209,6 +209,20 @@ def runCommand (env : Env) (cmd : Command) : IO (UInt32 × Env) := do
   | .help =>
     IO.println helpText
     pure (0, env)
+  | .unicode query =>
+    match query.bind (fun q => if trimLine q |>.isEmpty then none else some (trimLine q)) with
+    | some q =>
+      match uniLookup? q with
+      | some s =>
+        IO.println (formatUniSym s)
+        pure (0, env)
+      | none =>
+        IO.eprintln s!"unicode: unknown '{q}'  (try: unicode   or   unicode pi)"
+        IO.println formatUniCatalog
+        pure (1, env)
+    | none =>
+      IO.println formatUniCatalog
+      pure (0, env)
   | .gnuplot =>
     match ← runBareGnuplotShell with
     | .ok msg =>
@@ -382,6 +396,44 @@ def runLine (env : Env) (line : String) : IO (UInt32 × Env) := do
       -- continue after errors so later stmts still see prior successful binds
     pure (code, env)
 
+/-- Interactive Unicode picker; returns a statement to evaluate, or none. -/
+def runUnicodePicker : IO (Option String) := do
+  IO.println formatUniCatalog
+  IO.print "pick> "
+  let raw := trimLine (← (← IO.getStdin).getLine)
+  if raw.isEmpty || raw == "q" || raw == "quit" || raw == "exit" then
+    IO.println "(cancelled)"
+    pure none
+  else
+    match uniLookup? raw with
+    | none =>
+      -- Treat as a full statement (user pasted Unicode).
+      pure (some raw)
+    | some s =>
+      IO.println (formatUniSym s)
+      IO.print "expr> "
+      let rest := trimLine (← (← IO.getStdin).getLine)
+      if rest.isEmpty then
+        match s.insert with
+        | .prefix => pure (some s.glyph)
+        | .infix =>
+          IO.println s!"  (paste {s.glyph} into an expression, or type one now)"
+          IO.print "expr> "
+          let rest2 := trimLine (← (← IO.getStdin).getLine)
+          if rest2.isEmpty then
+            IO.println "(cancelled)"
+            pure none
+          else if rest2.contains s.glyph.front then
+            pure (some rest2)
+          else
+            pure (some rest2)
+      else if rest.contains s.glyph.front then
+        pure (some rest)
+      else
+        match s.insert with
+        | .prefix => pure (some (s.glyph ++ rest))
+        | .infix => pure (some rest)
+
 partial def repl (env : Env) : IO Unit := do
   IO.print "taschenrechner> "
   let line := trimLine (← (← IO.getStdin).getLine)
@@ -389,6 +441,12 @@ partial def repl (env : Env) : IO Unit := do
     repl env
   else if line == "quit" || line == "exit" || line == ":q" then
     IO.println "bye"
+  else if line == "unicode" || line == "symbols" || line == "pick" then
+    match ← runUnicodePicker with
+    | none => repl env
+    | some stmt =>
+      let (_code, env') ← runLine env stmt
+      repl env'
   else
     let (_code, env') ← runLine env line
     repl env'
@@ -412,6 +470,7 @@ def usage : String :=
   "  A := [1, 2; 3, 4]; det(A)\n" ++
   "  ans                   last result\n" ++
   "  vars | clear [name]\n" ++
+  "  unicode | symbols | pick     Unicode symbol picker\n" ++
   "  save file.tr | load file.tr\n" ++
   "\n" ++
   "Examples:\n" ++
@@ -447,8 +506,9 @@ def main (args : List String) : IO UInt32 := do
   | ["--all-regression"] | ["-ar"] | ["--regressions"] =>
     AllRegression.runSuiteIO
   | ["-i"] | ["--repl"] =>
-    IO.println "Taschenrechner REPL  (help | vars | clear | save | load | plot | quit)"
+    IO.println "Taschenrechner REPL  (help | vars | clear | save | load | plot | unicode | quit)"
     IO.println "  name := expr   |   stmt; stmt   |   ans   |   save/load file"
+    IO.println "  unicode / symbols / pick   — insert π, √, ∫, ∑, ≤, Greek, …"
     IO.println "  plot(f) / gnuplot   — gnuplot command line (quit returns)"
     repl Env.empty
     pure 0
