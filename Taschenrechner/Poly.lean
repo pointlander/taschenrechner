@@ -339,6 +339,21 @@ partial def resultant2 (p q : Poly) : RatConst :=
 def res (a b : Poly) : RatConst := resultant2 a b
 
 /--
+  Discriminant of `p`: `(-1)^{n(n−1)/2} / lc(p) · Res(p, p')`.
+  Constants have discriminant 0.
+-/
+def discriminant (p : Poly) : RatConst :=
+  let p := strip p
+  if p.deg ≤ 0 then RatConst.zero
+  else
+    let n := p.deg.toNat
+    let r := res p (differentiate p)
+    let sign : Int := if (n * (n - 1) / 2) % 2 == 0 then 1 else -1
+    match RatConst.div (RatConst.ofInt sign * r) (lc p) with
+    | some d => d
+    | none => RatConst.zero
+
+/--
   Square-free factorization: `p = c * ∏ s_i^{m_i}` with monic square-free `s_i`.
 
   Uses `gcd(p, p')`: `h = p/gcd` is square-free (product of distinct irreducibles),

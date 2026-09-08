@@ -517,6 +517,12 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
         | some c => pure c
         | none => throw s!"coeff: expression is not polynomial/rational in {v}"
       | none => throw "coeff: expected non-negative integer degree"
+  | "gcd", args | "gcf", args =>
+      gcdDispatch (args.map (fun a => applyAssumes env (simplify a)))
+  | "resultant", args | "res", args =>
+      resultantDispatch (args.map (fun a => applyAssumes env (simplify a)))
+  | "discriminant", args | "disc", args | "discr", args =>
+      discriminantDispatch (args.map (fun a => applyAssumes env (simplify a)))
   | "eye", [e] =>
     match asNatDim e with
     | some n => pure (Expr.mat (Mat.eye n))
@@ -906,6 +912,8 @@ def isBuiltinName (name : String) : Bool :=
     || n == "subst" || n == "subs" || n == "eval" || n == "at"
     || name == "N" || n == "numeric" || n == "num"  -- "N" only (not bare `n`)
     || n == "factor" || n == "roots" || n == "collect" || n == "coeff"
+    || n == "gcd" || n == "gcf" || n == "resultant" || n == "res"
+    || n == "discriminant" || n == "disc" || n == "discr"
     || n == "groebner" || n == "gb" || n == "groebnerbasis"
     || n == "apart" || n == "pf" || n == "partialfractions"
     || n == "taylor" || n == "maclaurin" || n == "series" || n == "laurent"
@@ -1405,6 +1413,7 @@ def helpText : String :=
     algebra     factor(e)  roots(e)  solve(f[,x])  solve(lhs=rhs,x)\n\
                 solve: rationals, quadratics, x^n=a, Cardano cubics, Ferrari quartics; systems; intervals\n\
                 groebner(eq, …) / gb(…)  lex Gröbner basis; solve uses it for ≥3-var polynomial systems\n\
+                gcd(p,q[,x])  resultant(p,q[,x])  discriminant(p[,x]) / disc(p)\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions over ℚ and ℚ(√d))\n\
                 factor over ℚ(√d): factor(x^2-2) → (x−√2)(x+√2)\n\
     CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\

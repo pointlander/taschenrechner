@@ -71,7 +71,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Normal` | `cancel`, `together`, `normalForm`, stronger zero tests |
 | `Taschenrechner.Eval` | `subst`, `eval?`, `evalAt`, exact eval over ℚ(i) |
 | `Taschenrechner.Numeric` | `N(e[, digits])` float evaluation → rounded rational |
-| `Taschenrechner.Solve` | `factor`, scalar/system/inequality/`bivariate` `solve`, cubics, quartics, `roots` |
+| `Taschenrechner.Solve` | `factor`, `gcd` / `resultant` / `discriminant`, scalar/system/inequality `solve`, cubics, quartics, `roots` |
 | `Taschenrechner.BiPoly` | Bivariate polys + Sylvester resultant (2-var elimination) |
 | `Taschenrechner.Groebner` | Multivariate lex Gröbner bases (Buchberger); `groebner` / multi-var `solve` |
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
@@ -187,6 +187,9 @@ Decimals (`1.5`, `.25`) parse as exact rationals. Rationals whose denominator is
 | `solve(expr ? 0)` / `solve(a ? b)` | **Inequality** → merged intervals with open/closed ends; print as `(-∞, -1) ∪ [1, ∞)` |
 | `collect(e[, v])` | Rewrite as canonical poly/rational in `v` |
 | `coeff(e, n)` / `coeff(e, v, n)` | Coefficient of `v^n` |
+| `gcd(p, q[, …][, x])` | GCD of polynomials over ℚ (monic) or of integers |
+| `resultant(p, q[, x])` | Resultant; optional `x` is the eliminated variable (bivariate OK) |
+| `discriminant(p[, x])` / `disc(p)` | Discriminant `(-1)^{n(n−1)/2} Res(p,p') / lc(p)` |
 
 Relations parse at top level: `a = b`, `a < b`, `a <= b` / `a ≤ b`, `a > b`, `a >= b` / `a ≥ b` (`>`/`≥` normalize to flipped `<`/`≤`). Linear systems use RREF; polynomial systems use resultants (2-var) or lex Gröbner (≥3-var). Inequalities are univariate polynomial. Internally intervals are n×4 rows `[lo, hi, loClosed, hiClosed]` (CLI pretty-prints unions); whole line → `ℝ`, empty → `∅`, scalar roots → `{…}`.
 
@@ -220,6 +223,10 @@ lake exe taschenrechner 'solve(x^2-1>0)'              # → (-∞, -1) ∪ (1, �
 lake exe taschenrechner 'solve(x^2-1>=0)'             # → (-∞, -1] ∪ [1, ∞)
 lake exe taschenrechner 'solve(x^2-1<0)'              # → (-1, 1)
 lake exe taschenrechner 'coeff(3*x^2+2*x+1, 2)'       # → 3
+lake exe taschenrechner 'gcd(x^2-1, x-1)'             # → x − 1
+lake exe taschenrechner 'gcd(12, 18)'                  # → 6
+lake exe taschenrechner 'resultant(x^2+y, y-1, y)'     # → x² + 1
+lake exe taschenrechner 'discriminant(x^2+2*x+1)'      # → 0
 ```
 
 **Characteristic polynomial, diagonalize & expm**

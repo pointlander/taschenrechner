@@ -503,6 +503,30 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e => equivNF e ((x - 1) * (x + 1))
   | _ => false
 #guard
+  match parse "gcd(x^2-1, x-1)" with
+  | .ok e => equivNF e (x - 1)
+  | _ => false
+#guard
+  match parse "gcd(12, 18)" with
+  | .ok e => simplify e == ofInt 6
+  | _ => false
+#guard
+  match parse "resultant(x-2, x-3)" with
+  | .ok e => simplify e == ofInt (-1)
+  | _ => false
+#guard
+  match parse "resultant(x^2+y, y-1, y)" with
+  | .ok e => equivNF e (pow x (ofInt 2) + 1)
+  | _ => false
+#guard
+  match parse "discriminant(x^2+2*x+1)" with
+  | .ok e => simplify e == ofInt 0
+  | _ => false
+#guard
+  match parse "discriminant(x^2-1)" with
+  | .ok e => simplify e == ofInt 4
+  | _ => false
+#guard
   match parse "roots(x^2-1)" with
   | .ok e =>
       match asMat? e with

@@ -237,6 +237,24 @@ def suite : List Case := [
             let s := prettySolution e
             s.contains "x" && s.contains "y" && !s.contains "x²"
       | none => false },
+  { name := "gcd x²−1, x−1"
+    input := "gcd(x^2-1, x-1)"
+    check := fun e => equivNF e (x - 1) },
+  { name := "gcd integers 12, 18"
+    input := "gcd(12, 18)"
+    check := fun e => simplify e == ofInt 6 },
+  { name := "resultant x−2, x−3"
+    input := "resultant(x-2, x-3)"
+    check := fun e => simplify e == ofInt (-1) },
+  { name := "resultant eliminate y"
+    input := "resultant(x^2+y, y-1, y)"
+    check := fun e => equivNF e (pow x (ofInt 2) + 1) },
+  { name := "discriminant repeated root"
+    input := "discriminant(x^2+2*x+1)"
+    check := fun e => simplify e == ofInt 0 },
+  { name := "discriminant x²−1"
+    input := "discriminant(x^2-1)"
+    check := fun e => simplify e == ofInt 4 },
   -- cubics / irrational n-th roots
   { name := "solve x³=8 rational cube"
     input := "solve(x^3-8=0, x)"

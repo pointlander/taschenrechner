@@ -592,6 +592,131 @@ def collect (e : Expr) (v : String := "x") : Expr :=
   | some f => f
   | none => simplify e
 
+/-! ### gcd / resultant / discriminant -/
+
+/-- Polynomial in `v` (constant denominator only; not a general rational). -/
+def asPolynomialIn? (e : Expr) (v : String) : Option Poly :=
+  match RatFn.ofExpr? (simplify e) v with
+  | none => none
+  | some r =>
+    let r := RatFn.simplify r
+    if r.num.isZero then some Poly.zero
+    else if r.den.isOne then some (Poly.strip r.num)
+    else if r.den.deg == 0 then
+      match RatConst.inv (Poly.coeff r.den 0) with
+      | some inv => some (Poly.strip (Poly.scale inv r.num))
+      | none => none
+    else none
+
+def asIntConst? (e : Expr) : Option Int :=
+  match simplify e with
+  | const c =>
+    match CplxConst.toRat? c with
+    | some q => if q.den == 1 then some q.num else none
+    | none => none
+  | _ => none
+
+def inferPolyVar (es : List Expr) : String :=
+  let vs :=
+    es.foldl (fun acc e => (acc ++ freeVars e).eraseDups) []
+      |>.mergeSort (· < ·)
+  match vs with
+  | v :: _ => v
+  | [] => "x"
+
+/-- Last argument is a variable name when there are at least 3 args. -/
+def splitTrailingVar (args : List Expr) : List Expr × Option String :=
+  if args.length ≥ 3 then
+    match args.getLast? with
+    | some (.var v) => (args.dropLast, some v)
+    | _ => (args, none)
+  else (args, none)
+
+def intGcd (a b : Int) : Int :=
+  Int.ofNat (Nat.gcd a.natAbs b.natAbs)
+
+/-- `gcd(p, q[, …][, x])` — polynomials over ℚ (monic) or integers. -/
+def gcdDispatch (args : List Expr) : Except String Expr :=
+  if args.isEmpty then throw "gcd: expected arguments"
+  else
+    let (es, var?) := splitTrailingVar args
+    if es.isEmpty then throw "gcd: expected polynomials"
+    else if es.all fun e => (asIntConst? e).isSome then
+      let ns := es.filterMap asIntConst?
+      match ns with
+      | [] => throw "gcd: expected integers"
+      | n :: rest =>
+        let g := rest.foldl intGcd n
+        pure (ofInt g)
+    else
+      let v := var?.getD (inferPolyVar es)
+      let ps := es.filterMap fun e => asPolynomialIn? e v
+      if ps.length != es.length then
+        throw s!"gcd: expected polynomials in {v}"
+      else
+        match ps with
+        | [] => throw "gcd: expected polynomials"
+        | p0 :: rest =>
+          let g := rest.foldl Poly.gcd p0
+          pure (simplify (Poly.toExpr g v))
+
+/-- `resultant(p, q[, x])` — univariate over ℚ, or eliminate `x` from bivariate polys. -/
+def resultantDispatch (args : List Expr) : Except String Expr :=
+  match args with
+  | [p, q] => resultantOf p q none
+  | [p, q, .var v] => resultantOf p q (some v)
+  | [p, q, v] => do
+      let v ←
+        match v with
+        | .var name => pure name
+        | _ => throw "resultant: expected resultant(p, q) or resultant(p, q, x)"
+      resultantOf p q (some v)
+  | _ => throw "resultant: expected resultant(p, q) or resultant(p, q, x)"
+where
+  resultantOf (p q : Expr) (var? : Option String) : Except String Expr :=
+    let vs := (freeVars p ++ freeVars q).eraseDups
+    let main :=
+      match var? with
+      | some v => v
+      | none =>
+        match vs with
+        | v :: _ => v
+        | [] => "x"
+    let others := vs.filter (· != main)
+    match others with
+    | [] =>
+      match asPolynomialIn? p main, asPolynomialIn? q main with
+      | some a, some b => pure (ofRat (Poly.res a b))
+      | _, _ => throw s!"resultant: expected polynomials in {main}"
+    | secVar :: _ =>
+      match BiPoly.ofExpr? (simplify p) main secVar, BiPoly.ofExpr? (simplify q) main secVar with
+      | some f, some g =>
+        let r := Poly.strip (BiPoly.resultantMain f g)
+        let r := if r.deg ≥ 1 then Poly.monic r else r
+        pure (simplify (Poly.toExpr r secVar))
+      | _, _ =>
+        match asPolynomialIn? p main, asPolynomialIn? q main with
+        | some a, some b => pure (ofRat (Poly.res a b))
+        | _, _ => throw s!"resultant: expected polynomials in {main}"
+
+/-- `discriminant(p[, x])`. -/
+def discriminantDispatch (args : List Expr) : Except String Expr :=
+  match args with
+  | [e] => discOf e (Expr.primaryVar e)
+  | [e, .var v] => discOf e v
+  | [e, v] => do
+      let v ←
+        match v with
+        | .var name => pure name
+        | _ => throw "discriminant: expected discriminant(p) or discriminant(p, x)"
+      discOf e v
+  | _ => throw "discriminant: expected discriminant(p) or discriminant(p, x)"
+where
+  discOf (e : Expr) (v : String) : Except String Expr :=
+    match asPolynomialIn? e v with
+    | some p => pure (ofRat (Poly.discriminant p))
+    | none => throw s!"discriminant: expected a polynomial in {v}"
+
 /-! ### Linear systems -/
 
 /-- Unit coefficient vector for variable index `i`. -/
