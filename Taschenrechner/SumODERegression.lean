@@ -54,6 +54,31 @@ def suite : List Case := [
   { name := "sum index-first form"
     input := "sum(k, 1, n, k+1)"
     check := fun e => dependsOn e "n" },
+  { name := "product k = n!"
+    input := "product(k, 1, n, k)"
+    check := fun e =>
+      equivNF e (factorial (var "n"))
+        || equivNF e (gamma (add (var "n") one)) },
+  { name := "product k numeric 5! = 120"
+    input := "product(k, 1, 5, k)"
+    check := fun e => equivNF e (ofInt 120) },
+  { name := "product k/(k+1) telescoping"
+    input := "product(k/(k+1), k, 1, n)"
+    check := fun e =>
+      equivNF e (div (1:Expr) (add (var "n") one)) },
+  { name := "product 2^k geometric"
+    input := "product(k, 0, n, 2^k)"
+    check := fun e =>
+      dependsOn e "n"
+        && equivNF (simplify (subst e "n" (ofInt 2))) (ofInt 8) },
+  { name := "product constants 2^n"
+    input := "product(k, 1, n, 2)"
+    check := fun e => equivNF e (pow (ofInt 2) (var "n")) },
+  { name := "prod alias k²"
+    input := "prod(k^2, k, 1, n)"
+    check := fun e =>
+      equivNF e (pow (factorial (var "n")) (ofInt 2))
+        || dependsOn e "n" },
   { name := "dsolve yp+y=0"
     input := "dsolve(yp + y = 0)"
     check := fun e => isEqY e && dependsOn e "C" },

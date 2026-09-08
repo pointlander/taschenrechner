@@ -1,10 +1,12 @@
 /-
-  Finite summation closed forms.
+  Finite summation and products.
 
   * Polynomial summands via Faulhaber / Bernoulli numbers (all powers)
   * Geometric series ∑ r^k
   * Hypergeometric terms via Gosper (rational t(k) and p(k)·r^k)
   * Constant summands
+  * Finite products ∏ via Pochhammer / Γ (linear factors), geometric r^k,
+    rational telescoping, and numeric evaluation
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -264,5 +266,231 @@ def sumFiniteExpr (body : Expr) (k : String) (lo hi : Expr) : Except String Expr
   match sumFinite body k lo hi with
   | some s => pure s
   | none => throw s!"no closed form for sum over {k} of {body}"
+
+/-! ### Finite products -/
+
+/-- Number of terms in `k = lo…hi` inclusive. -/
+def rangeCount (lo hi : Expr) : Expr :=
+  simplify (add (sub hi lo) one)
+
+/-- `Γ(u+m) → (u+m−1)!` for positive integer `m`; `Γ(1) → 1`. -/
+def gammaToNice (e : Expr) : Expr :=
+  match simplify e with
+  | gamma arg =>
+    if arg == one then one
+    else
+      let fromAdd (u : Expr) (c : CplxConst) : Expr :=
+        match CplxConst.toRat? c with
+        | some q =>
+          if q.den == 1 && q.num ≥ 1 then
+            let m := q.num.toNat
+            factorial (if m == 1 then u else add u (ofNat (m - 1)))
+          else gamma arg
+        | none => gamma arg
+      match arg with
+      | add u (const c) => fromAdd u c
+      | add (const c) u => fromAdd u c
+      | _ =>
+        match asNat? arg with
+        | some 0 => gamma arg
+        | some n =>
+          if n ≤ 21 then ofNat (factNat (n - 1)) else gamma arg
+        | none => gamma arg
+  | e => e
+
+/-- `n! / (n+1)! → 1/(n+1)`, `(n+1)! / n! → n+1`. -/
+def cancelFactRatio (e : Expr) : Expr :=
+  let e := simplify e
+  match e with
+  | mul a b =>
+    let tryCancel (u v : Expr) : Option Expr :=
+      if simplify v == simplify (add u one) then some (simplify (div one v))
+      else if simplify u == simplify (add v one) then some (simplify u)
+      else none
+    match a, b with
+    | factorial u, pow (factorial v) (const r) =>
+      match CplxConst.toRat? r with
+      | some q =>
+        if q == RatConst.negOne then
+          match tryCancel u v with
+          | some t => t
+          | none => e
+        else e
+      | none => e
+    | pow (factorial v) (const r), factorial u =>
+      match CplxConst.toRat? r with
+      | some q =>
+        if q == RatConst.negOne then
+          match tryCancel u v with
+          | some t => t
+          | none => e
+        else e
+      | none => e
+    | _, _ => e
+  | e => e
+
+/-- `Γ(a)/Γ(b)` rewritten toward factorials, then cancelled. -/
+def tidyGammaDiv (num den : Expr) : Expr :=
+  cancelFactRatio (simplify (div (gammaToNice num) (gammaToNice den)))
+
+/-- `∏_{k=lo}^{hi} (k + shift) = Γ(hi+shift+1) / Γ(lo+shift)`. -/
+def pochFromTo (shift lo hi : Expr) : Expr :=
+  let top := simplify (add hi (add shift one))
+  let bot := simplify (add lo shift)
+  tidyGammaDiv (gamma top) (gamma bot)
+
+/-- Product of a polynomial that splits into linears over ℚ. -/
+def prodPoly (p : Poly) (lo hi : Expr) : Option Expr :=
+  let p := Poly.strip p
+  let count := rangeCount lo hi
+  if p.isZero then some zero
+  else if p.deg == 0 then
+    some (simplify (pow (ofRat (Poly.coeff p 0)) count))
+  else
+    let lc := Poly.lc p
+    let (_c, facs) := Poly.factorOverQ p
+    Id.run do
+      let mut roots : List RatConst := []
+      for f in facs do
+        let f := Poly.monic (Poly.strip f)
+        if f.deg == 1 && (Poly.coeff f 1).isOne then
+          roots := RatConst.neg (Poly.coeff f 0) :: roots
+        else if f.deg ≤ 0 then
+          pure ()
+        else
+          return none
+      let mut acc : Expr :=
+        if lc.isOne then one else pow (ofRat lc) count
+      for r in roots do
+        let shift := ofRat (RatConst.neg r)
+        acc := mul acc (pochFromTo shift lo hi)
+      some (simplify acc)
+
+/-- `∏_{k=lo}^{hi} r^k = r^{(lo+hi)(hi−lo+1)/2}`. -/
+def prodGeometric (r lo hi : Expr) : Option Expr :=
+  let r := simplify r
+  let lo := simplify lo
+  let hi := simplify hi
+  let count := rangeCount lo hi
+  if r == one then some one
+  else if r == zero then
+    -- 0^0 at k=0 is awkward; if lo > 0 the product is 0
+    match asIntConstExpr lo with
+    | some a => if a > 0 then some zero else none
+    | none => none
+  else
+    let expo := simplify (div (mul (add lo hi) count) (ofInt 2))
+    some (simplify (pow r expo))
+
+/-- Polynomial or rational in `k` as a product of Pochhammers. -/
+def prodPolyOrRat (e : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+  match asPolyForSum? e k with
+  | some p => prodPoly p lo hi
+  | none =>
+    match RatFn.ofExpr? (simplify e) k with
+    | none => none
+    | some rf =>
+      let rf := RatFn.simplify rf
+      match prodPoly rf.num lo hi, prodPoly rf.den lo hi with
+      | some n, some d =>
+        if d == zero then none
+        else some (cancelFactRatio (simplify (div n d)))
+      | _, _ => none
+
+/-- One multiplicative factor (no flattening). -/
+partial def prodOne (e : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+  let e := simplify e
+  let count := rangeCount lo hi
+  if !dependsOn e k then
+    some (simplify (pow e count))
+  else
+    match e with
+    | pow base (var name) =>
+      if name == k && !dependsOn base k then
+        prodGeometric base lo hi
+      else prodPolyOrRat e k lo hi
+    | pow base expn =>
+      if !dependsOn expn k then
+        match prodOne base k lo hi with
+        | some p => some (simplify (pow p expn))
+        | none => prodPolyOrRat e k lo hi
+      else if !dependsOn base k then
+        match expn with
+        | var name =>
+          if name == k then prodGeometric base lo hi
+          else prodPolyOrRat e k lo hi
+        | _ => prodPolyOrRat e k lo hi
+      else prodPolyOrRat e k lo hi
+    | _ => prodPolyOrRat e k lo hi
+
+/--
+  Interpret `body` as a productand in index `k`:
+  * constant `c` → `c^{hi−lo+1}`
+  * geometric `r^k`
+  * polynomial / rational splitting into linears (Pochhammer / Γ)
+  * product of such factors
+-/
+def prodBody (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+  let body := simplify body
+  let fs := flattenMul body
+  if fs.length ≥ 2 then
+    Id.run do
+      let mut acc : Expr := one
+      for f in fs do
+        match prodOne f k lo hi with
+        | none => return prodPolyOrRat body k lo hi
+        | some p => acc := mul acc p
+      some (cancelFactRatio (simplify acc))
+  else
+    prodOne body k lo hi
+
+/-- Brute-force `∏_{k=lo}^{hi} body` when bounds are integers. -/
+def prodBrute (body : Expr) (k : String) (lo hi : Int) : Option Expr :=
+  if hi < lo then some one
+  else
+    Id.run do
+      let mut acc : Expr := one
+      let mut i := lo
+      let mut steps : Nat := 0
+      while i ≤ hi && steps < 10000 do
+        let term := simplify (subst body k (ofInt i))
+        match eval? term with
+        | some c =>
+          if c.isZero then return some zero
+          acc := simplify (mul acc (const c))
+        | none =>
+          acc := simplify (mul acc term)
+        i := i + 1
+        steps := steps + 1
+      if i ≤ hi then none else some (simplify acc)
+
+/-- Finite product `∏_{k=lo}^{hi} body`. -/
+def prodFinite (body : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+  let lo := simplify lo
+  let hi := simplify hi
+  match asIntConstExpr lo, asIntConstExpr hi with
+  | some a, some b =>
+    if b < a then some one
+    else
+      match prodBody body k lo hi with
+      | some s =>
+        let s := cancelFactRatio (simplify s)
+        match eval? s with
+        | some c => some (const c)
+        | none =>
+          match prodBrute body k a b with
+          | some t => some t
+          | none => some s
+      | none => prodBrute body k a b
+  | _, _ =>
+    match prodBody body k lo hi with
+    | some s => some (cancelFactRatio (simplify s))
+    | none => none
+
+/-- Product with fallback message via Except. -/
+def prodFiniteExpr (body : Expr) (k : String) (lo hi : Expr) : Except String Expr :=
+  match prodFinite body k lo hi with
+  | some s => pure s
+  | none => throw s!"no closed form for product over {k} of {body}"
 
 end Taschenrechner

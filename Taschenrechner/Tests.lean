@@ -1273,6 +1273,20 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   | .ok e =>
       equivNF (simplify (subst e "n" (ofInt 3))) (ofInt 34)
   | _ => false
+#guard
+  match parse "product(k, 1, n, k)" with
+  | .ok e =>
+      equivNF e (factorial (var "n"))
+        || equivNF e (gamma (add (var "n") (1:Expr)))
+  | _ => false
+#guard
+  match parse "product(k, 1, 5, k)" with
+  | .ok e => simplify e == ofInt 120
+  | _ => false
+#guard
+  match parse "product(k/(k+1), k, 1, n)" with
+  | .ok e => equivNF e (div (1:Expr) (add (var "n") (1:Expr)))
+  | _ => false
 -- PR O: second-order ODE & linear systems
 #guard
   match parse "dsolve(y'' + y = 0)" with

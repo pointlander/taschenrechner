@@ -710,6 +710,18 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
         else sumFiniteExpr d k1 b c
       | .error _, .error _ =>
         throw "sum: expected a free index variable (sum(expr, k, lo, hi) or sum(k, lo, hi, expr))"
+  | "product", [a, b, c, d] | "prod", [a, b, c, d] => do
+      match asVarName a, asVarName b with
+      | .ok k, .error _ =>
+        prodFiniteExpr d k b c
+      | .error _, .ok k =>
+        prodFiniteExpr a k c d
+      | .ok k1, .ok k2 =>
+        if dependsOn d k1 then prodFiniteExpr d k1 b c
+        else if dependsOn a k2 then prodFiniteExpr a k2 c d
+        else prodFiniteExpr d k1 b c
+      | .error _, .error _ =>
+        throw "product: expected a free index variable (product(expr, k, lo, hi) or product(k, lo, hi, expr))"
   | "dsolve", [e] =>
       -- scalar ODE, or square matrix A for Y' = A Y
       match asMat? e with
@@ -788,6 +800,8 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       throw s!"{name} expects 2 or 3 arguments, got {args.length}"
   | "sum", _ =>
       throw s!"sum expects sum(expr, k, lo, hi) or sum(k, lo, hi, expr), got {args.length} args"
+  | "product", _ | "prod", _ =>
+      throw s!"product expects product(expr, k, lo, hi) or product(k, lo, hi, expr), got {args.length} args"
   | "dsolve", _ =>
       throw s!"dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(eq,x0,y0)|dsolve(eq,x0,y0,yp0)|… (y'/yp/y''/ypp), got {args.length} args"
   | "subst", _ | "subs", _ =>
@@ -921,7 +935,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "limit" || n == "lim" || n == "limleft" || n == "limitleft"
     || n == "limright" || n == "limitright" || n == "poleorder" || n == "ord"
     || n == "classify" || n == "singularity"
-    || n == "sum" || n == "dsolve"
+    || n == "sum" || n == "product" || n == "prod" || n == "dsolve"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -1425,6 +1439,7 @@ def helpText : String :=
                 limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at oo via t=1/x\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
                 sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
+                product(expr, k, lo, hi)  / prod(...)  Pochhammer/Γ, geometric r^k, telescoping\n\
                 dsolve(eq)  (y'/yp linear, Bernoulli, homogeneous, exact M dx+N dy=0, separable; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
                 dsolve(x^2*y''+x*yp-y=0)  Cauchy–Euler (indicial; x^k RHS)\n\
