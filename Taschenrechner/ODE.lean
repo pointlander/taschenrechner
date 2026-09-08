@@ -11,6 +11,7 @@
   * Cauchy–Euler: a x² y'' + b x y' + c y = g(x)  (indicial r(r−1)+b r+c=0;
     x^k / polynomial RHS via undetermined coefficients; else VoP)
   * Reduction of order: missing y → v=y'; missing x → y''=v dv/dy
+  * Higher-order constant-coeff: aₙ y^{(n)}+…+a₀ y = g (g const; n≥3)
   * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form)
 -/
 import Taschenrechner.Expr
@@ -41,20 +42,49 @@ def odeCi (i : Nat) : Expr :=
   * Dependent unknown is `y` (function of `x`)
   * First derivative: `yp` / `y'` / `dy`
   * Second derivative: `ypp` / `y''` / `d2y`
+  * k-th derivative: `y` + k `p`s, k primes, or `dky` (e.g. `yppp` / `y'''` / `d3y`)
   * Example: `dsolve(yp + P*y = Q, y, x)`, `dsolve(y'' + y = 0)`
 -/
 def ypName : String := "yp"
 def yppName : String := "ypp"
 
+/-- Highest derivative order recognized in linear ODEs. -/
+def maxYDerivOrder : Nat := 6
+
+/-- Aliases for the k-th derivative of `y` (`k ≥ 1`). -/
+def yDerivAliases (k : Nat) : List String :=
+  if k == 0 then []
+  else if k == 1 then [ypName, "y'", "dy"]
+  else if k == 2 then [yppName, "y''", "d2y"]
+  else
+    let pees := String.ofList (List.replicate k 'p')
+    let primes := String.ofList (List.replicate k '\'')
+    [s!"y{pees}", s!"y{primes}", s!"d{k}y"]
+
+def derivOrderOfName? (name : String) : Option Nat :=
+  Id.run do
+    for i in [:maxYDerivOrder] do
+      let k := maxYDerivOrder - i
+      if (yDerivAliases k).contains name then return some k
+    none
+
 private def isYpName (name : String) : Bool :=
-  name == ypName || name == "y'" || name == "dy"
+  derivOrderOfName? name == some 1
 
 private def isYppName (name : String) : Bool :=
-  name == yppName || name == "y''" || name == "d2y"
+  derivOrderOfName? name == some 2
+
+def dependsOnYDerivGE (e : Expr) (k0 : Nat) : Bool :=
+  Id.run do
+    if k0 == 0 || k0 > maxYDerivOrder then return false
+    for i in [:maxYDerivOrder - k0 + 1] do
+      let k := k0 + i
+      if (yDerivAliases k).any (fun n => dependsOn e n) then
+        return true
+    false
 
 private def dependsOnYFamily (e : Expr) (y : String) : Bool :=
-  dependsOn e y || dependsOn e ypName || dependsOn e "y'" || dependsOn e "dy"
-    || dependsOn e yppName || dependsOn e "y''" || dependsOn e "d2y"
+  dependsOn e y || dependsOnYDerivGE e 1
 
 /-- Collect coefficient of `yp` and of `y` in a linear expression in those symbols. -/
 partial def linearFormInY (e : Expr) (y : String) (_x : String) : Option (Expr × Expr × Expr) :=
@@ -76,13 +106,12 @@ where
     | none => none
   | mul rest (const c) => go (mul (const c) rest)
   | var name =>
-    if isYppName name then none
-    else if isYpName name then
-      some (one, zero, zero)
-    else if name == y then
-      some (zero, one, zero)
-    else
-      some (zero, zero, var name)
+    match derivOrderOfName? name with
+    | some 1 => some (one, zero, zero)
+    | some _ => none
+    | none =>
+      if name == y then some (zero, one, zero)
+      else some (zero, zero, var name)
   | const c => some (zero, zero, const c)
   | e =>
     if dependsOnYFamily e y then
@@ -134,10 +163,13 @@ where
     | none => none
   | mul rest (const c) => go (mul (const c) rest)
   | var name =>
-    if isYppName name then some (one, zero, zero, zero)
-    else if isYpName name then some (zero, one, zero, zero)
-    else if name == y then some (zero, zero, one, zero)
-    else some (zero, zero, zero, var name)
+    match derivOrderOfName? name with
+    | some 2 => some (one, zero, zero, zero)
+    | some 1 => some (zero, one, zero, zero)
+    | some _ => none
+    | none =>
+      if name == y then some (zero, zero, one, zero)
+      else some (zero, zero, zero, var name)
   | const c => some (zero, zero, zero, const c)
   | e =>
     if dependsOnYFamily e y then
@@ -167,6 +199,64 @@ where
       | _ => none
     else
       some (zero, zero, zero, e)
+
+/-- Zero coefficient vector for `y, y', …, y^{(max)}`. -/
+def zeroYCoeffs : Array Expr :=
+  Array.replicate (maxYDerivOrder + 1) zero
+
+/--
+  Linear form in `y, y', …, y^{(n)}`:
+  returns `(cs, D)` for `Σ cs[k]·y^{(k)} + D = 0` (`cs.size = maxYDerivOrder+1`).
+-/
+partial def linearFormInYN (e : Expr) (y : String) : Option (Array Expr × Expr) :=
+  let e := simplify e
+  go e
+where
+  go : Expr → Option (Array Expr × Expr)
+  | add a b =>
+    match go a, go b with
+    | some (c1, d1), some (c2, d2) =>
+      some (c1.zipWith (fun u v => simplify (add u v)) c2, simplify (add d1 d2))
+    | _, _ => none
+  | mul (const c) rest =>
+    match go rest with
+    | some (cs, d) =>
+      some (cs.map (fun u => simplify (mul (const c) u)), simplify (mul (const c) d))
+    | none => none
+  | mul rest (const c) => go (mul (const c) rest)
+  | var name =>
+    match derivOrderOfName? name with
+    | some k =>
+      if k > maxYDerivOrder then none
+      else some (zeroYCoeffs.set! k one, zero)
+    | none =>
+      if name == y then some (zeroYCoeffs.set! 0 one, zero)
+      else some (zeroYCoeffs, var name)
+  | const c => some (zeroYCoeffs, const c)
+  | e =>
+    if dependsOnYFamily e y then
+      match e with
+      | mul a b =>
+        let aY := dependsOnYFamily a y
+        let bY := dependsOnYFamily b y
+        if aY && !bY then
+          match go a with
+          | some (cs, dd) =>
+            if dd == zero then
+              some (cs.map (fun u => simplify (mul u b)), zero)
+            else none
+          | none => none
+        else if bY && !aY then
+          match go b with
+          | some (cs, dd) =>
+            if dd == zero then
+              some (cs.map (fun u => simplify (mul u a)), zero)
+            else none
+          | none => none
+        else none
+      | _ => none
+    else
+      some (zeroYCoeffs, e)
 
 /-- Rewrite equation to residual A*yp + B*y + C (= 0). -/
 def odeResidual (e : Expr) (y x : String) : Option (Expr × Expr × Expr) :=
@@ -886,8 +976,8 @@ def orExact (e : Expr) (y x : String) : Except String Expr → Except String Exp
 
 /-- First-order: linear, separable, Bernoulli, homogeneous, then exact. -/
 def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
-  if dependsOnYpp (equationToZero (simplify e)) then
-    throw "dsolve: equation contains y''; not first-order"
+  if dependsOnYDerivGE (equationToZero (simplify e)) 2 then
+    throw "dsolve: equation contains y'' (or higher); not first-order"
   else
   match odeResidual e y x with
   | some (A, B, C) =>
@@ -1533,6 +1623,172 @@ def dsolveMissingX (e : Expr) (y x : String) : Except String Expr := do
   | some v =>
     yFromVofY (subst v "C" (odeCi 0)) y x
 
+/-! ### Higher-order constant-coefficient -/
+
+/-- `cs` as rational constants, or `none`. -/
+def ratCoeffArray? (cs : Array Expr) : Option (Array RatConst) :=
+  Id.run do
+    let mut out : Array RatConst := Array.empty
+    for c in cs do
+      match asRatConstExpr? c with
+      | none => return none
+      | some q => out := out.push q
+    some out
+
+/-- Highest `k` with `as[k] ≠ 0`. -/
+def leadingDerivOrder (as : Array RatConst) : Nat :=
+  Id.run do
+    let mut n : Nat := 0
+    for i in [:as.size] do
+      if !(as[i]!.isZero) then n := i
+    pure n
+
+/-- Characteristic roots with multiplicity via square-free factorization. -/
+def charRootsWithMult (p : Poly) : List (Expr × Nat) :=
+  let (_c, facs) := Poly.squareFreeFactor p
+  facs.foldl (fun acc (s, m) =>
+    acc ++ (rootsPoly s).map fun r => (simplify r, m)) []
+
+/-- `1, x, …, x^{m-1}` times `e^{r x}` (`r = 0` → pure powers). -/
+def realExpBasis (r : Expr) (m : Nat) (x : String) : List Expr :=
+  let xv := var x
+  let r := simplify r
+  let e :=
+    if r == zero then one
+    else
+      match asRatConstExpr? r with
+      | some q => if q.isZero then one else exp (mul r xv)
+      | none => exp (mul r xv)
+  (List.range m).map fun k =>
+    let xk := if k == 0 then one else pow xv (ofNat k)
+    simplify (mul xk e)
+
+/-- `x^k e^{α x} cos(β x)` and `sin`, `k = 0…m-1`. -/
+def realTrigBasis (alpha beta : RatConst) (m : Nat) (x : String) : List Expr :=
+  let xv := var x
+  let wX := if beta.isOne then xv else mul (ofRat beta) xv
+  let e :=
+    if alpha.isZero then one else exp (mul (ofRat alpha) xv)
+  let c0 := if alpha.isZero then cos wX else mul e (cos wX)
+  let s0 := if alpha.isZero then sin wX else mul e (sin wX)
+  (List.range m).foldl (fun acc k =>
+    let xk := if k == 0 then one else pow xv (ofNat k)
+    acc ++ [simplify (mul xk c0), simplify (mul xk s0)]) []
+
+/-- Real fundamental solutions for characteristic roots with multiplicity. -/
+def constCoeffBasisN (roots : List (Expr × Nat)) (x : String) : List Expr :=
+  Id.run do
+    let n := roots.length
+    let mut used : Array Bool := Array.replicate n false
+    let mut basis : List Expr := []
+    for i in [:n] do
+      if used[i]! then
+        pure ()
+      else
+        let (r, m) := roots[i]!
+        match asComplexParts? r with
+        | some (a, b) =>
+          if b.isZero then
+            used := used.set! i true
+            basis := basis ++ realExpBasis (ofRat a) m x
+          else
+            let mut found := false
+            for j in [:n] do
+              if !found && i != j && !used[j]! then
+                let (r2, m2) := roots[j]!
+                match asComplexParts? r2 with
+                | some (a2, b2) =>
+                  if a == a2 && b == RatConst.neg b2 && m == m2 then
+                    used := used.set! i true
+                    used := used.set! j true
+                    let beta := if b.num < 0 then RatConst.neg b else b
+                    basis := basis ++ realTrigBasis a beta m x
+                    found := true
+                | none => pure ()
+            if !found then
+              used := used.set! i true
+              basis := basis ++ realExpBasis r m x
+        | none =>
+          used := used.set! i true
+          basis := basis ++ realExpBasis r m x
+    pure basis
+
+/-- Particular solution when the RHS is a constant and `a_k` is the first nonzero coeff. -/
+def particularConstN (as : Array RatConst) (G : RatConst) (x : String) : Except String Expr :=
+  let rec go (k : Nat) : Except String Expr :=
+    if h : k < as.size then
+      if as[k].isZero then go (k + 1)
+      else
+        match RatConst.div G as[k] with
+        | none => throw "dsolve: division by zero in particular solution"
+        | some q =>
+          if k == 0 then pure (ofRat q)
+          else
+            let kf := RatConst.ofInt (Int.ofNat (factNat k))
+            match RatConst.div q kf with
+            | none => throw "dsolve: division by zero in particular solution"
+            | some qk =>
+              pure (simplify (mul (ofRat qk) (pow (var x) (ofNat k))))
+    else
+      throw "dsolve: degenerate constant-coefficient equation"
+  go 0
+
+/-- Homogeneous solution `Σ Cᵢ uᵢ`. -/
+def linearComboBasis (us : List Expr) : Expr :=
+  Id.run do
+    let mut acc : Expr := zero
+    for i in [:us.length] do
+      acc := add acc (mul (odeCi i) us[i]!)
+    simplify acc
+
+/--
+  Constant-coefficient `Σ a_k y^{(k)} + D = 0` of order `n ≥ 3`.
+  Homogeneous, or constant forcing.
+-/
+def dsolveConstCoeffN (as : Array RatConst) (D : Expr) (y x : String) : Except String Expr := do
+  let n := leadingDerivOrder as
+  if n < 3 then
+    throw "dsolve: expected order ≥ 3"
+  else if as[n]!.isZero then
+    throw "dsolve: leading coefficient is zero"
+  else
+    let p : Poly := ⟨as.extract 0 (n + 1)⟩
+    let roots := charRootsWithMult p
+    let got := roots.foldl (fun acc (_, m) => acc + m) 0
+    if got < n then
+      throw "dsolve: could not solve characteristic equation"
+    else
+      let us := constCoeffBasisN roots x
+      if us.length != n then
+        throw s!"dsolve: expected {n} basis functions, got {us.length}"
+      else
+        let yh := linearComboBasis us
+        match asRatConstExpr? D with
+        | some d =>
+          if d.isZero then
+            pure (tidyODESol (eq (var y) yh))
+          else
+            let yp ← particularConstN as (RatConst.neg d) x
+            pure (tidyODESol (eq (var y) (simplify (add yh yp))))
+        | none =>
+          if D == zero then
+            pure (tidyODESol (eq (var y) yh))
+          else
+            throw "dsolve: higher-order const-coeff solver requires homogeneous or constant RHS"
+
+/-- Try constant-coefficient of order ≥ 3. -/
+def dsolveHigherOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
+  match linearFormInYN (equationToZero (simplify e)) y with
+  | none => none
+  | some (cs, D) =>
+    match ratCoeffArray? cs with
+    | none => none
+    | some as =>
+      let n := leadingDerivOrder as
+      if n < 3 then none
+      else if dependsOnYFamily D y then none
+      else some (dsolveConstCoeffN as D y x)
+
 /-- Try reduction of order when `y''` is present and `y` or `x` is absent. -/
 def dsolveReduceOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
   let e0 := equationToZero (simplify e)
@@ -1634,8 +1890,9 @@ def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : Strin
   1. Second-order constant-coefficient (`y''` / `ypp`)
   2. Second-order Cauchy–Euler (`a x² y'' + b x y' + c y`)
   3. Reduction of order (missing `y` or missing `x`)
-  4. First-order linear (integrating factor)
-  5. Separable first-order
+  4. Higher-order constant-coefficient (`y'''` / `yppp` / `d3y`, …)
+  5. First-order linear (integrating factor)
+  6. Separable first-order
 -/
 def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Expr :=
   -- Matrix argument → linear system Y' = A Y
@@ -1645,10 +1902,24 @@ def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Ex
     match dsolveSecondOrder? e y x with
     | some (.ok sol) => pure (tidyODESol sol)
     | some (.error err) =>
-      match dsolveFirstOrder e y x with
-      | .ok sol => pure sol
-      | .error e2 => throw s!"{err}; also: {e2}"
-    | none => dsolveFirstOrder e y x
+      match dsolveHigherOrder? e y x with
+      | some (.ok sol) => pure (tidyODESol sol)
+      | some (.error eH) =>
+        match dsolveFirstOrder e y x with
+        | .ok sol => pure sol
+        | .error e2 => throw s!"{err}; {eH}; also: {e2}"
+      | none =>
+        match dsolveFirstOrder e y x with
+        | .ok sol => pure sol
+        | .error e2 => throw s!"{err}; also: {e2}"
+    | none =>
+      match dsolveHigherOrder? e y x with
+      | some (.ok sol) => pure (tidyODESol sol)
+      | some (.error err) =>
+        match dsolveFirstOrder e y x with
+        | .ok sol => pure sol
+        | .error e2 => throw s!"{err}; also: {e2}"
+      | none => dsolveFirstOrder e y x
 
 /-- Solve ODE then apply y(x0)=y0. -/
 def dsolveIC (e : Expr) (y x : String) (x0 y0 : Expr) : Except String Expr := do

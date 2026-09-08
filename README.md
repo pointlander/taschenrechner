@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / Jordan / expm**
-- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler** `a x² y''+b x y'+c y`, **reduction of order** (missing `y` / missing `x`), linear systems via `expm`)
+- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''`, linear systems via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -78,7 +78,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
 | `Taschenrechner.Gosper` | Hypergeometric summation (Gosper); `sum` of rationals and `p(k)·r^k` |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric, Gosper) |
-| `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, systems `Y'=AY` |
+| `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, higher-order const-coeff, systems `Y'=AY` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -257,7 +257,7 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 |------|----------------|
 | `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
-| `dsolve(eq)` | 1st-order linear / Bernoulli / homogeneous `y'=f(y/x)` / exact `M dx+N dy=0` / separable; 2nd-order const-coeff (`y''`/`ypp`); Cauchy–Euler `a x² y''+b x y'+c y`; reduction of order (missing `y`/`x`); `g(x)=sin/cos` / `x^k` via undetermined coeff / VoP |
+| `dsolve(eq)` | 1st-order linear / Bernoulli / homogeneous `y'=f(y/x)` / exact `M dx+N dy=0` / separable; 2nd-order const-coeff (`y''`/`ypp`); Cauchy–Euler `a x² y''+b x y'+c y`; reduction of order (missing `y`/`x`); higher-order const-coeff (`y'''`/`yppp`); `g(x)=sin/cos` / `x^k` via undetermined coeff / VoP |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
 | `dsolve(eq, x0, y0)` | IC y(x0)=y0 (first-order) |
 | `dsolve(eq, x0, y0, yp0)` | ICs y(x0)=y0, y′(x0)=yp0 (second-order) |
@@ -266,7 +266,7 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 | `dsolve(A, Y0)` | System with Y(0)=Y0 |
 | `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
 
-Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Systems `Y'=AY` use Jordan `expm` (defective OK).
+Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Higher-order const-coeff: `aₙ y^{(n)}+…+a₀ y = g` (`g` constant; repeated `x^k e^{rx}` / `x^k cos/sin`). Systems `Y'=AY` use Jordan `expm` (defective OK).
 
 ```bash
 lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
@@ -288,6 +288,7 @@ lake exe taschenrechner "dsolve(y'' + y = sin(x))"     # → y = C1·cos(x) + C2
 lake exe taschenrechner "dsolve(x^2*y'' + x*yp - y = 0)"  # Cauchy–Euler → y = C1·x + C2/x
 lake exe taschenrechner "dsolve((x+1)*y'' + yp = 0)"   # missing y → y = C1·ln(x+1) + C2
 lake exe taschenrechner "dsolve(y*y'' - yp^2 = 0)"     # missing x → y = C2·exp(C1·x)
+lake exe taschenrechner "dsolve(y''' - yp = 0)"        # → y = C1 + C2·exp(x) + C3·exp(-x)
 lake exe taschenrechner 'solve(sin(x)=0)'              # → {k·π}, k ∈ ℤ
 lake exe taschenrechner 'pi'                           # → π
 lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)

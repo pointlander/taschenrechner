@@ -324,6 +324,45 @@ def suite : List Case := [
       | some (_, r) =>
           !dependsOn r "C1" && !dependsOn r "C2"
             && equivNF (simplify (subst r "x" (0:Expr))) (0:Expr)
+      | none => false },
+  -- Higher-order constant-coefficient
+  { name := "y''' − y' = 0 distinct real"
+    input := "dsolve(y''' - yp = 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2" && dependsOn r "C3"
+            &&
+            let u0 := simplify (subst (subst (subst r "C1" (1:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            let u1 := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (1:Expr)) "C3" (0:Expr))
+            (equivNF u0 (1:Expr) || equivNF u0 (exp x) || equivNF u0 (exp (neg x)))
+              && (dependsOn u1 "x" || equivNF u1 (1:Expr))
+      | none => false },
+  { name := "y''' − 3y'' + 3y' − y = 0 triple root"
+    input := "dsolve(y''' - 3*ypp + 3*yp - y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2" && dependsOn e "C3"
+        && dependsOn e "x" && (Expr.toString e).contains "exp" },
+  { name := "yppp alias for y'''"
+    input := "dsolve(yppp - yp = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C3" },
+  { name := "(D²+1)² y = 0 repeated complex"
+    input := "dsolve(y'''' + 2*ypp + y = 0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C4"
+        && (Expr.toString e).contains "sin"
+        && (Expr.toString e).contains "cos"
+        && dependsOn e "x" },
+  { name := "y''' + y' = 1 constant forcing"
+    input := "dsolve(y''' + yp = 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1"
+            &&
+            let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            equivNF yp (var "x")
       | none => false }
 ]
 

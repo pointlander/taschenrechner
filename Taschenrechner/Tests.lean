@@ -1354,6 +1354,23 @@ def parseEq (s : String) (expected : Expr) : Bool :=
         && ((Expr.toString e).contains "exp" || dependsOn e "y")
   | _ => false
 #guard
+  match parse "dsolve(y''' - yp = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && dependsOn r "C1" && dependsOn r "C2" && dependsOn r "C3"
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(y''' - 3*ypp + 3*yp - y = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "x"
+            && (Expr.toString e).contains "exp"
+      | none => false
+  | _ => false
+#guard
   match parse "solve(sin(x)=0)" with
   | .ok e => (prettySolution e).contains "ℤ"
   | _ => false

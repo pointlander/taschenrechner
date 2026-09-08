@@ -1429,6 +1429,7 @@ def helpText : String :=
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
                 dsolve(x^2*y''+x*yp-y=0)  Cauchy–Euler (indicial; x^k RHS)\n\
                 dsolve((x+1)*y''+yp=0)  reduction of order (missing y / missing x)\n\
+                dsolve(y'''-yp=0)  higher-order const-coeff (y'''/yppp/d3y)\n\
                 dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
