@@ -22,7 +22,6 @@ import Taschenrechner.Limit
 import Taschenrechner.Matrix
 import Taschenrechner.Sum
 import Taschenrechner.ODE
-import Taschenrechner.Unicode
 
 namespace Taschenrechner.Tests
 
@@ -225,15 +224,26 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "θ" with
   | .ok e => e == var "θ"
   | _ => false
-#guard (uniLookup? "pi").isSome
 #guard
-  match uniLookup? "sqrt" with
-  | some s => s.glyph == "√"
-  | none => false
+  match parse "∂(x^2)" with
+  | .ok e => simplify e == (2 : Expr) * x
+  | _ => false
 #guard
-  match uniByIndex? 1 with
-  | some s => s.glyph == "−"
-  | none => false
+  match parse "∫(x)" with
+  | .ok e => simplify e == simplify (Expr.div (pow x (ofInt 2)) (ofInt 2))
+  | _ => false
+#guard
+  match parse "∑(k,1,3,k)" with
+  | .ok e => simplify e == ofInt 6
+  | _ => false
+#guard
+  match parse "∏(k,1,4,k)" with
+  | .ok e => simplify e == ofInt 24
+  | _ => false
+#guard
+  match parse "Γ(1)" with
+  | .ok e => simplify e == ofInt 1
+  | _ => false
 #guard simplify (acos (negOne)) == piE
 #guard simplify (sin piE) == zero
 #guard simplify (cos piE) == negOne

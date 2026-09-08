@@ -450,7 +450,6 @@ def isForbiddenBinding (name : String) : Bool :=
     || n == "simplify" || n == "expand" || n == "euler"
     || n == "save" || n == "load" || n == "assume" || n == "forget"
     || n == "unassume" || n == "assumptions" || n == "pi" || name == "π"
-    || n == "unicode" || n == "symbols" || n == "pick"
 
 /-- Valid identifier for a binding name. -/
 def isBindingName (name : String) : Bool :=

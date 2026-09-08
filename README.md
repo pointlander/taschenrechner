@@ -8,7 +8,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **`factor` / `apart` / rational `int`** over **ℚ(√d)(x)** (linear/quadratic splitting, Hermite + partial fractions)
 - **Hyperbolics** `sinh`/`cosh`/`tanh` and **`abs`**, with `hyperexpand`
 - Inverse trig **`asin` / `acos` / `atan`** (`arcsin`/`arccos`/`arctan` aliases)
-- Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
+- Reciprocal trig **`sec` / `csc` / `cot`**, **factorial** (`n!`, `factorial`), **`Γ` / `gamma`**, **`floor`**, and **piecewise** (`if`/`ite`/`piecewise`)
 - **Assumptions**: `assume(x>0)` refines `√(x²)` / `|x|`; `forget(x)`
 - **Transcendental solve**: `solve(exp(x)=2)`, `solve(sin(x)=1/2)` (trig families in `k`)
 - **Equations & inequalities**: `solve(x^2=4, x)` → `{2, -2}`; **cubics** (Cardano / `acos`); **quartics** (Ferrari); **irrational** `x^n=a`; **linear & polynomial systems** (2-var resultant, ≥3-var lex Gröbner); **intervals** `solve(x^2-1>0)`
@@ -17,7 +17,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - **Plotting** via **gnuplot**: `plot(sin(x))` drops into the gnuplot CLI; `plotpng(f)` writes a PNG
 - **Substitution & evaluation**: `subst`, `eval` / `evalAt` over ℚ(i)
 - **Factor & scalar solve**: rational roots, quadratic formula, `factor` / `roots` / `coeff`
-- **Definite integrals** via FTC: `int(f, a, b)` / `int(f, x, a, b)`
+- **Definite integrals** via FTC: `∫` / `int(f, a, b)` / `int(f, x, a, b)`
 - **Limits**: two-sided & one-sided, ±∞ (`oo`), pole order / `classify`; **series** for elementary 0/0 (`sin(x)/x`, `(e^x−1)/x`, …)
 - **Radical integrals**: √(x²±a²), 1/√(a²−x²), … (verified)
 - **Partial fractions**: `apart` / `pf`
@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / Jordan / expm**
-- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **products** `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''`, linear systems `Y'=AY` / **`Y'=AY+g`** via `expm`)
+- **Finite sums** `∑` / `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **products** `∏` / `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''`, linear systems `Y'=AY` / **`Y'=AY+g`** via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -40,7 +40,7 @@ lake exe taschenrechner 'diff sin(x^2)'
 lake exe taschenrechner 'int x*exp(x)'
 lake exe taschenrechner 'plot(sin(x))'           # plot + gnuplot CLI (needs gnuplot)
 lake exe taschenrechner 'plotpng(sin(x), -6.28, 6.28)'  # → plot.png
-lake exe taschenrechner -i              # REPL (unicode / symbols / pick)
+lake exe taschenrechner -i              # REPL
 lake exe taschenrechner --help          # language help
 
 # Domain regression suites (also run as compile-time #guards)
@@ -79,7 +79,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Gosper` | Hypergeometric summation (Gosper); `sum` of rationals and `p(k)·r^k` |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric, Gosper) and products (Pochhammer / `Γ`, geometric, telescoping) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, higher-order const-coeff, systems `Y'=AY` and `Y'=AY+g` |
-| `Taschenrechner.Diff` | `diff`, `diffN`, partials |
+| `Taschenrechner.Diff` | `∂` / `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
 | `Taschenrechner.RatInt` | Rational integration + `apart` (partial fractions) |
@@ -108,7 +108,7 @@ asin(x)  acos(x)  atan(x)
 sec(x)  csc(x)  cot(x)
 sinh(x)  cosh(x)  tanh(x)
 5!                   # postfix factorial; also factorial(n)
-gamma(x)             # Γ(n)=(n-1)!, Γ(1/2)=√π
+Γ(x)  gamma(x)       # Γ(n)=(n-1)!, Γ(1/2)=√π
 floor(x)
 if(x>0, x, -x)       # piecewise: if / ite / piecewise(c1,v1,…,default)
 abs(x)               # |x|;  cabs(z) for √(re²+im²)
@@ -135,11 +135,14 @@ charpoly([1, 0; 0, 2])       # → t² − 3·t + 2
 eigvals([1, 0; 0, 2])        # → [1, 2]
 eigenspace([1, 0; 0, 2], 2)  # → [0; 1]
 [1, 2; 3, 4]*eye(2)  # matrix product
-diff(sin(x^2), x)    # CAS forms inside expressions
-int(x*exp(x))
+∂(sin(x^2), x)       # or diff(...)
+∫(x*exp(x))          # or int(...)
+∑(k, 1, n, k)        # or sum(...)
+∏(k, 1, n, k)        # or product(...) / prod(...)
+√(x^2+1)             # or sqrt(...)
 ```
 
-Commands: `name := <expr>`, `vars`, `clear [name]`, `diff`, `int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `sum`, `product`/`prod`, `dsolve`, `limit`/`limleft`/`limright`, `apart`, `unicode`/`symbols`/`pick`, `help`.
+Commands: `name := <expr>`, `vars`, `clear [name]`, `∂`/`diff`, `∫`/`int`, `simplify`, `expand`, `cancel`, `together`, `nf`/`normal`, `∑`/`sum`, `∏`/`product`, `dsolve`, `limit`/`limleft`/`limright`, `apart`, `help`.
 
 **Normal forms**
 
@@ -255,9 +258,9 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 
 | Form | What it does |
 |------|----------------|
-| `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **numeric** if bounds are ints) |
+| `∑` / `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **numeric** if bounds are ints) |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
-| `product(expr, k, lo, hi)` / `prod(...)` | ∏_{k=lo}^{hi} expr (Pochhammer / `Γ` for linear factors; geometric `r^k`; telescoping rationals; **numeric** if bounds are ints) |
+| `∏` / `product(expr, k, lo, hi)` / `prod(...)` | ∏_{k=lo}^{hi} expr (Pochhammer / `Γ` for linear factors; geometric `r^k`; telescoping rationals; **numeric** if bounds are ints) |
 | `product(k, lo, hi, expr)` | Same, index-first order |
 | `dsolve(eq)` | 1st-order linear / Bernoulli / homogeneous `y'=f(y/x)` / exact `M dx+N dy=0` / separable; 2nd-order const-coeff (`y''`/`ypp`); Cauchy–Euler `a x² y''+b x y'+c y`; reduction of order (missing `y`/`x`); higher-order const-coeff (`y'''`/`yppp`); `g(x)=sin/cos` / `x^k` via undetermined coeff / VoP |
 | `dsolve(eq, y, x)` | Specify unknown and independent variable |
@@ -270,7 +273,6 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 | `dsolve(A, g, x)` | Constant forcing `g` (independent `x`) |
 | `dsolve(A, g, Y0)` | Nonhomogeneous with Y(0)=Y0 |
 | `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
-| `unicode` / `symbols` / `pick` | REPL Unicode picker (`π`, `√`, `∫`, `∑`, `≤`, Greek, …); `unicode pi` looks up a glyph |
 
 Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Higher-order const-coeff: `aₙ y^{(n)}+…+a₀ y = g` (`g` constant; repeated `x^k e^{rx}` / `x^k cos/sin`). Systems `Y'=AY` use Jordan `expm` (defective OK); `Y'=AY+g` via `Yp=−A⁻¹g` or variation of parameters.
 
@@ -340,8 +342,8 @@ lake exe taschenrechner 'apart(1/((x-1)*(x-2)))'    # → 1/(x-2) − 1/(x-1)
 
 | Form | What it does |
 |------|----------------|
-| `int(f, a, b)` | Definite ∫_a^b f(x) dx (FTC) |
-| `int(f, x, a, b)` | Definite in free variable `x` |
+| `∫` / `int(f, a, b)` | Definite ∫_a^b f(x) dx (FTC) |
+| `∫` / `int(f, x, a, b)` | Definite in free variable `x` |
 | `taylor(f, n)` | Maclaurin poly of degree ≤ n in `x` |
 | `taylor(f, x, a, n)` | Taylor about `a` |
 | `series(f, n)` / `maclaurin(f, n)` | Same as Maclaurin |

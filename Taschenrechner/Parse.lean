@@ -257,7 +257,7 @@ def piecewiseToIte (args : List Expr) : Expr :=
 
 /-- Desugar built-in function / CAS forms. -/
 def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except String Expr := do
-  let n := name.toLower
+  let n := if name == "Γ" then "gamma" else name.toLower
   match n, args with
   | "sin", [e] => pure (Expr.sin e)
   | "cos", [e] => pure (Expr.cos e)
@@ -945,7 +945,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "asin" || n == "arcsin"
     || n == "acos" || n == "arccos" || n == "sec" || n == "csc" || n == "cosec"
     || n == "cot" || n == "cotan" || n == "factorial" || n == "fact"
-    || n == "gamma" || n == "gammafn" || n == "floor" || n == "if" || n == "ite"
+    || n == "gamma" || n == "gammafn" || name == "Γ" || n == "floor" || n == "if" || n == "ite"
     || n == "piecewise" || n == "pw" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "cabs" || n == "simplify" || n == "expand" || n == "cancel"
     || n == "rewrite" || n == "hyperexpand" || n == "hexpand"
@@ -1201,15 +1201,13 @@ inductive Command where
   | load      : String → Command
   | help      : Command
   | gnuplot   : Command
-  | unicode   : Option String → Command
   deriving Repr
 
 private def isKeyword (k : String) : Bool :=
-  k == "diff" || k == "d" || k == "int" || k == "integrate"
+  k == "diff" || k == "d" || k == "∂" || k == "int" || k == "integrate" || k == "∫"
     || k == "simplify" || k == "expand" || k == "cancel" || k == "together"
     || k == "nf" || k == "normal" || k == "help"
     || k == "vars" || k == "clear" || k == "save" || k == "load"
-    || k == "unicode" || k == "symbols" || k == "pick"
 
 private def isReservedFun (k : String) : Bool :=
   k == "sin" || k == "cos" || k == "tan" || k == "exp"
@@ -1344,14 +1342,6 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
     pure .help
   else if lower == "plot" || lower == "gnuplot" || lower == "gp" then
     pure .gnuplot
-  else if lower == "unicode" || lower == "symbols" || lower == "pick" then
-    pure (.unicode none)
-  else if lower.startsWith "unicode " then
-    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 8)))))
-  else if lower.startsWith "symbols " then
-    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 8)))))
-  else if lower.startsWith "pick " then
-    pure (.unicode (some (strTrim (charsToString (trimmed.toList.drop 5)))))
   else if lower == "assume" || lower == "assumptions" then
     let e ← parse "assume()" env
     pure (.expr e)
@@ -1395,16 +1385,10 @@ def parseCommand (input : String) (env : Env := {}) : Except String Command := d
   else
     let (kw, rest?) := splitKeyword trimmed
     match kw, rest? with
-    | some "diff", some rest =>
+    | some "diff", some rest | some "d", some rest | some "∂", some rest =>
       let (e, v) ← parseExprAndOptionalVar rest env
       pure (.diff e v)
-    | some "d", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest env
-      pure (.diff e v)
-    | some "int", some rest =>
-      let (e, v) ← parseExprAndOptionalVar rest env
-      pure (.integrate e v)
-    | some "integrate", some rest =>
+    | some "int", some rest | some "integrate", some rest | some "∫", some rest =>
       let (e, v) ← parseExprAndOptionalVar rest env
       pure (.integrate e v)
     | some "simplify", some rest =>
@@ -1452,14 +1436,13 @@ def helpText : String :=
   \n\
   Expressions:\n\
     numbers     0, 42, -3, 1.5, 0.25  (decimals → exact rationals)\n\
-    constants   pi / π   i\n\
-    variables   x, y, theta\n\
-    ops         +  -  *  /  ^  ·  ×  ÷  −  =  ≠  <  <=  >  >=  ≤  ≥   juxtaposition (2x, 2π)\n\
-    unicode     π ∞ √ ∫ ∑ ∏ ∂  and Greek (θ, λ, …);  REPL: unicode / symbols / pick\n\
+    constants   π / pi   ∞ / oo / inf   i\n\
+    variables   x, y, θ, λ, …  (Greek letters allowed)\n\
+    ops         + − × ÷ · ^  = ≠ < > ≤ ≥   juxtaposition (2x, 2π, √x)\n\
     equations   x^2 = 4   inside solve: solve(x^2=4, x)\n\
     inequalities  solve(x^2-1>0) → (-∞,-1)∪(1,∞);  systems → x=…, y=…\n\
-    functions   sin cos tan sec csc cot sinh cosh tanh exp ln log sqrt\n\
-                atan asin acos abs cabs  factorial/n!  gamma  floor\n\
+    functions   sin cos tan sec csc cot sinh cosh tanh exp ln log\n\
+                √ / sqrt   atan asin acos abs cabs  n!  Γ / gamma  floor\n\
                 if(c,t,e)  ite(c,t,e)  piecewise(c1,v1,…,default)\n\
                 re im conj  rewrite(e)  hyperexpand(e)  ascii(e)\n\
                 plot  plot()  gnuplot   — gnuplot command-line shell\n\
@@ -1478,16 +1461,16 @@ def helpText : String :=
                 gcd(p,q[,x])  resultant(p,q[,x])  discriminant(p[,x]) / disc(p)\n\
                 collect(e)  coeff(e,n)  apart(e)/pf(e)  (partial fractions over ℚ and ℚ(√d))\n\
                 factor over ℚ(√d): factor(x^2-2) → (x−√2)(x+√2)\n\
-    CAS forms   diff(e)  diff(e, v)  int(e)  int(e, v)\n\
-                int(R(x,sqrt(p(x))))  algebraic Risch, deg p ≤ 2 (Euler)\n\
-                int(f, a, b)  int(f, x, a, b)   definite (FTC)\n\
+    CAS forms   ∂ / diff(e[, v])   ∫ / int(e[, v])\n\
+                ∫(R(x,√(p(x))))  algebraic Risch, deg p ≤ 2 (Euler)\n\
+                ∫(f, a, b)  ∫(f, x, a, b)   definite (FTC)\n\
                 taylor(f, n)  taylor(f, x, a, n)  maclaurin/series(f, n)\n\
                 laurent(f, n)  laurent(f, a, n)  seriesadd/seriesmul(f,g,n)\n\
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
-                limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at oo via t=1/x\n\
+                limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at ∞ via t=1/x\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
-                sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper (hypergeometric)\n\
-                product(expr, k, lo, hi)  / prod(...)  Pochhammer/Γ, geometric r^k, telescoping\n\
+                ∑ / sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper\n\
+                ∏ / product(expr, k, lo, hi)  / prod(...)  Pochhammer/Γ, geometric r^k\n\
                 dsolve(eq)  (y'/yp linear, Bernoulli, homogeneous, exact M dx+N dy=0, separable; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\
                 dsolve(x^2*y''+x*yp-y=0)  Cauchy–Euler (indicial; x^k RHS)\n\
@@ -1514,8 +1497,8 @@ def helpText : String :=
     clear [name]            clear all or one binding\n\
     save <file>             write session bindings to file\n\
     load <file>             restore session from file\n\
-    diff <expr> [var]       (default var: x)\n\
-    int  <expr> [var]\n\
+    ∂ / diff <expr> [var]   (default var: x)\n\
+    ∫ / int  <expr> [var]\n\
     simplify <expr>\n\
     expand <expr>\n\
     cancel <expr>\n\
@@ -1526,8 +1509,6 @@ def helpText : String :=
     assume(x>0) / assume(x, pos)   session sign assumption\n\
     assume(k, int)                 k ∈ ℤ  (trig families)\n\
     forget(x) / assumptions        clear / list assumes\n\
-    unicode / symbols / pick       Unicode symbol picker (then type an expression)\n\
-    unicode <name>                 look up a glyph (pi, sqrt, sum, theta, …)\n\
     help\n\
   \n\
   Examples:\n\
@@ -1541,7 +1522,8 @@ def helpText : String :=
     load session.tr\n\
     vars\n\
     clear A\n\
-    diff sin(x^2)\n\
-    int x*exp(x)"
+    ∂ sin(x^2)                 (or: diff sin(x^2))\n\
+    ∫ x*exp(x)                 (or: int x*exp(x))\n\
+    √(x^2+1)   π*r^2   2×3     ∑(k,1,n,k)"
 
 end Taschenrechner.Parse
