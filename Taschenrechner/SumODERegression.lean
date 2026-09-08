@@ -291,6 +291,39 @@ def suite : List Case := [
             (equivNF u1 x || equivNF u1 (div (1:Expr) x))
               && (equivNF u2 x || equivNF u2 (div (1:Expr) x))
               && !equivNF u1 u2
+      | none => false },
+  -- Reduction of order
+  { name := "reduction missing y"
+    input := "dsolve((x+1)*y'' + yp = 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let u := simplify (subst (subst r "C1" (1:Expr)) "C2" (0:Expr))
+            equivNF u (ln (add (var "x") (1:Expr)))
+      | none => false },
+  { name := "reduction missing x"
+    input := "dsolve(y*y'' - yp^2 = 0)"
+    check := fun e =>
+      dependsOn e "C1" && dependsOn e "C2"
+        && ((Expr.toString e).contains "exp" || dependsOn e "y") },
+  { name := "reduction y'' + (y')² = 0"
+    input := "dsolve(y'' + yp^2 = 0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C2"
+            && (Expr.toString e).contains "ln"
+      | none =>
+          dependsOn e "C1" && dependsOn e "y" },
+  { name := "reduction missing-y IC"
+    input := "dsolve((x+1)*y'' + yp = 0, 0, 0, 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && !dependsOn r "C2"
+            && equivNF (simplify (subst r "x" (0:Expr))) (0:Expr)
       | none => false }
 ]
 

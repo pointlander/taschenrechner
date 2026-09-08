@@ -1337,6 +1337,23 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | none => false
   | _ => false
 #guard
+  match parse "dsolve((x+1)*y'' + yp = 0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && dependsOn r "C1" && dependsOn r "C2"
+            &&
+            let u := simplify (Expr.subst (Expr.subst r "C1" (1:Expr)) "C2" (0:Expr))
+            equivNF u (ln (add x (1:Expr)))
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(y*y'' - yp^2 = 0)" with
+  | .ok e =>
+      dependsOn e "C1" && dependsOn e "C2"
+        && ((Expr.toString e).contains "exp" || dependsOn e "y")
+  | _ => false
+#guard
   match parse "solve(sin(x)=0)" with
   | .ok e => (prettySolution e).contains "ℤ"
   | _ => false

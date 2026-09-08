@@ -10,6 +10,7 @@
     (undetermined coefficients for sin/cos; else variation of parameters)
   * Cauchy–Euler: a x² y'' + b x y' + c y = g(x)  (indicial r(r−1)+b r+c=0;
     x^k / polynomial RHS via undetermined coefficients; else VoP)
+  * Reduction of order: missing y → v=y'; missing x → y''=v dv/dy
   * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form)
 -/
 import Taschenrechner.Expr
@@ -583,9 +584,14 @@ def homVName : String := "__homv"
 private def dependsOnYp (e : Expr) : Bool :=
   dependsOn e ypName || dependsOn e "y'" || dependsOn e "dy"
 
+def dependsOnYpp (e : Expr) : Bool :=
+  dependsOn e yppName || dependsOn e "y''" || dependsOn e "d2y"
+
 /-- `A·y' + R = 0` with `A,R` free of `y'` (`R` may depend on `y`). -/
 partial def linearInYp (e : Expr) (_y : String) : Option (Expr × Expr) :=
-  go (simplify e)
+  let e := simplify e
+  if dependsOnYpp e then none
+  else go e
 where
   go : Expr → Option (Expr × Expr)
   | add a b =>
@@ -880,6 +886,9 @@ def orExact (e : Expr) (y x : String) : Except String Expr → Except String Exp
 
 /-- First-order: linear, separable, Bernoulli, homogeneous, then exact. -/
 def dsolveFirstOrder (e : Expr) (y x : String) : Except String Expr :=
+  if dependsOnYpp (equationToZero (simplify e)) then
+    throw "dsolve: equation contains y''; not first-order"
+  else
   match odeResidual e y x with
   | some (A, B, C) =>
     if !dependsOn B y && !dependsOn A y && !dependsOn C y then
@@ -1342,23 +1351,217 @@ def dsolveCauchyEuler2 (A B C D : Expr) (y x : String) : Except String Expr := d
           pure (tidyODESol (eq (var y) (simplify (add yh yp))))
       | _ => throw "dsolve: expected 2 basis functions"
 
-/-- Try second-order constant-coeff, then Cauchy–Euler, when y'' is present. -/
+/-! ### Reduction of order (missing y or missing x) -/
+
+def redOrderVName : String := "__rov"
+def redOrderVpName : String := "__rovp"
+
+def substYpAll (e : Expr) (val : Expr) : Expr :=
+  subst (subst (subst e ypName val) "y'" val) "dy" val
+
+def substYppAll (e : Expr) (val : Expr) : Expr :=
+  subst (subst (subst e yppName val) "y''" val) "d2y" val
+
+/-- Reciprocal by inverting each product factor (`1/(C y) → (1/C)·(1/y)`). -/
+def recipByFactors (e : Expr) : Expr :=
+  let inv1 : Expr → Expr
+    | pow a b => pow a (neg b)
+    | t => pow t negOne
+  let fs := flattenMul e
+  match fs with
+  | [] => one
+  | t :: rest => rest.foldl (fun acc u => mul acc (inv1 u)) (inv1 t)
+
+/-- Product of factors; empty product is `1`. -/
+def foldMul1 : List Expr → Expr
+  | [] => one
+  | t :: rest => rest.foldl (fun a b => mul a b) t
+
+/-- Split `e = c · f` with `c` independent of `v`. -/
+def peelIndepFactor (e : Expr) (v : String) : Expr × Expr :=
+  let fs := flattenMul e
+  let indep := fs.filter (fun t => !dependsOn t v)
+  let dep := fs.filter (fun t => dependsOn t v)
+  if indep.isEmpty then (one, e)
+  else (foldMul1 indep, foldMul1 dep)
+
+/-- `e = a·v + b` with `a, b` independent of `v` and `a ≠ 0`. -/
+def asAffineIndep? (e : Expr) (v : String) : Option (Expr × Expr) :=
+  match affineForm (simplify e) [v] with
+  | none => none
+  | some (cs, b) =>
+    if cs.size == 0 then none
+    else
+      let a := cs[0]!
+      if a == zero || dependsOn a v || dependsOn b v then none
+      else some (a, b)
+
+/-- ∫ 1/(a v + b) dv = (1/a) ln(a v + b). -/
+def integrateLinearDenom (e : Expr) (v : String) : Option Expr :=
+  let base? : Option Expr :=
+    match e with
+    | pow base (const r) =>
+      match CplxConst.toRat? r with
+      | some q => if q == RatConst.negOne then some base else none
+      | none => none
+    | _ => none
+  match base? with
+  | none => none
+  | some base =>
+    match asAffineIndep? base v with
+    | none => none
+    | some (a, _) =>
+      if a == zero then none
+      else some (simplify (div (ln base) a))
+
+/-- Integrate, peeling symbolic parameters and handling `1/(x+C)`. -/
+partial def integrateParam (e : Expr) (v : String) : IntegrateResult :=
+  if !dependsOn e v then
+    .success (simplify (mul e (var v))) .heuristic
+  else
+    let (c, f) := peelIndepFactor e v
+    if !(c == one) && f != e && dependsOn f v then
+      match integrateParam f v with
+      | .success F src => .success (simplify (mul c F)) src
+      | other => other
+    else
+      match integrate f v with
+      | .success F src => .success F src
+      | .notElementary r => .notElementary r
+      | .failure r =>
+        match integrateLinearDenom f v with
+        | none => .failure r
+        | some F =>
+          let d := simplify (diff F v)
+          if d == f || equivNF d f v then .success (simplify F) .heuristic
+          else .failure r
+
+/-- Isolate `unk` from a first-order solution `unk = …` (or `F = C`). -/
+def explicitUnknown? (sol : Expr) (unk : String) : Option Expr :=
+  match asEquation? sol with
+  | none => none
+  | some (lhs, rhs) =>
+    if lhs == var unk then some rhs
+    else if rhs == var unk then some lhs
+    else
+      match solveScalar (sub lhs rhs) unk with
+      | .solutions (val :: _) => some (simplify val)
+      | _ => none
+
+/-- Invert `Gy(y) = rhs` after ∫ dy/v, including `a ln y`. -/
+def isolateYFromQuadrature (Gy rhs : Expr) (y : String) : Expr :=
+  let Gy := simplify Gy
+  let rhs := simplify rhs
+  let fallback := explicitFromImplicit Gy rhs y
+  let fromLn : Option Expr :=
+    match Gy with
+    | ln arg =>
+      if arg == var y then some (eq (var y) (exp rhs)) else none
+    | mul a (ln arg) =>
+      if arg == var y && !dependsOn a y then
+        some (eq (var y) (simplify (exp (div rhs a))))
+      else none
+    | mul (ln arg) a =>
+      if arg == var y && !dependsOn a y then
+        some (eq (var y) (simplify (exp (div rhs a))))
+      else none
+    | _ => none
+  match fromLn with
+  | some sol => tidyODESol sol
+  | none =>
+    match asEquation? fallback with
+    | some (lhs, _) =>
+      if lhs == var y then tidyODESol fallback
+      else
+        match solveScalar (sub Gy rhs) y with
+        | .solutions (val :: _) => tidyODESol (eq (var y) (simplify val))
+        | _ => tidyODESol fallback
+    | none => tidyODESol fallback
+
+/-- `dy/dx = v(y)`: if `v` is free of `y` then `y = v x + C2`, else ∫ dy/v = x + C2. -/
+def yFromVofY (v : Expr) (y x : String) : Except String Expr :=
+  let v := simplify v
+  if v == zero || isZeroExpr v y then
+    pure (tidyODESol (eq (var y) (odeCi 1)))
+  else if !dependsOn v y then
+    pure (tidyODESol (eq (var y) (simplify (add (mul v (var x)) (odeCi 1)))))
+  else
+    let invV := recipByFactors v
+    match integrateParam invV y with
+    | .success Gy _ =>
+      pure (isolateYFromQuadrature Gy (add (var x) (odeCi 1)) y)
+    | .notElementary msg =>
+      throw s!"dsolve reduction of order: ∫ dy/y' not elementary: {msg}"
+    | .failure msg =>
+      throw s!"dsolve reduction of order: ∫ dy/y' failed: {msg}"
+
+/-- Missing `y`: `F(x, y', y'') = 0` via `v = y'`, then `y = ∫ v dx + C2`. -/
+def dsolveMissingY (e : Expr) (y x : String) : Except String Expr := do
+  let e0 := equationToZero (simplify e)
+  let reduced := substYppAll (substYpAll e0 (var redOrderVName)) (var ypName)
+  let vsol ←
+    match dsolveFirstOrder reduced redOrderVName x with
+    | .ok s => pure s
+    | .error msg => throw s!"dsolve reduction of order (missing y): {msg}"
+  match explicitUnknown? vsol redOrderVName with
+  | none => throw "dsolve reduction of order: could not solve for y'"
+  | some v =>
+    let v := simplify (subst v "C" (odeCi 0))
+    if v == zero || isZeroExpr v x then
+      pure (tidyODESol (eq (var y) (odeCi 1)))
+    else
+      match integrateParam v x with
+      | .success F _ =>
+        pure (tidyODESol (eq (var y) (simplify (add F (odeCi 1)))))
+      | .notElementary msg =>
+        throw s!"dsolve reduction of order: ∫ y' dx not elementary: {msg}"
+      | .failure msg =>
+        throw s!"dsolve reduction of order: ∫ y' dx failed: {msg}"
+
+/-- Missing `x`: `F(y, y', y'') = 0` via `y'' = v dv/dy`, then `dy/dx = v(y)`. -/
+def dsolveMissingX (e : Expr) (y x : String) : Except String Expr := do
+  let e0 := equationToZero (simplify e)
+  let withYpp := substYppAll e0 (mul (var redOrderVName) (var redOrderVpName))
+  let withYp := substYpAll withYpp (var redOrderVName)
+  let reduced := subst withYp redOrderVpName (var ypName)
+  let vsol ←
+    match dsolveFirstOrder reduced redOrderVName y with
+    | .ok s => pure s
+    | .error msg => throw s!"dsolve reduction of order (missing x): {msg}"
+  match explicitUnknown? vsol redOrderVName with
+  | none => throw "dsolve reduction of order: could not solve for y'"
+  | some v =>
+    yFromVofY (subst v "C" (odeCi 0)) y x
+
+/-- Try reduction of order when `y''` is present and `y` or `x` is absent. -/
+def dsolveReduceOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
+  let e0 := equationToZero (simplify e)
+  if !dependsOnYpp e0 then none
+  else if !dependsOn e0 y then some (dsolveMissingY e y x)
+  else if !dependsOn e0 x then some (dsolveMissingX e y x)
+  else none
+
+/-- Try second-order constant-coeff, Cauchy–Euler, then reduction of order. -/
 def dsolveSecondOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
   match odeResidual2 e y with
-  | none => none
+  | none => dsolveReduceOrder? e y x
   | some (A, B, C, D) =>
     let A := simplify A
-    if A == zero then none
-    else if dependsOnYFamily D y then none
+    if A == zero then
+      dsolveReduceOrder? e y x
     else
       match asRatConstExpr? A, asRatConstExpr? B, asRatConstExpr? C with
       | some a, some _, some _ =>
-        if a.isZero then none
+        if a.isZero || dependsOnYFamily D y then
+          dsolveReduceOrder? e y x
         else some (dsolveConstCoeff2 A B C D y x)
       | _, _, _ =>
-        match cauchyEulerMonic? A B C x with
-        | some _ => some (dsolveCauchyEuler2 A B C D y x)
-        | none => none
+        if !dependsOnYFamily D y then
+          match cauchyEulerMonic? A B C x with
+          | some _ => some (dsolveCauchyEuler2 A B C D y x)
+          | none => dsolveReduceOrder? e y x
+        else
+          dsolveReduceOrder? e y x
 
 /-! ### Linear systems Y' = A Y via expm -/
 
@@ -1430,8 +1633,9 @@ def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : Strin
   Order of attempts:
   1. Second-order constant-coefficient (`y''` / `ypp`)
   2. Second-order Cauchy–Euler (`a x² y'' + b x y' + c y`)
-  3. First-order linear (integrating factor)
-  4. Separable first-order
+  3. Reduction of order (missing `y` or missing `x`)
+  4. First-order linear (integrating factor)
+  5. Separable first-order
 -/
 def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Expr :=
   -- Matrix argument → linear system Y' = A Y
