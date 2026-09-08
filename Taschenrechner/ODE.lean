@@ -12,7 +12,8 @@
     x^k / polynomial RHS via undetermined coefficients; else VoP)
   * Reduction of order: missing y → v=y'; missing x → y''=v dv/dy
   * Higher-order constant-coeff: aₙ y^{(n)}+…+a₀ y = g (g const; n≥3)
-  * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form)
+  * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form);
+    Y' = A Y + g(x) via variation of parameters (constant g: Yp = −A⁻¹ g)
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -289,6 +290,8 @@ partial def tidyExpForm : Expr → Expr
     match a, b with
     -- exp(u)·exp(v) → exp(u+v)
     | exp u, exp v => simplify (exp (add u v))
+    | mul p (exp u), exp v => tidyExpForm (mul p (exp (add u v)))
+    | exp v, mul p (exp u) => tidyExpForm (mul p (exp (add u v)))
     -- exp(u) · (exp(v)·p + q) → exp(u+v)·p + exp(u)·q
     | exp u, add (mul (exp v) p) q =>
       simplify (add (mul (exp (add u v)) p) (mul (exp u) q))
@@ -1838,10 +1841,74 @@ def packYEqs (Y : Array (Array Expr)) : Expr :=
       let mut out : Array (Array Expr) := Array.empty
       for i in [:n] do
         let yi := var s!"y{i + 1}"
-        let val := simplify (Mat.get! Y i 0)
+        let val := tidyODESol (simplify (Mat.get! Y i 0))
         out := out.push #[eq yi val]
       pure out
   simplify (Expr.mat eqs)
+
+/-- `n×1` column, accepting a row `1×n`. -/
+def asColVec? (V : Array (Array Expr)) (n : Nat) : Option (Array (Array Expr)) :=
+  if Mat.nrows V == n && Mat.ncols V == 1 then some V
+  else if Mat.nrows V == 1 && Mat.ncols V == n then some (Mat.transpose V)
+  else if n == 1 && Mat.nrows V == 1 && Mat.ncols V == 1 then some V
+  else none
+
+def matDependsOn (m : Array (Array Expr)) (v : String) : Bool :=
+  m.any (fun row => row.any (fun e => dependsOn e v))
+
+def matSimplify (m : Array (Array Expr)) : Array (Array Expr) :=
+  Mat.map m simplify
+
+def cCol (n : Nat) : Array (Array Expr) :=
+  Id.run do
+    let mut rows : Array (Array Expr) := Array.empty
+    for i in [:n] do
+      rows := rows.push #[odeCi i]
+    pure rows
+
+/-- Entrywise ∫ wrt `x`. -/
+def integrateMat (m : Array (Array Expr)) (x : String) : Except String (Array (Array Expr)) := do
+  let mut out : Array (Array Expr) := Array.empty
+  for row in m do
+    let mut r : Array Expr := Array.empty
+    for e in row do
+      match integrateParam e x with
+      | .success F _ => r := r.push (simplify F)
+      | .notElementary msg => throw s!"dsolve: ∫ Φ⁻¹g not elementary: {msg}"
+      | .failure msg => throw s!"dsolve: ∫ Φ⁻¹g failed: {msg}"
+    out := out.push r
+  pure out
+
+/-- Constant particular solution `Yp = −A⁻¹ g` when `A` is invertible. -/
+def particularConstSys (A g : Array (Array Expr)) : Option (Array (Array Expr)) :=
+  match Mat.det A with
+  | none => none
+  | some d =>
+    let d := simplify d
+    if d == zero || isZeroExpr d "x" then none
+    else
+      match Mat.inv A with
+      | none => none
+      | some Ainv =>
+        match Mat.mul (matSimplify Ainv) g with
+        | none => none
+        | some Ag => some (matSimplify (Mat.scale (neg one) Ag))
+
+/-- Variation of parameters: `Yp = Φ ∫ Φ⁻¹ g dx`. -/
+def variationSys (Phi g : Array (Array Expr)) (x : String) : Except String (Array (Array Expr)) := do
+  let Phi := matSimplify Phi
+  match Mat.inv Phi with
+  | none => throw "dsolve: could not invert fundamental matrix Φ"
+  | some PhiInv =>
+    let PhiInv := matSimplify PhiInv
+    match Mat.mul PhiInv g with
+    | none => throw "dsolve: Φ⁻¹·g shape error"
+    | some w =>
+      let w := Mat.map (matSimplify w) (fun e => simplify (Expr.cancel (tidyExpForm e)))
+      let U ← integrateMat w x
+      match Mat.mul Phi U with
+      | none => throw "dsolve: Φ·U shape error"
+      | some Yp => pure (matSimplify Yp)
 
 /--
   Solve the homogeneous linear system `Y' = A Y`.
@@ -1853,13 +1920,7 @@ def dsolveLinSys (A : Array (Array Expr)) (x : String := "x") : Except String Ex
     throw "dsolve: system matrix must be square and non-empty"
   else do
     let Phi ← fundamentalMatrix A x
-    let Ccol : Array (Array Expr) :=
-      Id.run do
-        let mut rows : Array (Array Expr) := Array.empty
-        for i in [:n] do
-          rows := rows.push #[odeCi i]
-        pure rows
-    match Mat.mul Phi Ccol with
+    match Mat.mul Phi (cCol n) with
     | none => throw "dsolve: Φ·C shape error"
     | some Y => pure (packYEqs Y)
 
@@ -1870,18 +1931,65 @@ def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : Strin
   if n == 0 || n != Mat.ncols A then
     throw "dsolve: system matrix must be square"
   else
-    let y0col : Option (Array (Array Expr)) :=
-      if Mat.nrows Y0 == n && Mat.ncols Y0 == 1 then some Y0
-      else if Mat.nrows Y0 == 1 && Mat.ncols Y0 == n then some (Mat.transpose Y0)
-      else if Mat.nrows Y0 == n && Mat.ncols Y0 == n && n == 1 then some Y0
-      else none
-    match y0col with
+    match asColVec? Y0 n with
     | none => throw s!"dsolve: initial vector must be {n}×1 (or 1×{n})"
     | some y0 => do
       let Phi ← fundamentalMatrix A x
       match Mat.mul Phi y0 with
       | none => throw "dsolve: Φ·Y0 shape error"
       | some Y => pure (packYEqs Y)
+
+/-- Particular `Yp` for `Y' = A Y + g`. -/
+def particularSys (A g : Array (Array Expr)) (Phi : Array (Array Expr)) (x : String) :
+    Except String (Array (Array Expr)) :=
+  if !matDependsOn g x then
+    match particularConstSys A g with
+    | some yp => pure yp
+    | none => variationSys Phi g x
+  else
+    variationSys Phi g x
+
+/-- Solve `Y' = A Y + g(x)`. Returns `yᵢ = (Φ C + Yp)ᵢ`. -/
+def dsolveLinSysNonhom (A g : Array (Array Expr)) (x : String := "x") : Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "dsolve: system matrix must be square and non-empty"
+  else
+    match asColVec? g n with
+    | none => throw s!"dsolve: forcing g must be {n}×1 (or 1×{n})"
+    | some g => do
+      let Phi ← fundamentalMatrix A x
+      let Yp ← particularSys A g Phi x
+      match Mat.mul Phi (cCol n) with
+      | none => throw "dsolve: Φ·C shape error"
+      | some Yh =>
+        match Mat.add Yh Yp with
+        | none => throw "dsolve: Yh+Yp shape error"
+        | some Y => pure (packYEqs Y)
+
+/-- Solve `Y' = A Y + g` with `Y(0) = Y0`. -/
+def dsolveLinSysNonhomIC (A g Y0 : Array (Array Expr)) (x : String := "x") :
+    Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "dsolve: system matrix must be square"
+  else
+    match asColVec? g n, asColVec? Y0 n with
+    | none, _ => throw s!"dsolve: forcing g must be {n}×1 (or 1×{n})"
+    | _, none => throw s!"dsolve: initial vector must be {n}×1 (or 1×{n})"
+    | some g, some y0 => do
+      let Phi ← fundamentalMatrix A x
+      let Yp ← particularSys A g Phi x
+      let Yp0 := Mat.map Yp (fun e => simplify (subst e x zero))
+      match Mat.sub y0 Yp0 with
+      | none => throw "dsolve: Y0 − Yp(0) shape error"
+      | some C =>
+        match Mat.mul Phi C with
+        | none => throw "dsolve: Φ·C shape error"
+        | some Yh =>
+          match Mat.add Yh Yp with
+          | none => throw "dsolve: Yh+Yp shape error"
+          | some Y => pure (packYEqs Y)
 
 /--
   Solve an ODE for unknown `y(x)`.
@@ -1893,6 +2001,7 @@ def dsolveLinSysIC (A : Array (Array Expr)) (Y0 : Array (Array Expr)) (x : Strin
   4. Higher-order constant-coefficient (`y'''` / `yppp` / `d3y`, …)
   5. First-order linear (integrating factor)
   6. Separable first-order
+  Matrix `A` → Y'=A Y; `dsolve(A,g)` → Y'=A Y+g
 -/
 def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Expr :=
   -- Matrix argument → linear system Y' = A Y

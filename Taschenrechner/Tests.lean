@@ -1316,6 +1316,17 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       s.contains "3" && s.contains "4" && !s.contains "C1"
   | _ => false
 #guard
+  match parse "dsolve([1, 0; 0, 2], [1; 0], x)" with
+  | .ok e =>
+      match namedGet? e "y1" with
+      | some y1 =>
+          dependsOn y1 "C1"
+            &&
+            let yp := simplify (Expr.subst (Expr.subst y1 "C1" (0:Expr)) "C2" (0:Expr))
+            equivNF yp (negOne)
+      | none => false
+  | _ => false
+#guard
   match parse "dsolve(y'' + y = sin(x))" with
   | .ok e =>
       match asEquation? e with

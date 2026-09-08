@@ -258,6 +258,33 @@ def suite : List Case := [
       | none =>
           let s := prettySolution e
           s.contains "y1" && !s.contains "C1" },
+  { name := "nonhom system constant g"
+    input := "dsolve([1, 0; 0, 2], [1; 0], x)"
+    check := fun e =>
+      match namedGet? e "y1", namedGet? e "y2" with
+      | some y1, some y2 =>
+          dependsOn y1 "C1" && dependsOn y2 "C2"
+            &&
+            let yp1 := simplify (subst (subst y1 "C1" (0:Expr)) "C2" (0:Expr))
+            let yp2 := simplify (subst (subst y2 "C1" (0:Expr)) "C2" (0:Expr))
+            equivNF yp1 (negOne) && equivNF yp2 (0:Expr)
+      | _, _ => false },
+  { name := "nonhom system g=exp"
+    input := "dsolve([1, 0; 0, 2], [exp(x); 0])"
+    check := fun e =>
+      match namedGet? e "y1" with
+      | some y1 =>
+          dependsOn y1 "C1" && dependsOn y1 "x"
+            && (Expr.toString y1).contains "exp"
+      | none => false },
+  { name := "nonhom system IC"
+    input := "dsolve([1, 0; 0, 2], [1; 0], [0; 0])"
+    check := fun e =>
+      match namedGet? e "y1", namedGet? e "y2" with
+      | some y1, some y2 =>
+          !dependsOn y1 "C1" && !dependsOn y2 "C2"
+            && equivNF (simplify (subst y1 "x" (0:Expr))) (0:Expr)
+      | _, _ => false },
   -- Cauchy–Euler second-order
   { name := "Cauchy–Euler distinct real"
     input := "dsolve(x^2*y'' + x*yp - y = 0)"

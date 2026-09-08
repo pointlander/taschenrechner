@@ -729,15 +729,32 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       | none => dsolve e "y" "x"
   | "dsolve", [e, a] => do
       match asMat? e, asMat? a with
-      | some A, some Y0 => dsolveLinSysIC A Y0 "x"
+      | some A, some V =>
+        if matDependsOn V "x" then
+          dsolveLinSysNonhom A V "x"
+        else
+          dsolveLinSysIC A V "x"
       | _, _ =>
         let y ← asVarName a
         dsolve e y "x"
   | "dsolve", [e, a, b] => do
-      -- dsolve(eq, y, x)  OR  dsolve(eq, x0, y0) for y(x0)=y0
-      match asVarName a, asVarName b with
-      | .ok y, .ok x => dsolve e y x
-      | _, _ => dsolveIC e "y" "x" a b
+      match asMat? e with
+      | some A =>
+        match asMat? a, asMat? b with
+        | some g, some Y0 => dsolveLinSysNonhomIC A g Y0 "x"
+        | some g, none =>
+          match asVarName b with
+          | .ok x => dsolveLinSysNonhom A g x
+          | .error _ => throw "dsolve: expected dsolve(A, g, Y0) or dsolve(A, g, x)"
+        | none, _ =>
+          match asVarName a, asVarName b with
+          | .ok y, .ok x => dsolve e y x
+          | _, _ => dsolveIC e "y" "x" a b
+      | none =>
+        -- dsolve(eq, y, x)  OR  dsolve(eq, x0, y0) for y(x0)=y0
+        match asVarName a, asVarName b with
+        | .ok y, .ok x => dsolve e y x
+        | _, _ => dsolveIC e "y" "x" a b
   | "dsolve", [e, a, b, c] => do
       -- dsolve(eq, y, x0, y0)  OR  dsolve(eq, x0, y0, yp0) second-order IC
       match asVarName a with
@@ -803,7 +820,7 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "product", _ | "prod", _ =>
       throw s!"product expects product(expr, k, lo, hi) or product(k, lo, hi, expr), got {args.length} args"
   | "dsolve", _ =>
-      throw s!"dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(eq,x0,y0)|dsolve(eq,x0,y0,yp0)|… (y'/yp/y''/ypp), got {args.length} args"
+      throw s!"dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(A,g)|dsolve(A,g,Y0)|dsolve(A,g,x)|dsolve(eq,x0,y0)|…, got {args.length} args"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -1446,6 +1463,8 @@ def helpText : String :=
                 dsolve((x+1)*y''+yp=0)  reduction of order (missing y / missing x)\n\
                 dsolve(y'''-yp=0)  higher-order const-coeff (y'''/yppp/d3y)\n\
                 dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
+                dsolve(A, g)  Y'=A Y+g (g depends on x);  dsolve(A, g, Y0)  IC\n\
+                dsolve(A, g, x)  constant g with independent x\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\

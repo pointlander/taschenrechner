@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / Jordan / expm**
-- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **products** `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''`, linear systems via `expm`)
+- **Finite sums** `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **products** `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''`, linear systems `Y'=AY` / **`Y'=AY+g`** via `expm`)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -78,7 +78,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
 | `Taschenrechner.Gosper` | Hypergeometric summation (Gosper); `sum` of rationals and `p(k)·r^k` |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric, Gosper) and products (Pochhammer / `Γ`, geometric, telescoping) |
-| `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, higher-order const-coeff, systems `Y'=AY` |
+| `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, higher-order const-coeff, systems `Y'=AY` and `Y'=AY+g` |
 | `Taschenrechner.Diff` | `diff`, `diffN`, partials |
 | `Taschenrechner.Trig` | Trig preprocess (product-to-sum, power-reduce) + linear integrals |
 | `Taschenrechner.Poly` | Univariate polynomials over ℚ |
@@ -265,10 +265,13 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 | `dsolve(eq, x0, y0, yp0)` | ICs y(x0)=y0, y′(x0)=yp0 (second-order) |
 | `dsolve(eq, y, x, x0, y0[, yp0])` | Full IC form |
 | `dsolve(A)` | Linear system **Y′ = A Y** → `yᵢ = (Φ(x)·C)ᵢ`, Φ=expm(A x) |
-| `dsolve(A, Y0)` | System with Y(0)=Y0 |
+| `dsolve(A, Y0)` | Homogeneous system with Y(0)=Y0 |
+| `dsolve(A, g)` | **Y′ = A Y + g(x)** when `g` depends on `x` (VoP) |
+| `dsolve(A, g, x)` | Constant forcing `g` (independent `x`) |
+| `dsolve(A, g, Y0)` | Nonhomogeneous with Y(0)=Y0 |
 | `C` / `C1`,`C2` | Arbitrary constants (fixed by ICs) |
 
-Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Higher-order const-coeff: `aₙ y^{(n)}+…+a₀ y = g` (`g` constant; repeated `x^k e^{rx}` / `x^k cos/sin`). Systems `Y'=AY` use Jordan `expm` (defective OK).
+Linear 1st-order: `y' + P(x)*y = Q(x)`. Bernoulli: `y' + P y = Q y^n` (`v = y^{1−n}`). Homogeneous: `y' = f(y/x)` (`v = y/x`). Exact: `M dx + N dy = 0` when `M_y = N_x` (or after `μ(x)` / `μ(y)`). Separable: `y' = f(x)*g(y)`. Const-coeff 2nd-order: `a y'' + b y' + c y = g` (g constant). Cauchy–Euler: `a x² y'' + b x y' + c y = g` (indicial `a r(r−1)+b r+c=0`; repeated `(C1+C2 ln x) x^r`). Reduction of order: missing `y` via `v=y'`; missing `x` via `y''=v dv/dy`. Higher-order const-coeff: `aₙ y^{(n)}+…+a₀ y = g` (`g` constant; repeated `x^k e^{rx}` / `x^k cos/sin`). Systems `Y'=AY` use Jordan `expm` (defective OK); `Y'=AY+g` via `Yp=−A⁻¹g` or variation of parameters.
 
 ```bash
 lake exe taschenrechner 'sum(k, 1, n, k)'              # → n(n+1)/2
@@ -299,6 +302,7 @@ lake exe taschenrechner 'pi'                           # → π
 lake exe taschenrechner "dsolve(y'' + y = 0, 0, 1, 0)" # → y = cos(x)
 lake exe taschenrechner 'dsolve([1,0;0,2])'            # → y1 = C1·exp(x), y2 = C2·exp(2x)
 lake exe taschenrechner 'dsolve([1,0;0,2],[3;4])'      # → y1 = 3·exp(x), y2 = 4·exp(2x)
+lake exe taschenrechner 'dsolve([1,0;0,2],[1;0],x)'    # Y'=AY+g → y1 = C1·exp(x)−1, y2 = C2·exp(2x)
 lake exe taschenrechner 'dsolve([0,1;0,0])'            # → y1 = C1 + C2·x, y2 = C2
 ```
 
