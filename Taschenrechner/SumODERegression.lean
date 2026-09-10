@@ -491,7 +491,34 @@ def suite : List Case := [
     input := "rsolve([0,1;1,1], [0;1])"
     check := fun e =>
       let s := prettySolution e
-      s.contains "y1" && s.contains "y2" && !s.contains "C1" }
+      s.contains "y1" && s.contains "y2" && !s.contains "C1" },
+  { name := "rsolve y(n+1)=(n+1) y(n) factorial"
+    input := "rsolve(y(n+1)-(n+1)*y(n)=0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C"
+            && equivNF (simplify (subst (subst r "C" (1:Expr)) "n" (3:Expr))) (ofInt 6)
+      | none => false },
+  { name := "rsolve factorial IC y(0)=1"
+    input := "rsolve(y(n+1)-(n+1)*y(n)=0, 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && equivNF (simplify (subst r "n" (4:Expr))) (ofInt 24)
+      | none => false },
+  { name := "rsolve system constant g"
+    input := "rsolve([2,0;0,3],[1;0],n)"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y1" && s.contains "C1" && s.contains "C2"
+        && dependsOn e "n" },
+  { name := "rsolve system g IC"
+    input := "rsolve([2,0;0,3],[1;0],[0;0])"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y1" && !s.contains "C1" && !s.contains "C2" }
 ]
 
 structure CaseResult where

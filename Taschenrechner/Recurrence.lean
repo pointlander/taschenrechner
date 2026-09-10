@@ -5,7 +5,9 @@
     polynomial (real `r^n` / `n^j r^n`; conjugate pairs `ρ^n cos/sin`)
   * Polynomial and geometric `q^n` forcing by undetermined coefficients
   * ICs `y(0), y(1), …`
-  * Systems `Y(n+1) = A Y(n)` via Jordan `A^n`
+  * First-order variable-coeff `y(n+1)=a(n) y(n)+b(n)` via `product` / `sum`
+  * Systems `Y(n+1) = A Y(n)` via Jordan `A^n`; `Y(n+1)=A Y(n)+g` via
+    `Yp=(I−A)⁻¹g` or discrete variation of parameters
 -/
 import Taschenrechner.Expr
 import Taschenrechner.Simplify
@@ -16,6 +18,7 @@ import Taschenrechner.ODE
 import Taschenrechner.Matrix
 import Taschenrechner.Eigen
 import Taschenrechner.Eval
+import Taschenrechner.Sum
 
 namespace Taschenrechner
 
@@ -166,25 +169,28 @@ where
     else
       some (z, e)
 
-/-- Normalize so the lowest unknown is `y(n)` (`as[0]`). -/
+/-- Slice to the support of nonzero coefficients (lowest unknown is `y(n)`). -/
+def sliceNonzeroCoeffs (cs : Array Expr) : Option (Array Expr) :=
+  Id.run do
+    let mut lo : Option Nat := none
+    let mut hi : Nat := 0
+    for i in [:cs.size] do
+      if !(isZeroExpr cs[i]!) then
+        hi := i
+        if lo.isNone then lo := some i
+    match lo with
+    | none => none
+    | some lo0 =>
+      let mut out : Array Expr := Array.empty
+      for i in [lo0:hi + 1] do
+        out := out.push (simplify cs[i]!)
+      some out
+
+/-- Normalize so the lowest unknown is `y(n)` (`as[0]`), rational coefficients. -/
 def normalizeSeqCoeffs (cs : Array Expr) : Option (Array RatConst) :=
-  match ratCoeffArray? cs with
+  match sliceNonzeroCoeffs cs with
   | none => none
-  | some as =>
-    Id.run do
-      let mut lo : Option Nat := none
-      let mut hi : Nat := 0
-      for i in [:as.size] do
-        if !(as[i]!.isZero) then
-          hi := i
-          if lo.isNone then lo := some i
-      match lo with
-      | none => none
-      | some lo0 =>
-        let mut out : Array RatConst := Array.empty
-        for i in [lo0:hi + 1] do
-          out := out.push as[i]!
-        some out
+  | some as => ratCoeffArray? as
 
 /-- `r^n`, with `1^n → 1` and `0^n` left as a power. -/
 def recPowN (r : Expr) (idx : String) : Expr :=
@@ -441,6 +447,43 @@ def recParticular (as : Array RatConst) (g : Expr) (idx : String) : Except Strin
       | none =>
         throw "rsolve: forcing must be polynomial or geometric q^n"
 
+/-- Dummy summation/product index, distinct from `idx`. -/
+def recDummy (_idx : String) : String := "__k"
+
+/-- Homogeneous factor `Π_{k=0}^{n−1} a(k)`. -/
+def recHomFactor (a : Expr) (idx : String) : Except String Expr :=
+  let k := recDummy idx
+  let ak := subst a idx (var k)
+  match prodFinite ak k zero (sub (var idx) one) with
+  | some p => pure (simplify p)
+  | none => throw s!"rsolve: no closed form for ∏ {a}"
+
+/--
+  First-order `A(n) y(n+1) + B(n) y(n) + D(n) = 0`,
+  i.e. `y(n+1) = a(n) y(n) + b(n)` with `a=−B/A`, `b=−D/A`.
+-/
+def rsolveFirstOrderVar (B A D : Expr) (y idx : String) : Except String Expr := do
+  if isZeroExpr A idx then
+    throw "rsolve: coefficient of y(n+1) is zero"
+  else
+    let a := simplify (neg (div B A))
+    let b := simplify (neg (div D A))
+    let P ← recHomFactor a idx
+    if b == zero || isZeroExpr b idx then
+      pure (tidyODESol (eq (var y) (simplify (mul odeC P))))
+    else
+      let k := recDummy idx
+      let bk := subst b idx (var k)
+      let Pk1 := subst P idx (add (var k) one)
+      if Pk1 == zero || isZeroExpr Pk1 k then
+        throw "rsolve: vanishing product factor in variation of parameters"
+      else
+        let term := simplify (div bk Pk1)
+        match sumFinite term k zero (sub (var idx) one) with
+        | none => throw s!"rsolve: no closed form for ∑ {term}"
+        | some S =>
+          pure (tidyODESol (eq (var y) (simplify (mul P (add odeC S)))))
+
 /-- Constant-coefficient scalar recurrence. -/
 def rsolveConstCoeff (as : Array RatConst) (D : Expr) (y idx : String) :
     Except String Expr := do
@@ -471,13 +514,19 @@ def rsolveScalar (e : Expr) (y idx : String) : Except String Expr :=
     if collectSeqVars D |>.any (fun t => t.1 == y) then
       throw "rsolve: nonlinear in y(n+k)"
     else
-      match normalizeSeqCoeffs cs with
-      | none => throw "rsolve: coefficients must be rational constants"
+      match sliceNonzeroCoeffs cs with
+      | none => throw "rsolve: expected a non-trivial recurrence"
       | some as =>
         if as.size < 2 then
           throw "rsolve: expected order ≥ 1"
         else
-          rsolveConstCoeff as D y idx
+          match ratCoeffArray? as with
+          | some ras => rsolveConstCoeff ras D y idx
+          | none =>
+            if as.size == 2 then
+              rsolveFirstOrderVar as[0]! as[1]! D y idx
+            else
+              throw "rsolve: variable coefficients are only supported for first-order recurrences"
 
 /-- Apply `ics[k] = y(k)` for `k = 0, 1, …`. -/
 def applyRecICs (sol : Expr) (y idx : String) (ics : List Expr) : Except String Expr :=
@@ -551,6 +600,110 @@ def rsolveLinSysIC (A Y0 : Array (Array Expr)) (idx : String := "n") :
       | none => throw "rsolve: A^n · Y0 shape error"
       | some Y => pure (packYEqs Y)
 
+/-- Constant particular `Yp = (I−A)⁻¹ g` when `1` is not an eigenvalue. -/
+def particularConstRecSys (A g : Array (Array Expr)) (idx : String) :
+    Option (Array (Array Expr)) :=
+  let n := Mat.nrows A
+  match Mat.sub (Mat.eye n) A with
+  | none => none
+  | some M =>
+    match Mat.det M with
+    | none => none
+    | some d =>
+      let d := simplify d
+      if d == zero || isZeroExpr d idx then none
+      else
+        match Mat.inv M with
+        | none => none
+        | some Minv =>
+          match Mat.mul (matSimplify Minv) g with
+          | none => none
+          | some Yp => some (matSimplify Yp)
+
+/-- Entrywise `∑_{k=lo}^{hi}`. -/
+def sumMat (m : Array (Array Expr)) (k : String) (lo hi : Expr) :
+    Except String (Array (Array Expr)) := do
+  let mut out : Array (Array Expr) := Array.empty
+  for row in m do
+    let mut r : Array Expr := Array.empty
+    for e in row do
+      match sumFinite e k lo hi with
+      | some s => r := r.push (simplify s)
+      | none => throw s!"rsolve: no closed form for ∑ {e}"
+    out := out.push r
+  pure out
+
+/-- Discrete VoP: `Yp = A^n ∑_{k=0}^{n−1} A^{−(k+1)} g(k)` (`A` invertible). -/
+def variationRecSys (A g : Array (Array Expr)) (idx : String) :
+    Except String (Array (Array Expr)) := do
+  match Mat.inv A with
+  | none => throw "rsolve: variation of parameters needs invertible A"
+  | some Ainv =>
+    let k := recDummy idx
+    let gk := Mat.map g (fun e => simplify (subst e idx (var k)))
+    let Bpow ← Mat.powAt (matSimplify Ainv) (add (var k) one)
+    match Mat.mul Bpow gk with
+    | none => throw "rsolve: A⁻⁽ᵏ⁺¹⁾·g shape error"
+    | some w =>
+      let U ← sumMat (matSimplify w) k zero (sub (var idx) one)
+      let An ← Mat.powAt A (var idx)
+      match Mat.mul An U with
+      | none => throw "rsolve: A^n · U shape error"
+      | some Yp => pure (matSimplify Yp)
+
+/-- Particular `Yp` for `Y(n+1) = A Y(n) + g`. -/
+def particularRecSys (A g : Array (Array Expr)) (idx : String) :
+    Except String (Array (Array Expr)) :=
+  if !matDependsOn g idx then
+    match particularConstRecSys A g idx with
+    | some yp => pure yp
+    | none => variationRecSys A g idx
+  else
+    variationRecSys A g idx
+
+/-- Solve `Y(n+1) = A Y(n) + g(n)`. -/
+def rsolveLinSysNonhom (A g : Array (Array Expr)) (idx : String := "n") :
+    Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "rsolve: system matrix must be square and non-empty"
+  else
+    match asColVec? g n with
+    | none => throw s!"rsolve: forcing g must be {n}×1 (or 1×{n})"
+    | some g => do
+      let An ← Mat.powAt A (var idx)
+      let Yp ← particularRecSys A g idx
+      match Mat.mul An (cCol n) with
+      | none => throw "rsolve: A^n · C shape error"
+      | some Yh =>
+        match Mat.add Yh Yp with
+        | none => throw "rsolve: Yh+Yp shape error"
+        | some Y => pure (packYEqs Y)
+
+/-- Solve `Y(n+1) = A Y(n) + g` with `Y(0) = Y0`. -/
+def rsolveLinSysNonhomIC (A g Y0 : Array (Array Expr)) (idx : String := "n") :
+    Except String Expr :=
+  let n := Mat.nrows A
+  if n == 0 || n != Mat.ncols A then
+    throw "rsolve: system matrix must be square"
+  else
+    match asColVec? g n, asColVec? Y0 n with
+    | none, _ => throw s!"rsolve: forcing g must be {n}×1 (or 1×{n})"
+    | _, none => throw s!"rsolve: initial vector must be {n}×1 (or 1×{n})"
+    | some g, some y0 => do
+      let An ← Mat.powAt A (var idx)
+      let Yp ← particularRecSys A g idx
+      let Yp0 := Mat.map Yp (fun e => simplify (subst e idx zero))
+      match Mat.sub y0 Yp0 with
+      | none => throw "rsolve: Y0 − Yp(0) shape error"
+      | some C =>
+        match Mat.mul An C with
+        | none => throw "rsolve: A^n · C shape error"
+        | some Yh =>
+          match Mat.add Yh Yp with
+          | none => throw "rsolve: Yh+Yp shape error"
+          | some Y => pure (packYEqs Y)
+
 def asPlainVar? : Expr → Option String
   | var v =>
     if (parseSeqVar? v).isSome then none else some v
@@ -590,11 +743,21 @@ def rsolveFromArgs (e : Expr) (args : List Expr) : Except String Expr :=
     | [] => rsolveLinSys A "n"
     | [a] =>
       match asMat? a with
-      | some Y0 => rsolveLinSysIC A Y0 "n"
+      | some V =>
+        if matDependsOn V "n" then rsolveLinSysNonhom A V "n"
+        else rsolveLinSysIC A V "n"
       | none =>
         match asPlainVar? a with
         | some idx => rsolveLinSys A idx
         | none => throw "rsolve: expected rsolve(A) or rsolve(A, Y0)"
+    | [a, b] =>
+      match asMat? a, asMat? b with
+      | some g, some Y0 => rsolveLinSysNonhomIC A g Y0 "n"
+      | some g, none =>
+        match asPlainVar? b with
+        | some idx => rsolveLinSysNonhom A g idx
+        | none => throw "rsolve: expected rsolve(A, g, Y0) or rsolve(A, g, n)"
+      | none, _ => throw "rsolve: expected rsolve(A, g, Y0) or rsolve(A, g, n)"
     | _ => throw "rsolve: too many arguments for a linear system"
   | none =>
     let (yDef, nDef) := inferSeqNames? e |>.getD ("y", "n")

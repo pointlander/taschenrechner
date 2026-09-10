@@ -1517,6 +1517,30 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | none => false
   | _ => false
 #guard
+  match parse "rsolve(y(n+1)-(n+1)*y(n)=0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C"
+            && equivNF (simplify (subst (subst r "C" (1:Expr)) "n" (3:Expr))) (ofInt 6)
+      | none => false
+  | _ => false
+#guard
+  match parse "rsolve(y(n+1)-(n+1)*y(n)=0, 1)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && equivNF (simplify (subst r "n" (4:Expr))) (ofInt 24)
+      | none => false
+  | _ => false
+#guard
+  match parse "rsolve([2,0;0,3],[1;0],n)" with
+  | .ok e =>
+      let s := prettySolution e
+      s.contains "C1" && s.contains "2" && s.contains "C2"
+  | _ => false
+#guard
   match parse "solve(sin(x)=0)" with
   | .ok e => (prettySolution e).contains "ℤ"
   | _ => false

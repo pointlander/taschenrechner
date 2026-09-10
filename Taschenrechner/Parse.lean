@@ -792,7 +792,7 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "dsolve", [] =>
       throw "dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(A,g)|dsolve(A,g,Y0)|dsolve(A,g,x)|dsolve(eq,x0,y0[, yp0, …])"
   | "rsolve", [] =>
-      throw "rsolve expects rsolve(eq)|rsolve(eq, y(n))|rsolve(eq, y0, y1, …)|rsolve(A)|rsolve(A, Y0)"
+      throw "rsolve expects rsolve(eq)|rsolve(eq, y(n))|rsolve(eq, y0, y1, …)|rsolve(A)|rsolve(A, Y0)|rsolve(A, g)|rsolve(A, g, Y0)|rsolve(A, g, n)"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -1458,7 +1458,10 @@ def helpText : String :=
                 dsolve(A, g, x)  constant g with independent x\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0[, ypp0, …])  ICs;  dsolve(A, Y0)\n\
                 rsolve(eq)  linear recurrence y(n+k);  rsolve(eq, y0, y1, …)  ICs\n\
+                rsolve(y(n+1)=(n+1)*y(n))  first-order a(n) via product\n\
                 rsolve(y(n+2)-y(n+1)-y(n)=0)  char poly;  rsolve(A)  Y(n+1)=A Y(n)\n\
+                rsolve(A, g)  Y(n+1)=A Y+g (g depends on n);  rsolve(A, g, Y0)  IC\n\
+                rsolve(A, g, n)  constant g with independent n\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\
                 euler(e)\n\
