@@ -444,7 +444,54 @@ def suite : List Case := [
             &&
             let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
             equivNF yp (mul (ofRat ⟨-1, 2⟩) (mul x (sin x)))
-      | none => false }
+      | none => false },
+  { name := "rsolve y(n+1)=2 y(n)"
+    input := "rsolve(y(n+1)-2*y(n)=0)"
+    check := fun e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && dependsOn r "C"
+            && equivNF (simplify (subst (subst r "C" (1:Expr)) "n" (1:Expr))) (2:Expr)
+      | none => false },
+  { name := "rsolve arithmetic y(n+1)-y(n)=1"
+    input := "rsolve(y(n+1)-y(n)=1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C" && dependsOn r "n"
+            &&
+            let yp := simplify (subst r "C" (0:Expr))
+            equivNF yp (var "n")
+      | none => false },
+  { name := "rsolve geometric IC y(0)=3"
+    input := "rsolve(y(n+1)-2*y(n)=0, 3)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C"
+            && equivNF (simplify (subst r "n" (0:Expr))) (3:Expr)
+            && equivNF (simplify (subst r "n" (2:Expr))) (12:Expr)
+      | none => false },
+  { name := "rsolve Fibonacci ICs"
+    input := "rsolve(y(n+2)-y(n+1)-y(n)=0, 0, 1)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && !dependsOn r "C2"
+            && equivNF (simplify (subst r "n" (0:Expr))) (0:Expr)
+            && equivNF (simplify (subst r "n" (1:Expr))) (1:Expr)
+      | none => false },
+  { name := "rsolve y(n+2)+y(n)=0"
+    input := "rsolve(y(n+2)+y(n)=0)"
+    check := fun e =>
+      isEqY e && dependsOn e "C1" && dependsOn e "C2"
+        && ((Expr.toString e).contains "sin" || (Expr.toString e).contains "cos"
+              || (Expr.toString e).contains "i") },
+  { name := "rsolve system companion Fibonacci"
+    input := "rsolve([0,1;1,1], [0;1])"
+    check := fun e =>
+      let s := prettySolution e
+      s.contains "y1" && s.contains "y2" && !s.contains "C1" }
 ]
 
 structure CaseResult where

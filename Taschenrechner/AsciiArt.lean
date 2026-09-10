@@ -160,7 +160,7 @@ def supNat : Nat → String
 partial def exprToBox (e : Expr) : Box :=
   match e with
   | const c => Box.text (CplxConst.toString c)
-  | var v => Box.text (if isInfName v then "∞" else v)
+  | var v => Box.text (prettyVarName v)
   | add a b => sumToBox (flattenAddLocal (add a b))
   | mul a b =>
     match asFrac? (mul a b) with

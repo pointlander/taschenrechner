@@ -447,6 +447,7 @@ def isForbiddenBinding (name : String) : Bool :=
   -- `ans` is allowed (user may assign; REPL also auto-updates it)
   n == "i" || n == "help" || n == "vars" || n == "clear" || n == "quit"
     || n == "exit" || n == "diff" || n == "int" || n == "integrate"
+    || n == "rsolve"
     || n == "simplify" || n == "expand" || n == "euler"
     || n == "save" || n == "load" || n == "assume" || n == "forget"
     || n == "unassume" || n == "assumptions" || n == "pi" || name == "π"

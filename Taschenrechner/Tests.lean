@@ -117,6 +117,20 @@ def parseEq (s : String) (expected : Expr) : Bool :=
 #guard parseEq "1/x" ((1 : Expr) / x)
 #guard parseEq "(x+1)*(x-1)" ((x + 1) * (x - 1))
 #guard parseEq "2x(x+1)" ((2 : Expr) * x * (x + 1))
+#guard parseEq "x(x+1)" (x * (x + 1))
+#guard parseEq "n(n+1)" ((var "n") * ((var "n") + 1))
+#guard
+  match parse "y(n)" with
+  | .ok e => e == var "y[n]"
+  | _ => false
+#guard
+  match parse "y(n+2)" with
+  | .ok e => e == var "y[n+2]"
+  | _ => false
+#guard
+  match parse "y(n-1)" with
+  | .ok e => e == var "y[n-1]"
+  | _ => false
 #guard parseEq "-x^2" (neg (x ^ (2 : Expr)))
 #guard parseEq "a^b^c" (Expr.pow (var "a") (Expr.pow (var "b") (var "c")))
 #guard parseEq "diff(x^2)" ((2 : Expr) * x)
@@ -1475,6 +1489,31 @@ def parseEq (s : String) (expected : Expr) : Bool :=
             &&
             let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
             equivNF yp (mul (ofRat ⟨-1, 2⟩) (mul x (sin x)))
+      | none => false
+  | _ => false
+#guard
+  match parse "rsolve(y(n+1)-2*y(n)=0)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (l, r) =>
+          l == var "y" && dependsOn r "C"
+            && equivNF (simplify (subst (subst r "C" (1:Expr)) "n" (0:Expr))) (1:Expr)
+      | none => false
+  | _ => false
+#guard
+  match parse "rsolve(y(n+1)-y(n)=1)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C" && dependsOn r "n"
+      | none => false
+  | _ => false
+#guard
+  match parse "rsolve(y(n+1)-2*y(n)=0, 3)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C" && equivNF (simplify (subst r "n" (0:Expr))) (3:Expr)
       | none => false
   | _ => false
 #guard

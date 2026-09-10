@@ -560,6 +560,12 @@ def isInfName (v : String) : Bool :=
 def isPiName (v : String) : Bool :=
   v == "π" || v.toLower == "pi"
 
+/-- Sequence terms are stored as `y[n+2]`; print them as `y(n+2)`. -/
+def prettyVarName (v : String) : String :=
+  if isInfName v then "∞"
+  else if isPiName v then "π"
+  else (v.replace "[" "(").replace "]" ")"
+
 /-- Canonical π expression. -/
 def piE : Expr := var "π"
 
@@ -661,10 +667,7 @@ def superscriptNat : Nat → String
 /-- Pretty-printer with fractions, √, degree-sorted sums, and ∞. -/
 partial def toString : Expr → String
   | const c => CplxConst.toString c
-  | var v =>
-    if isInfName v then "∞"
-    else if isPiName v then "π"
-    else v
+  | var v => prettyVarName v
   | add a b => prettySum (add a b)
   | mul a b => prettyProduct (mul a b)
   | pow a b => prettyPow a b

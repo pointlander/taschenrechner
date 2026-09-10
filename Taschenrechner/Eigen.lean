@@ -532,4 +532,43 @@ def expmAt (A : Array (Array Expr)) (t : Expr) : Except String (Array (Array Exp
   | .ok P _ blocks =>
     conjugate P (expJordanBlocks blocks t)
 
+/-- `n (n−1) ⋯ (n−k+1) / k!`. -/
+def binomNK (n : Expr) (k : Nat) : Expr :=
+  if k == 0 then Expr.one
+  else
+    let num :=
+      (List.range k).foldl (fun acc i =>
+        Expr.mul acc (Expr.sub n (Expr.ofNat i))) Expr.one
+    simplify (Expr.div num (Expr.ofNat (natFact k)))
+
+/--
+  `J^n` for a Jordan block `λ I + N`:
+  superdiagonal `k` holds `C(n,k) λ^{n−k}`.
+-/
+def jordanBlockPow (lam : Expr) (s : Nat) (n : Expr) : Array (Array Expr) :=
+  let lam := simplify lam
+  let n := simplify n
+  Id.run do
+    let mut rows : Array (Array Expr) := Array.empty
+    for i in [:s] do
+      let mut row : Array Expr := Array.empty
+      for j in [:s] do
+        if j < i then
+          row := row.push Expr.zero
+        else
+          let k := j - i
+          let lamPow :=
+            if k == 0 then Expr.pow lam n
+            else Expr.pow lam (Expr.sub n (Expr.ofNat k))
+          row := row.push (simplify (Expr.mul (binomNK n k) lamPow))
+      rows := rows.push row
+    pure (simpMat rows)
+
+/-- `A^n = P J^n P⁻¹` via Jordan form. -/
+def powAt (A : Array (Array Expr)) (n : Expr) : Except String (Array (Array Expr)) :=
+  match jordanForm A with
+  | .error msg => throw s!"matrix power: {msg}"
+  | .ok P _ blocks =>
+    conjugate P (simpMat (blockDiag (blocks.map fun (lam, s) => jordanBlockPow lam s n)))
+
 end Taschenrechner.Mat

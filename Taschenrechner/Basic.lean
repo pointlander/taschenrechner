@@ -27,6 +27,7 @@ import Taschenrechner.Limit
 import Taschenrechner.Gosper
 import Taschenrechner.Sum
 import Taschenrechner.ODE
+import Taschenrechner.Recurrence
 import Taschenrechner.Env
 import Taschenrechner.Unicode
 import Taschenrechner.Parse

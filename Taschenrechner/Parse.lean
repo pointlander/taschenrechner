@@ -34,6 +34,7 @@ import Taschenrechner.Series
 import Taschenrechner.Limit
 import Taschenrechner.Sum
 import Taschenrechner.ODE
+import Taschenrechner.Recurrence
 import Taschenrechner.Complex
 import Taschenrechner.Matrix
 import Taschenrechner.LinAlg
@@ -736,6 +737,7 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       | .error _, .error _ =>
         throw "product: expected a free index variable (product(expr, k, lo, hi) or product(k, lo, hi, expr))"
   | "dsolve", e :: rest => dsolveFromArgs e rest
+  | "rsolve", e :: rest => rsolveFromArgs e rest
   | "sin", _ | "cos", _ | "tan", _ | "sinh", _ | "cosh", _ | "tanh", _
   | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "asin", _ | "arcsin", _ | "acos", _ | "arccos", _
@@ -789,6 +791,8 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       throw s!"product expects product(expr, k, lo, hi) or product(k, lo, hi, expr), got {args.length} args"
   | "dsolve", [] =>
       throw "dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(A,g)|dsolve(A,g,Y0)|dsolve(A,g,x)|dsolve(eq,x0,y0[, yp0, …])"
+  | "rsolve", [] =>
+      throw "rsolve expects rsolve(eq)|rsolve(eq, y(n))|rsolve(eq, y0, y1, …)|rsolve(A)|rsolve(A, Y0)"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -892,7 +896,7 @@ where
       else
         solveSystem eqs (if varNames.isEmpty then none else some varNames)
 
-/-- Known callables that consume `(...)`; bare vars juxtapose: `x(x+1)` = `x*(x+1)`. -/
+/-- Known callables that consume `(...)`. Bare `x(x+1)` is juxtaposition; `y(n+k)` is a sequence term. -/
 def isBuiltinName (name : String) : Bool :=
   let n := name.toLower
   n == "sin" || n == "cos" || n == "tan" || n == "sinh" || n == "cosh" || n == "tanh"
@@ -920,7 +924,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "limit" || n == "lim" || n == "limleft" || n == "limitleft"
     || n == "limright" || n == "limitright" || n == "poleorder" || n == "ord"
     || n == "classify" || n == "singularity"
-    || n == "sum" || n == "product" || n == "prod" || n == "dsolve"
+    || n == "sum" || n == "product" || n == "prod" || n == "dsolve" || n == "rsolve"
     || n == "diff" || n == "d" || n == "int" || n == "integrate" || n == "euler"
     || n == "det" || n == "trace" || n == "tr" || n == "transpose" || n == "tp" || n == "inv"
     || n == "rref" || n == "rank" || n == "solve" || n == "nullspace" || n == "null"
@@ -1081,6 +1085,23 @@ partial def parseIdent (env : Env) (name : String) (p : Parser) : Except String 
     let (args, p) ← parseArgList env p.advance
     let e ← applyCall name args env
     pure (e, p)
+  else if p.peek == .lparen then
+    -- `y(n+k)` is a sequence term unless the callee is the index (`x(x+1)` = x·(x+1))
+    let (args, p) ← parseArgList env p.advance
+    match args with
+    | [arg] =>
+      match asAffineIndex? arg with
+      | some (idx, shift) =>
+        if idx == name then
+          pure (Expr.mul (Expr.var name) arg, p)
+        else if shift.natAbs > maxSeqShift then
+          throw s!"rsolve: shift |{shift}| exceeds {maxSeqShift}"
+        else
+          pure (seqTerm name idx shift, p)
+      | none =>
+        pure (Expr.mul (Expr.var name) arg, p)
+    | _ =>
+      throw s!"unknown function '{name}'"
   else if lower == "sqrt" && p.peek != .lparen && p.peek.startsAtom then
     -- prefix √x / sqrt x
     let (e, p) ← parseUnary env p
@@ -1436,6 +1457,8 @@ def helpText : String :=
                 dsolve(A, g)  Y'=A Y+g (g depends on x);  dsolve(A, g, Y0)  IC\n\
                 dsolve(A, g, x)  constant g with independent x\n\
                 dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0[, ypp0, …])  ICs;  dsolve(A, Y0)\n\
+                rsolve(eq)  linear recurrence y(n+k);  rsolve(eq, y0, y1, …)  ICs\n\
+                rsolve(y(n+2)-y(n+1)-y(n)=0)  char poly;  rsolve(A)  Y(n+1)=A Y(n)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\
                 euler(e)\n\
