@@ -4,6 +4,7 @@
   * Polynomial summands via Faulhaber / Bernoulli numbers (all powers)
   * Geometric series ∑ r^k
   * Hypergeometric terms via Gosper (rational t(k) and p(k)·r^k)
+  * Definite hypergeometric in a parameter via Zeilberger (wired from `sumClosedForm`)
   * Constant summands
   * Finite products ∏ via Pochhammer / Γ (linear factors), geometric r^k,
     rational telescoping, and numeric evaluation

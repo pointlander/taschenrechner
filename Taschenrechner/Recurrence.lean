@@ -19,6 +19,7 @@ import Taschenrechner.Matrix
 import Taschenrechner.Eigen
 import Taschenrechner.Eval
 import Taschenrechner.Sum
+import Taschenrechner.Zeilberger
 
 namespace Taschenrechner
 
@@ -734,6 +735,87 @@ def peelRsolveArgs (args : List Expr) (yDef idxDef : String) :
         | [] => (y, idxDef, [])
       | none => (yDef, idxDef, args)
   | [] => (yDef, idxDef, [])
+
+/-- Homogeneous operator `∑ bs[i] y(n+i) = 0`. -/
+def rsolveHomOp (bs : Array Expr) (y idx : String) : Except String Expr :=
+  match sliceNonzeroCoeffs bs with
+  | none => throw "rsolve: trivial recurrence"
+  | some as =>
+    if as.size < 2 then
+      throw "rsolve: expected order ≥ 1"
+    else
+      match ratCoeffArray? as with
+      | some ras => rsolveConstCoeff ras zero y idx
+      | none =>
+        if as.size == 2 then
+          rsolveFirstOrderVar as[0]! as[1]! zero y idx
+        else
+          throw "rsolve: variable coefficients are only supported for first-order recurrences"
+
+/-- Parameter name for a summand `F` besides the index `k`. -/
+def inferSumParam (F lo hi : Expr) (k : String) : String :=
+  let vs :=
+    (freeVars F ++ freeVars lo ++ freeVars hi).filter (fun v => v != k)
+  if vs.contains "n" then "n"
+  else match vs with | v :: _ => v | [] => "n"
+
+/-- Evaluate `∑_{k=lo}^{hi} F` at a numeric parameter value. -/
+def evalSumAt (F : Expr) (k n : String) (lo hi : Expr) (nVal : Int) : Option Expr :=
+  let Fn := subst F n (ofInt nVal)
+  let lo' := subst lo n (ofInt nVal)
+  let hi' := subst hi n (ofInt nVal)
+  match asIntConstExpr lo', asIntConstExpr hi' with
+  | some a, some b => sumBrute Fn k a b
+  | _, _ => none
+
+/--
+  Closed form for `∑_{k=lo}^{hi} F` via Zeilberger + `rsolve`, when
+  `F` is hypergeometric in `k` and a discrete parameter (usually `n`).
+-/
+def zeilbergerSum (F : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+  let n := inferSumParam F lo hi k
+  if n == k || !dependsOn F n then none
+  else
+    match zeilbergerOp? F n k with
+    | none => none
+    | some bs =>
+      match rsolveHomOp bs "f" n with
+      | .error _ => none
+      | .ok sol =>
+        match asEquation? sol with
+        | none => none
+        | some (lhs, rhs) =>
+          if lhs != var "f" then none
+          else
+            let cs := collectOdeCs rhs
+            if cs.isEmpty then some (simplify rhs)
+            else
+              let ics : Option (List Expr) :=
+                Id.run do
+                  let mut out : List Expr := []
+                  for t in [:cs.length] do
+                    match evalSumAt F k n lo hi (Int.ofNat t) with
+                    | none => return none
+                    | some v => out := out ++ [v]
+                  some out
+              match ics with
+              | none => none
+              | some ics =>
+                match applyRecICs sol "f" n ics with
+                | .error _ => none
+                | .ok sol' =>
+                  match asEquation? sol' with
+                  | some (_, r) => some (simplify r)
+                  | none => none
+
+/-- `sumFinite`, then Zeilberger if that fails. -/
+def sumClosedForm (body : Expr) (k : String) (lo hi : Expr) : Except String Expr :=
+  match sumFinite body k lo hi with
+  | some s => pure s
+  | none =>
+    match zeilbergerSum body k lo hi with
+    | some s => pure s
+    | none => throw s!"no closed form for sum over {k} of {body}"
 
 /-- Dispatch `rsolve(eq, …)` from parsed arguments. -/
 def rsolveFromArgs (e : Expr) (args : List Expr) : Except String Expr :=

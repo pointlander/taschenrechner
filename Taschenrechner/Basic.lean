@@ -25,6 +25,7 @@ import Taschenrechner.Integrate
 import Taschenrechner.Series
 import Taschenrechner.Limit
 import Taschenrechner.Gosper
+import Taschenrechner.Zeilberger
 import Taschenrechner.Sum
 import Taschenrechner.ODE
 import Taschenrechner.Recurrence

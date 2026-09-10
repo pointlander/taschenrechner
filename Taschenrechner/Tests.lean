@@ -1352,6 +1352,12 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "product(k/(k+1), k, 1, n)" with
   | .ok e => equivNF e (div (1:Expr) (add (var "n") (1:Expr)))
   | _ => false
+#guard parseEq "binom(5,2)" (10 : Expr)
+#guard parseEq "choose(6,3)" (20 : Expr)
+#guard
+  match parse "sum(binom(n,k), k, 0, n)" with
+  | .ok e => equivNF (simplify (subst e "n" (ofInt 5))) (ofInt 32)
+  | _ => false
 -- PR O: second-order ODE & linear systems
 #guard
   match parse "dsolve(y'' + y = 0)" with

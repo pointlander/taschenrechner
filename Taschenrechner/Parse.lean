@@ -278,6 +278,11 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "csc", [e] | "cosec", [e] => pure (Expr.csc e)
   | "cot", [e] | "cotan", [e] => pure (Expr.cot e)
   | "factorial", [e] | "fact", [e] => pure (Expr.factorial e)
+  | "binom", [n, k] | "binomial", [n, k] | "choose", [n, k] =>
+    match asNat? (simplify n), asNat? (simplify k) with
+    | some nn, some kk => pure (ofNat (natBinom nn kk))
+    | _, _ =>
+      pure (div (factorial n) (mul (factorial k) (factorial (sub n k))))
   | "gamma", [e] | "gammafn", [e] => pure (Expr.gamma e)
   | "floor", [e] => pure (Expr.floor e)
   | "if", [c, t, e] | "ite", [c, t, e] => pure (Expr.ite c t e)
@@ -713,15 +718,15 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       match asVarName a, asVarName b with
       | .ok k, .error _ =>
         -- sum(k, lo, hi, body)
-        sumFiniteExpr d k b c
+        sumClosedForm d k b c
       | .error _, .ok k =>
         -- sum(body, k, lo, hi)
-        sumFiniteExpr a k c d
+        sumClosedForm a k c d
       | .ok k1, .ok k2 =>
         -- both variables: prefer sum(k, lo, hi, body) if d depends on k1
-        if dependsOn d k1 then sumFiniteExpr d k1 b c
-        else if dependsOn a k2 then sumFiniteExpr a k2 c d
-        else sumFiniteExpr d k1 b c
+        if dependsOn d k1 then sumClosedForm d k1 b c
+        else if dependsOn a k2 then sumClosedForm a k2 c d
+        else sumClosedForm d k1 b c
       | .error _, .error _ =>
         throw "sum: expected a free index variable (sum(expr, k, lo, hi) or sum(k, lo, hi, expr))"
   | "product", [a, b, c, d] | "prod", [a, b, c, d] => do
@@ -744,7 +749,10 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
   | "if", _ | "ite", _ =>
       throw s!"{name} expects if(cond, then, else), got {args.length} args"
   | "sec", _ | "csc", _ | "cosec", _ | "cot", _ | "cotan", _
-  | "factorial", _ | "fact", _ | "gamma", _ | "gammafn", _ | "floor", _
+  | "factorial", _ | "fact", _ | "gamma", _ | "gammafn", _ | "floor", _ =>
+      throw s!"{name} expects 1 argument, got {args.length}"
+  | "binom", _ | "binomial", _ | "choose", _ =>
+      throw s!"{name} expects 2 arguments, got {args.length}"
   | "re", _ | "im", _ | "conj", _ | "abs", _ | "cabs", _
   | "rewrite", _ | "hyperexpand", _ | "hexpand", _
   | "simplify", _ | "expand", _ | "euler", _ | "cancel", _
@@ -904,6 +912,7 @@ def isBuiltinName (name : String) : Bool :=
     || n == "sqrt" || n == "atan" || n == "arctan" || n == "asin" || n == "arcsin"
     || n == "acos" || n == "arccos" || n == "sec" || n == "csc" || n == "cosec"
     || n == "cot" || n == "cotan" || n == "factorial" || n == "fact"
+    || n == "binom" || n == "binomial" || n == "choose"
     || n == "gamma" || n == "gammafn" || name == "Γ" || n == "floor" || n == "if" || n == "ite"
     || n == "piecewise" || n == "pw" || n == "re" || n == "im" || n == "conj"
     || n == "abs" || n == "cabs" || n == "simplify" || n == "expand" || n == "cancel"
@@ -1445,7 +1454,8 @@ def helpText : String :=
                 limit(e, a)  limit(e, x, a[, side])  limleft/limright\n\
                 limit(sin(x)/x, 0)  series at 0;  (1+1/x)^x at ∞ via t=1/x\n\
                 poleorder(e, a)  classify(e, a)   (side: 1/right or -1/left)\n\
-                ∑ / sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper\n\
+                ∑ / sum(expr, k, lo, hi)  Faulhaber (Bernoulli) / geometric / Gosper / Zeilberger\n\
+                binom(n,k) / binomial / choose   n!/(k!(n−k)!);  ∑ binom(n,k) via Zeilberger\n\
                 ∏ / product(expr, k, lo, hi)  / prod(...)  Pochhammer/Γ, geometric r^k\n\
                 dsolve(eq)  (y'/yp linear, Bernoulli, homogeneous, exact M dx+N dy=0, separable; y''/ypp; C/C1/C2)\n\
                 dsolve(y''+y=0)  2nd-order const-coeff;  dsolve(y''+y=sin(x))\n\

@@ -26,7 +26,7 @@ A small **computer algebra system** written in [Lean 4](https://lean-lang.org/),
 - Symbolic differentiation (product, chain, power, elementary functions)
 - Symbolic indefinite & definite integration (table lookup, power rule, reverse chain rule, linear composites, integration by parts)
 - Matrices: RREF, rank, nullspace, solve, **charpoly / eigenvalues / diagonalize / Jordan / expm**
-- **Finite sums** `∑` / `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric) and **products** `∏` / `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''` with poly/`sin`/`cos` forcing and **n-th order ICs**, linear systems `Y'=AY` / **`Y'=AY+g`** via `expm`); **recurrences** `rsolve` (const-coeff `y(n+k)`, first-order `a(n)` via `product`, poly/`q^n` forcing, ICs, systems `Y(n+1)=A Y(n)` / **`+g`**)
+- **Finite sums** `∑` / `sum` (Faulhaber via Bernoulli, geometric, **Gosper** hypergeometric, **Zeilberger** definite `binom`) and **products** `∏` / `product` / `prod` (Pochhammer / `Γ`, geometric `r^k`, telescoping rationals); **ODEs** `dsolve` (1st-order linear / Bernoulli / homogeneous / **exact** `M dx+N dy=0` / separable, 2nd-order const-coeff including **`y''+y=sin(x)`**, **Cauchy–Euler**, **reduction of order**, **higher-order const-coeff** `y'''` with poly/`sin`/`cos` forcing and **n-th order ICs**, linear systems `Y'=AY` / **`Y'=AY+g`** via `expm`); **recurrences** `rsolve` (const-coeff `y(n+k)`, first-order `a(n)` via `product`, poly/`q^n` forcing, ICs, systems `Y(n+1)=A Y(n)` / **`+g`**)
 - Constant **`π`** (`pi`); trig `solve` families annotated **`k ∈ ℤ`**
 
 ## Build & run
@@ -77,6 +77,7 @@ Compile-time guard tests live in `Taschenrechner/Tests.lean` and each `*Regressi
 | `Taschenrechner.Series` | Taylor / Maclaurin / Laurent + truncated series arithmetic |
 | `Taschenrechner.Limit` | Limits (two-sided/one-sided, poles, `classify`, series at 0/∞) |
 | `Taschenrechner.Gosper` | Hypergeometric summation (Gosper); `sum` of rationals and `p(k)·r^k` |
+| `Taschenrechner.Zeilberger` | Creative telescoping (Celine); definite hypergeometric sums e.g. `∑ binom(n,k)` |
 | `Taschenrechner.Sum` | Finite sums (Faulhaber / Bernoulli, geometric, Gosper) and products (Pochhammer / `Γ`, geometric, telescoping) |
 | `Taschenrechner.ODE` | `dsolve`: 1st-order linear / Bernoulli / homogeneous / exact `M dx+N dy=0` / separable, 2nd-order const-coeff + nonhomogeneous `sin`/`cos`, Cauchy–Euler, reduction of order, higher-order const-coeff, systems `Y'=AY` and `Y'=AY+g` |
 | `Taschenrechner.Recurrence` | `rsolve`: const-coeff recurrences `y(n+k)`, first-order `a(n)`, poly/`q^n` forcing, ICs, systems `Y(n+1)=A Y(n)` / `+g` via Jordan `A^n` |
@@ -259,7 +260,8 @@ lake exe taschenrechner 'jordan([0, 1; 0, 0])'         # → [P, J]
 
 | Form | What it does |
 |------|----------------|
-| `∑` / `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **numeric** if bounds are ints) |
+| `∑` / `sum(expr, k, lo, hi)` | ∑_{k=lo}^{hi} expr (Faulhaber via Bernoulli for all `k^m`; geometric; **Gosper** for hypergeometric `t(k)`; **Zeilberger** for definite hypergeometric in a parameter, e.g. `binom(n,k)`; **numeric** if bounds are ints) |
+| `binom(n,k)` / `binomial` / `choose` | `n! / (k! (n−k)!)` |
 | `sum(k, lo, hi, expr)` | Same, index-first order |
 | `∏` / `product(expr, k, lo, hi)` / `prod(...)` | ∏_{k=lo}^{hi} expr (Pochhammer / `Γ` for linear factors; geometric `r^k`; telescoping rationals; **numeric** if bounds are ints) |
 | `product(k, lo, hi, expr)` | Same, index-first order |
@@ -293,6 +295,8 @@ lake exe taschenrechner 'sum(k^7, k, 1, n)'            # Faulhaber (Bernoulli)
 lake exe taschenrechner 'sum(k^10, k, 1, 5)'           # numeric via closed form
 lake exe taschenrechner 'sum(1/(k*(k+1)), k, 1, n)'    # Gosper → n/(n+1)
 lake exe taschenrechner 'sum(k*2^k, k, 1, n)'          # Gosper → (n−1)2^{n+1}+2
+lake exe taschenrechner 'sum(binom(n,k), k, 0, n)'     # Zeilberger → 2^n
+lake exe taschenrechner 'binom(5,2)'                   # → 10
 lake exe taschenrechner 'product(k, 1, n, k)'          # → n!
 lake exe taschenrechner 'product(k/(k+1), k, 1, n)'    # → 1/(n+1)
 lake exe taschenrechner 'product(k, 0, n, 2^k)'        # → 2^{n(n+1)/2}

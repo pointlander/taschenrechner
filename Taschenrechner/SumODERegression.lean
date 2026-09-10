@@ -143,6 +143,14 @@ def suite : List Case := [
   { name := "sum k^10 Faulhaber numeric"
     input := "sum(k^10, k, 1, 5)"
     check := fun e => simplify e == ofInt 10874275 },
+  { name := "Zeilberger sum binom(n,k)"
+    input := "sum(binom(n,k), k, 0, n)"
+    check := fun e =>
+      equivNF (simplify (subst e "n" (ofInt 4))) (ofInt 16)
+        && equivNF (simplify (subst e "n" (ofInt 0))) (1:Expr) },
+  { name := "binom(5,2) numeric"
+    input := "binom(5,2)"
+    check := fun e => e == ofInt 10 },
   { name := "Gosper 1/(k(k+1))"
     input := "sum(1/(k*(k+1)), k, 1, n)"
     check := fun e => equivNF e (div (var "n") (add (var "n") one)) },
