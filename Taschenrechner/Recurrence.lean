@@ -451,13 +451,25 @@ def recParticular (as : Array RatConst) (g : Expr) (idx : String) : Except Strin
 /-- Dummy summation/product index, distinct from `idx`. -/
 def recDummy (_idx : String) : String := "__k"
 
-/-- Homogeneous factor `Π_{k=0}^{n−1} a(k)`. -/
-def recHomFactor (a : Expr) (idx : String) : Except String Expr :=
+/-- Homogeneous factor `Π_{k=lo}^{n−1} a(k)`, trying `lo = 0,1,…` if `a` has a pole at 0. -/
+partial def recHomFactor (a : Expr) (idx : String) : Except String Expr :=
   let k := recDummy idx
   let ak := subst a idx (var k)
-  match prodFinite ak k zero (sub (var idx) one) with
-  | some p => pure (simplify p)
-  | none => throw s!"rsolve: no closed form for ∏ {a}"
+  let hi := sub (var idx) one
+  let rec tryLo (lo : Nat) : Except String Expr :=
+    if lo > 4 then
+      throw s!"rsolve: no closed form for ∏ {a}"
+    else
+      match prodFinite ak k (ofNat lo) hi with
+      | none => tryLo (lo + 1)
+      | some p =>
+        let p := simplify p
+        if isZeroExpr p idx && lo < 4 then tryLo (lo + 1)
+        else pure p
+  -- Rational `a(n)` often has a pole at 0; start the product at 1 then.
+  match asPolynomialIn? a idx with
+  | some _ => tryLo 0
+  | none => tryLo 1
 
 /--
   First-order `A(n) y(n+1) + B(n) y(n) + D(n) = 0`,
@@ -529,8 +541,9 @@ def rsolveScalar (e : Expr) (y idx : String) : Except String Expr :=
             else
               throw "rsolve: variable coefficients are only supported for first-order recurrences"
 
-/-- Apply `ics[k] = y(k)` for `k = 0, 1, …`. -/
-def applyRecICs (sol : Expr) (y idx : String) (ics : List Expr) : Except String Expr :=
+/-- Apply `ics[k] = y(n0+k)` (default `n0 = 0`). -/
+def applyRecICs (sol : Expr) (y idx : String) (ics : List Expr) (n0 : Nat := 0) :
+    Except String Expr :=
   match asEquation? sol with
   | none => throw "rsolve IC: expected explicit solution y = …"
   | some (lhs, rhs) =>
@@ -540,13 +553,13 @@ def applyRecICs (sol : Expr) (y idx : String) (ics : List Expr) : Except String 
       if cs.isEmpty then
         pure (tidyODESol sol)
       else if ics.length != cs.length then
-        throw s!"rsolve IC: expected {cs.length} initial values y(0), y(1), …, got {ics.length}"
+        throw s!"rsolve IC: expected {cs.length} initial values y({n0}), …, got {ics.length}"
       else
         let eqs : List Expr :=
           Id.run do
             let mut out : List Expr := []
             for k in [:ics.length] do
-              let atk := simplify (subst rhs idx (ofNat k))
+              let atk := simplify (subst rhs idx (ofNat (n0 + k)))
               out := out ++ [eq atk ics[k]!]
             pure out
         match solveLinearSystem eqs (some cs) with
@@ -772,10 +785,21 @@ def evalSumAt (F : Expr) (k n : String) (lo hi : Expr) (nVal : Int) : Option Exp
   Closed form for `∑_{k=lo}^{hi} F` via Zeilberger + `rsolve`, when
   `F` is hypergeometric in `k` and a discrete parameter (usually `n`).
 -/
-def zeilbergerSum (F : Expr) (k : String) (lo hi : Expr) : Option Expr :=
+partial def zeilbergerSum (F : Expr) (k : String) (lo hi : Expr) : Option Expr :=
   let n := inferSumParam F lo hi k
   if n == k || !dependsOn F n then none
   else
+    let bt : Option Expr :=
+      if isZeroExpr (sub (simplify lo) zero) && simplify hi == var n then
+        binomTheorem? F n k
+      else none
+    match bt with
+    | some s => some (simplify s)
+    | none =>
+    -- Celine/Mat.solve is costly when extra parameters (e.g. x in q^k) are present
+    let extra := (freeVars F).filter (fun v => v != n && v != k)
+    if !extra.isEmpty then none
+    else
     match zeilbergerOp? F n k with
     | none => none
     | some bs =>
@@ -790,23 +814,30 @@ def zeilbergerSum (F : Expr) (k : String) (lo hi : Expr) : Option Expr :=
             let cs := collectOdeCs rhs
             if cs.isEmpty then some (simplify rhs)
             else
-              let ics : Option (List Expr) :=
-                Id.run do
-                  let mut out : List Expr := []
-                  for t in [:cs.length] do
-                    match evalSumAt F k n lo hi (Int.ofNat t) with
-                    | none => return none
-                    | some v => out := out ++ [v]
-                  some out
-              match ics with
-              | none => none
-              | some ics =>
-                match applyRecICs sol "f" n ics with
-                | .error _ => none
-                | .ok sol' =>
-                  match asEquation? sol' with
-                  | some (_, r) => some (simplify r)
-                  | none => none
+              let rec tryStart (s : Nat) : Option Expr :=
+                if s > 4 then none
+                else
+                  let ics : Option (List Expr) :=
+                    Id.run do
+                      let mut out : List Expr := []
+                      for t in [:cs.length] do
+                        match evalSumAt F k n lo hi (Int.ofNat (s + t)) with
+                        | none => return none
+                        | some v => out := out ++ [v]
+                      some out
+                  match ics with
+                  | none => tryStart (s + 1)
+                  | some ics =>
+                    match applyRecICs sol "f" n ics s with
+                    | .error _ => tryStart (s + 1)
+                    | .ok sol' =>
+                      match asEquation? sol' with
+                      | some (_, r) =>
+                        if (collectOdeCs r).isEmpty && !isZeroExpr r n then
+                          some (simplify r)
+                        else tryStart (s + 1)
+                      | none => tryStart (s + 1)
+              tryStart 0
 
 /-- `sumFinite`, then Zeilberger if that fails. -/
 def sumClosedForm (body : Expr) (k : String) (lo hi : Expr) : Except String Expr :=
