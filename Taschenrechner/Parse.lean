@@ -735,52 +735,7 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
         else prodFiniteExpr d k1 b c
       | .error _, .error _ =>
         throw "product: expected a free index variable (product(expr, k, lo, hi) or product(k, lo, hi, expr))"
-  | "dsolve", [e] =>
-      -- scalar ODE, or square matrix A for Y' = A Y
-      match asMat? e with
-      | some A => dsolveLinSys A "x"
-      | none => dsolve e "y" "x"
-  | "dsolve", [e, a] => do
-      match asMat? e, asMat? a with
-      | some A, some V =>
-        if matDependsOn V "x" then
-          dsolveLinSysNonhom A V "x"
-        else
-          dsolveLinSysIC A V "x"
-      | _, _ =>
-        let y ← asVarName a
-        dsolve e y "x"
-  | "dsolve", [e, a, b] => do
-      match asMat? e with
-      | some A =>
-        match asMat? a, asMat? b with
-        | some g, some Y0 => dsolveLinSysNonhomIC A g Y0 "x"
-        | some g, none =>
-          match asVarName b with
-          | .ok x => dsolveLinSysNonhom A g x
-          | .error _ => throw "dsolve: expected dsolve(A, g, Y0) or dsolve(A, g, x)"
-        | none, _ =>
-          match asVarName a, asVarName b with
-          | .ok y, .ok x => dsolve e y x
-          | _, _ => dsolveIC e "y" "x" a b
-      | none =>
-        -- dsolve(eq, y, x)  OR  dsolve(eq, x0, y0) for y(x0)=y0
-        match asVarName a, asVarName b with
-        | .ok y, .ok x => dsolve e y x
-        | _, _ => dsolveIC e "y" "x" a b
-  | "dsolve", [e, a, b, c] => do
-      -- dsolve(eq, y, x0, y0)  OR  dsolve(eq, x0, y0, yp0) second-order IC
-      match asVarName a with
-      | .ok y => dsolveIC e y "x" b c
-      | .error _ => dsolveIC2 e "y" "x" a b c
-  | "dsolve", [e, y, x, x0, y0] => do
-      let y ← asVarName y
-      let x ← asVarName x
-      dsolveIC e y x x0 y0
-  | "dsolve", [e, y, x, x0, y0, yp0] => do
-      let y ← asVarName y
-      let x ← asVarName x
-      dsolveIC2 e y x x0 y0 yp0
+  | "dsolve", e :: rest => dsolveFromArgs e rest
   | "sin", _ | "cos", _ | "tan", _ | "sinh", _ | "cosh", _ | "tanh", _
   | "exp", _ | "ln", _ | "log", _ | "sqrt", _
   | "atan", _ | "arctan", _ | "asin", _ | "arcsin", _ | "acos", _ | "arccos", _
@@ -832,8 +787,8 @@ def applyCall (name : String) (args : List Expr) (env : Env := {}) : Except Stri
       throw s!"sum expects sum(expr, k, lo, hi) or sum(k, lo, hi, expr), got {args.length} args"
   | "product", _ | "prod", _ =>
       throw s!"product expects product(expr, k, lo, hi) or product(k, lo, hi, expr), got {args.length} args"
-  | "dsolve", _ =>
-      throw s!"dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(A,g)|dsolve(A,g,Y0)|dsolve(A,g,x)|dsolve(eq,x0,y0)|…, got {args.length} args"
+  | "dsolve", [] =>
+      throw "dsolve expects dsolve(eq)|dsolve(A)|dsolve(A,Y0)|dsolve(A,g)|dsolve(A,g,Y0)|dsolve(A,g,x)|dsolve(eq,x0,y0[, yp0, …])"
   | "subst", _ | "subs", _ =>
       throw s!"{name} expects 3 arguments: subst(expr, var, value), got {args.length}"
   | "eval", _ | "at", _ =>
@@ -1476,10 +1431,11 @@ def helpText : String :=
                 dsolve(x^2*y''+x*yp-y=0)  Cauchy–Euler (indicial; x^k RHS)\n\
                 dsolve((x+1)*y''+yp=0)  reduction of order (missing y / missing x)\n\
                 dsolve(y'''-yp=0)  higher-order const-coeff (y'''/yppp/d3y)\n\
+                dsolve(y'''+yp=sin(x))  poly / sin/cos / VoP forcing\n\
                 dsolve(A)  Y'=A Y via expm (Jordan; defective OK)\n\
                 dsolve(A, g)  Y'=A Y+g (g depends on x);  dsolve(A, g, Y0)  IC\n\
                 dsolve(A, g, x)  constant g with independent x\n\
-                dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0)  ICs;  dsolve(A, Y0)\n\
+                dsolve(eq, x0, y0)  dsolve(eq, x0, y0, yp0[, ypp0, …])  ICs;  dsolve(A, Y0)\n\
                 simplify(e)  expand(e)  cancel(e)  together(e)\n\
                 nf(e)/normal(e)  — ℚ(x) and ℚ(√d)(x) (e.g. nf((x+sqrt(2))*(x-sqrt(2))))\n\
                 euler(e)\n\

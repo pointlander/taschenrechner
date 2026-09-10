@@ -415,6 +415,35 @@ def suite : List Case := [
             &&
             let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
             equivNF yp (var "x")
+      | none => false },
+  { name := "y''' − y' ICs"
+    input := "dsolve(y''' - yp = 0, 0, 2, 0, 2)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && !dependsOn r "C2" && !dependsOn r "C3"
+            && equivNF (simplify (subst r "x" (0:Expr))) (2:Expr)
+            && equivNF (simplify (subst (diff r "x") "x" (0:Expr))) (0:Expr)
+      | none => false },
+  { name := "y''' + y' = x poly forcing"
+    input := "dsolve(y''' + yp = x)"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1"
+            &&
+            let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            equivNF yp (div (pow x (ofInt 2)) (ofInt 2))
+      | none => false },
+  { name := "y''' + y' = sin(x) trig forcing"
+    input := "dsolve(y''' + yp = sin(x))"
+    check := fun e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C3"
+            &&
+            let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            equivNF yp (mul (ofRat ⟨-1, 2⟩) (mul x (sin x)))
       | none => false }
 ]
 

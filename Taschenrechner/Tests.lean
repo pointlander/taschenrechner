@@ -1447,6 +1447,37 @@ def parseEq (s : String) (expected : Expr) : Bool :=
       | none => false
   | _ => false
 #guard
+  match parse "dsolve(y''' - yp = 0, 0, 2, 0, 2)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          !dependsOn r "C1" && !dependsOn r "C2" && !dependsOn r "C3"
+            && equivNF (simplify (subst r "x" (0:Expr))) (2:Expr)
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(y''' + yp = x)" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1"
+            &&
+            let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            equivNF yp (div (pow x (ofInt 2)) (ofInt 2))
+      | none => false
+  | _ => false
+#guard
+  match parse "dsolve(y''' + yp = sin(x))" with
+  | .ok e =>
+      match asEquation? e with
+      | some (_, r) =>
+          dependsOn r "C1" && dependsOn r "C3"
+            &&
+            let yp := simplify (subst (subst (subst r "C1" (0:Expr)) "C2" (0:Expr)) "C3" (0:Expr))
+            equivNF yp (mul (ofRat ⟨-1, 2⟩) (mul x (sin x)))
+      | none => false
+  | _ => false
+#guard
   match parse "solve(sin(x)=0)" with
   | .ok e => (prettySolution e).contains "ℤ"
   | _ => false

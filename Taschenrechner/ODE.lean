@@ -11,7 +11,8 @@
   * Cauchy–Euler: a x² y'' + b x y' + c y = g(x)  (indicial r(r−1)+b r+c=0;
     x^k / polynomial RHS via undetermined coefficients; else VoP)
   * Reduction of order: missing y → v=y'; missing x → y''=v dv/dy
-  * Higher-order constant-coeff: aₙ y^{(n)}+…+a₀ y = g (g const; n≥3)
+  * Higher-order constant-coeff: aₙ y^{(n)}+…+a₀ y = g (poly / sin/cos / VoP; n≥3);
+    ICs y(x0), y'(x0), …, y^{(n−1)}(x0)
   * Linear systems: Y' = A Y  → Y = expm(A x) · C  (via Jordan form);
     Y' = A Y + g(x) via variation of parameters (constant g: Yp = −A⁻¹ g)
 -/
@@ -22,6 +23,7 @@ import Taschenrechner.Integrate
 import Taschenrechner.Normal
 import Taschenrechner.Eval
 import Taschenrechner.Solve
+import Taschenrechner.Poly
 import Taschenrechner.Matrix
 import Taschenrechner.Eigen
 
@@ -1122,7 +1124,14 @@ where
   | mul rest (const k) => go (mul (const k) rest)
   | _ => none
 
-/-- `e` as `cc·cos(ωx) + sc·sin(ωx)`. -/
+/-- True when `e` contains a trig function (so it is not a plain coefficient). -/
+partial def hasTrigFun : Expr → Bool
+  | sin _ | cos _ | tan _ | sec _ | csc _ | cot _ => true
+  | add a b | mul a b => hasTrigFun a || hasTrigFun b
+  | pow a b => hasTrigFun a || hasTrigFun b
+  | _ => false
+
+/-- `e` as `cc·cos(ωx) + sc·sin(ωx)` (`cc`,`sc` may involve `x`). -/
 partial def collectSinCos (e : Expr) (wX : Expr) : Option (Expr × Expr) :=
   let e := simplify e
   if e == zero then some (zero, zero)
@@ -1139,6 +1148,17 @@ partial def collectSinCos (e : Expr) (wX : Expr) : Option (Expr × Expr) :=
         some (simplify (mul (const k) c), simplify (mul (const k) s))
       | none => none
     | mul rest (const k) => collectSinCos (mul (const k) rest) wX
+    | mul a b =>
+      match collectSinCos a wX with
+      | some (c, s) =>
+        if hasTrigFun b then none
+        else some (simplify (mul b c), simplify (mul b s))
+      | none =>
+        match collectSinCos b wX with
+        | some (c, s) =>
+          if hasTrigFun a then none
+          else some (simplify (mul a c), simplify (mul a s))
+        | none => none
     | cos arg =>
       if simplify arg == simplify wX then some (one, zero) else none
     | sin arg =>
@@ -1744,9 +1764,225 @@ def linearComboBasis (us : List Expr) : Expr :=
       acc := add acc (mul (odeCi i) us[i]!)
     simplify acc
 
+/-- `Σ a_k y^{(k)}`. -/
+def applyConstCoeff (as : Array RatConst) (yp : Expr) (x : String) : Expr :=
+  Id.run do
+    let mut acc : Expr := zero
+    for k in [:as.size] do
+      if !(as[k]!.isZero) then
+        acc := add acc (mul (ofRat as[k]!) (diffN yp k x))
+    simplify acc
+
+/-- First index `k` with `as[k] ≠ 0` (multiplicity of characteristic root 0). -/
+def firstNonzeroCoeff (as : Array RatConst) : Nat :=
+  Id.run do
+    for k in [:as.size] do
+      if !(as[k]!.isZero) then return k
+    pure 0
+
+/--
+  Undetermined coefficients for polynomial forcing.
+  If `r = 0` has multiplicity `s`, ansatz is `x^s (A₀ + ⋯ + Aₘ x^m)`.
+-/
+def particularPolyN (as : Array RatConst) (g : Expr) (x : String) : Option Expr :=
+  match asPolynomialIn? (simplify (Expr.cancel g)) x with
+  | none => none
+  | some p =>
+    if Poly.isZero p then some zero
+    else
+      let s := firstNonzeroCoeff as
+      let m := (Poly.strip p).deg.toNat
+      let nA := m + 1
+      let names : Array String :=
+        Id.run do
+          let mut ns : Array String := Array.empty
+          for i in [:nA] do
+            ns := ns.push s!"__ucP{i}"
+          pure ns
+      let xv := var x
+      let ypBody : Expr :=
+        Id.run do
+          let mut acc : Expr := zero
+          for i in [:nA] do
+            let xk := if i == 0 then one else pow xv (ofNat i)
+            acc := add acc (mul (var names[i]!) xk)
+          pure acc
+      let yp0 := if s == 0 then ypBody else mul (pow xv (ofNat s)) ypBody
+      let residual := simplify (sub (applyConstCoeff as yp0 x) g)
+      match affineForm residual names.toList with
+      | none => none
+      | some (cA, k) =>
+        let cPolys : Option (Array Poly) :=
+          Id.run do
+            let mut ps : Array Poly := Array.empty
+            for i in [:nA] do
+              match asPolynomialIn? cA[i]! x with
+              | none => return none
+              | some pi => ps := ps.push pi
+            some ps
+        match cPolys, asPolynomialIn? k x with
+        | some cps, some kp =>
+          Id.run do
+            let mut maxD : Nat := (Poly.strip kp).deg.toNat
+            for i in [:nA] do
+              let di := (Poly.strip cps[i]!).deg.toNat
+              if di > maxD then maxD := di
+            let mut rowsA : Array (Array Expr) := Array.empty
+            let mut rowsB : Array (Array Expr) := Array.empty
+            for pwr in [:maxD + 1] do
+              let mut row : Array Expr := Array.empty
+              let mut any := false
+              for i in [:nA] do
+                let cij := Poly.coeff cps[i]! pwr
+                if !(cij.isZero) then any := true
+                row := row.push (ofRat cij)
+              let kj := Poly.coeff kp pwr
+              if !(kj.isZero) then any := true
+              if any then
+                rowsA := rowsA.push row
+                rowsB := rowsB.push #[ofRat (RatConst.neg kj)]
+            if rowsA.isEmpty then
+              let mut yp := yp0
+              for i in [:nA] do
+                yp := subst yp names[i]! zero
+              pure (some (simplify yp))
+            else
+              match Mat.solve rowsA rowsB with
+              | .unique sol =>
+                let mut yp := yp0
+                for i in [:nA] do
+                  yp := subst yp names[i]! (simplify (Mat.get! sol i 0))
+                pure (some (simplify yp))
+              | _ => pure none
+        | _, _ => none
+
+/--
+  Undetermined coefficients for `amp · sin/cos(ωx)`.
+  Tries `x^s (A cos + B sin)` for `s = 0…n` (resonance = multiplicity of `±iω`).
+-/
+def particularTrigN (as : Array RatConst) (amp : Expr) (ω : RatConst) (isSin : Bool)
+    (x : String) : Option Expr :=
+  let n := leadingDerivOrder as
+  let xv := var x
+  let wX := if ω.isOne then xv else mul (ofRat ω) xv
+  let target := if isSin then mul amp (sin wX) else mul amp (cos wX)
+  Id.run do
+    for s in [:n + 1] do
+      let UA := var "__ucA"
+      let UB := var "__ucB"
+      let body := add (mul UA (cos wX)) (mul UB (sin wX))
+      let yp0 :=
+        if s == 0 then body
+        else mul (if s == 1 then xv else pow xv (ofNat s)) body
+      let L := applyConstCoeff as yp0 x
+      let residual := expand (simplify (sub L target))
+      match collectSinCos residual wX with
+      | none => pure ()
+      | some (cc, sc) =>
+        match affineForm cc ["__ucA", "__ucB"], affineForm sc ["__ucA", "__ucB"] with
+        | some (cA, c0), some (sA, s0) =>
+          if dependsOn cA[0]! x || dependsOn cA[1]! x
+              || dependsOn sA[0]! x || dependsOn sA[1]! x
+              || dependsOn c0 x || dependsOn s0 x then
+            pure ()
+          else
+            let M : Array (Array Expr) :=
+              #[#[cA[0]!, cA[1]!], #[sA[0]!, sA[1]!]]
+            let rhs : Array (Array Expr) :=
+              #[#[simplify (neg c0)], #[simplify (neg s0)]]
+            match Mat.solve M rhs with
+            | .unique sol =>
+              let Av := simplify (Mat.get! sol 0 0)
+              let Bv := simplify (Mat.get! sol 1 0)
+              if dependsOn Av x || dependsOn Bv x then
+                pure ()
+              else
+                let yp := subst (subst yp0 "__ucA" Av) "__ucB" Bv
+                return some (simplify yp)
+            | _ => pure ()
+        | _, _ => pure ()
+    pure none
+
+/-- Wronskian matrix `W_{ij} = u_j^{(i)}`. -/
+def wronskianMat (us : List Expr) (x : String) : Array (Array Expr) :=
+  let n := us.length
+  Id.run do
+    let mut rows : Array (Array Expr) := Array.empty
+    for i in [:n] do
+      let mut row : Array Expr := Array.empty
+      for j in [:n] do
+        row := row.push (diffN us[j]! i x)
+      rows := rows.push row
+    pure rows
+
+/-- Variation of parameters for monic `y^{(n)}+… = r` with basis `us`. -/
+def variationOfParametersN (us : List Expr) (r : Expr) (x : String) : Except String Expr := do
+  let n := us.length
+  if n == 0 then
+    throw "dsolve: empty fundamental set"
+  else
+    let W := wronskianMat us x
+    match Mat.det W with
+    | none => throw "dsolve: Wronskian could not be formed"
+    | some d =>
+      let d := simplify d
+      if d == zero || isZeroExpr d x then
+        throw "dsolve: Wronskian vanished"
+      else
+        let b : Array (Array Expr) :=
+          Id.run do
+            let mut rows : Array (Array Expr) := Array.empty
+            for i in [:n] do
+              rows := rows.push #[if i + 1 == n then r else zero]
+            pure rows
+        match Mat.solve W b with
+        | .unique vp' =>
+          let mut acc : Expr := zero
+          for i in [:n] do
+            let vi' := simplify (Expr.cancel (Mat.get! vp' i 0))
+            let vi ←
+              match integrate vi' x with
+              | .success F _ => pure (simplify F)
+              | .notElementary msg =>
+                throw s!"dsolve: ∫ v{i+1}' not elementary: {msg}"
+              | .failure msg =>
+                throw s!"dsolve: ∫ v{i+1}' failed: {msg}"
+            acc := add acc (mul vi us[i]!)
+          pure (simplify acc)
+        | .general _ _ => throw "dsolve: Wronskian system is underdetermined"
+        | .inconsistent msg => throw s!"dsolve: Wronskian system inconsistent: {msg}"
+        | .error msg => throw s!"dsolve: {msg}"
+
+/-- Particular solution of `Σ a_k y^{(k)} = g` (g free of y). -/
+def particularN (as : Array RatConst) (g : Expr) (us : List Expr) (x : String) :
+    Except String Expr := do
+  let g := simplify g
+  if g == zero || isZeroExpr g x then
+    pure zero
+  else
+    match asRatConstExpr? g with
+    | some G => particularConstN as G x
+    | none =>
+      match particularPolyN as g x with
+      | some yp => pure yp
+      | none =>
+        let ypTrig :=
+          match matchTrigForce? g x with
+          | some (amp, ω, isSin) => particularTrigN as amp ω isSin x
+          | none => none
+        match ypTrig with
+        | some yp => pure yp
+        | none =>
+          let n := leadingDerivOrder as
+          match RatConst.inv as[n]! with
+          | none => throw "dsolve: leading coefficient is zero"
+          | some invA =>
+            let rMonic := simplify (mul (ofRat invA) g)
+            variationOfParametersN us rMonic x
+
 /--
   Constant-coefficient `Σ a_k y^{(k)} + D = 0` of order `n ≥ 3`.
-  Homogeneous, or constant forcing.
+  Homogeneous, polynomial / `sin`/`cos` forcing (undetermined coeff), else VoP.
 -/
 def dsolveConstCoeffN (as : Array RatConst) (D : Expr) (y x : String) : Except String Expr := do
   let n := leadingDerivOrder as
@@ -1766,18 +2002,9 @@ def dsolveConstCoeffN (as : Array RatConst) (D : Expr) (y x : String) : Except S
         throw s!"dsolve: expected {n} basis functions, got {us.length}"
       else
         let yh := linearComboBasis us
-        match asRatConstExpr? D with
-        | some d =>
-          if d.isZero then
-            pure (tidyODESol (eq (var y) yh))
-          else
-            let yp ← particularConstN as (RatConst.neg d) x
-            pure (tidyODESol (eq (var y) (simplify (add yh yp))))
-        | none =>
-          if D == zero then
-            pure (tidyODESol (eq (var y) yh))
-          else
-            throw "dsolve: higher-order const-coeff solver requires homogeneous or constant RHS"
+        let g := simplify (neg D)
+        let yp ← particularN as g us x
+        pure (tidyODESol (eq (var y) (simplify (add yh yp))))
 
 /-- Try constant-coefficient of order ≥ 3. -/
 def dsolveHigherOrder? (e : Expr) (y x : String) : Option (Except String Expr) :=
@@ -1998,7 +2225,7 @@ def dsolveLinSysNonhomIC (A g Y0 : Array (Array Expr)) (x : String := "x") :
   1. Second-order constant-coefficient (`y''` / `ypp`)
   2. Second-order Cauchy–Euler (`a x² y'' + b x y' + c y`)
   3. Reduction of order (missing `y` or missing `x`)
-  4. Higher-order constant-coefficient (`y'''` / `yppp` / `d3y`, …)
+  4. Higher-order constant-coefficient (`y'''` / `yppp` / `d3y`, …; poly / sin/cos / VoP)
   5. First-order linear (integrating factor)
   6. Separable first-order
   Matrix `A` → Y'=A Y; `dsolve(A,g)` → Y'=A Y+g
@@ -2030,40 +2257,150 @@ def dsolve (e : Expr) (y : String := "y") (x : String := "x") : Except String Ex
         | .error e2 => throw s!"{err}; also: {e2}"
       | none => dsolveFirstOrder e y x
 
+/-- Free ODE constants in a solution: `C`, or `C1, C2, …`. -/
+def collectOdeCs (e : Expr) : List String :=
+  if dependsOn e "C" && !dependsOn e "C1" then ["C"]
+  else
+    Id.run do
+      let mut out : List String := []
+      for i in [:maxYDerivOrder + 1] do
+        let n := s!"C{i + 1}"
+        if dependsOn e n then out := out ++ [n]
+      pure out
+
+/--
+  Apply `ics = [y(x0), y'(x0), …, y^{(n−1)}(x0)]` to an explicit `y = f(x, Cᵢ)`.
+-/
+def applyICs (sol : Expr) (y x : String) (x0 : Expr) (ics : List Expr) :
+    Except String Expr :=
+  match asEquation? sol with
+  | none => throw "dsolve IC: expected explicit solution y = …"
+  | some (lhs, rhs) =>
+    let cs := collectOdeCs (if lhs == var y then rhs else sol)
+    if cs == ["C"] && ics.length == 1 then
+      applyIC sol y x x0 ics[0]!
+    else if lhs != var y then
+      throw "dsolve IC: expected explicit y = … for higher-order ICs"
+    else if cs.isEmpty then
+      pure (tidyODESol sol)
+    else if ics.length != cs.length then
+      throw s!"dsolve IC: expected {cs.length} initial values (y, y', … at x0), got {ics.length}"
+    else
+      let eqs : List Expr :=
+        Id.run do
+          let mut out : List Expr := []
+          let mut deriv := rhs
+          for i in [:ics.length] do
+            let atx := simplify (subst deriv x x0)
+            out := out ++ [eq atx ics[i]!]
+            deriv := diff deriv x
+          pure out
+      match solveLinearSystem eqs (some cs) with
+      | .error msg => throw s!"dsolve IC: {msg}"
+      | .ok named =>
+        let rhs' : Option Expr :=
+          Id.run do
+            let mut out := rhs
+            for c in cs do
+              match namedGet? named c with
+              | none => return none
+              | some val => out := subst out c val
+            some out
+        match rhs' with
+        | none => throw "dsolve IC: could not extract constants"
+        | some rhs' =>
+          pure (tidyODESol (eq (var y) (simplify rhs')))
+
 /-- Solve ODE then apply y(x0)=y0. -/
 def dsolveIC (e : Expr) (y x : String) (x0 y0 : Expr) : Except String Expr := do
   let sol ← dsolve e y x
-  applyIC sol y x x0 y0
+  applyICs sol y x x0 [y0]
 
 /--
   Apply two ICs y(x0)=y0, y'(x0)=yp0 to a second-order solution `y = f(x,C1,C2)`.
 -/
 def applyIC2 (sol : Expr) (y x : String) (x0 y0 yp0 : Expr) : Except String Expr :=
-  match asEquation? sol with
-  | none => throw "dsolve IC: expected explicit solution y = …"
-  | some (lhs, rhs) =>
-    if lhs != var y then throw "dsolve IC: expected y = …"
-    else
-      let fx0 := simplify (subst rhs x x0)
-      let fpx := diff rhs x
-      let fpx0 := simplify (subst fpx x x0)
-      -- Solve the linear system in C1, C2:
-      -- f(x0) = y0, f'(x0) = yp0
-      -- Build two residuals and use solveLinearSystem
-      let eq1 := eq fx0 y0
-      let eq2 := eq fpx0 yp0
-      match solveLinearSystem [eq1, eq2] (some ["C1", "C2"]) with
-      | .error msg => throw s!"dsolve IC: {msg}"
-      | .ok named =>
-        match namedGet? named "C1", namedGet? named "C2" with
-        | some c1, some c2 =>
-          let rhs' := simplify (subst (subst rhs "C1" c1) "C2" c2)
-          pure (tidyODESol (eq (var y) rhs'))
-        | _, _ => throw "dsolve IC: could not extract C1, C2"
+  applyICs sol y x x0 [y0, yp0]
 
 /-- Second-order IC: y(x0)=y0, y'(x0)=yp0. -/
 def dsolveIC2 (e : Expr) (y x : String) (x0 y0 yp0 : Expr) : Except String Expr := do
   let sol ← dsolve e y x
   applyIC2 sol y x x0 y0 yp0
+
+/-- Solve then apply `n` initial values at `x0`. -/
+def dsolveICs (e : Expr) (y x : String) (x0 : Expr) (ics : List Expr) :
+    Except String Expr := do
+  let sol ← dsolve e y x
+  applyICs sol y x x0 ics
+
+/-- `e` as a variable name, if it is one. -/
+def asVarExpr? : Expr → Option String
+  | var v => some v
+  | _ => none
+
+/--
+  Dispatch `dsolve(eq, …)` from parsed arguments (scalar ODE or linear system).
+-/
+def dsolveFromArgs (e : Expr) (args : List Expr) : Except String Expr :=
+  match asMat? e with
+  | some A =>
+    match args with
+    | [] => dsolveLinSys A "x"
+    | [a] =>
+      match asMat? a with
+      | some V =>
+        if matDependsOn V "x" then dsolveLinSysNonhom A V "x"
+        else dsolveLinSysIC A V "x"
+      | none =>
+        match asVarExpr? a with
+        | some y => dsolve e y "x"
+        | none => throw "dsolve: expected dsolve(A, Y0) or dsolve(A, g)"
+    | [a, b] =>
+      match asMat? a, asMat? b with
+      | some g, some Y0 => dsolveLinSysNonhomIC A g Y0 "x"
+      | some g, none =>
+        match asVarExpr? b with
+        | some x => dsolveLinSysNonhom A g x
+        | none => throw "dsolve: expected dsolve(A, g, Y0) or dsolve(A, g, x)"
+      | none, _ =>
+        match asVarExpr? a, asVarExpr? b with
+        | some y, some x => dsolve e y x
+        | _, _ => dsolveIC e "y" "x" a b
+    | _ => throw "dsolve: too many arguments for a linear system"
+  | none =>
+    match args with
+    | [] => dsolve e "y" "x"
+    | [a] =>
+      match asVarExpr? a with
+      | some y => dsolve e y "x"
+      | none => throw "dsolve: expected unknown variable"
+    | [a, b] =>
+      match asVarExpr? a, asVarExpr? b with
+      | some y, some x => dsolve e y x
+      | _, _ => dsolveIC e "y" "x" a b
+    | a :: rest =>
+      match asVarExpr? a with
+      | some y =>
+        match rest with
+        | b :: rest2 =>
+          match asVarExpr? b with
+          | some x =>
+            match rest2 with
+            | [] => dsolve e y x
+            | x0 :: ics =>
+              if ics.isEmpty then
+                throw "dsolve: expected y(x0)=y0"
+              else
+                dsolveICs e y x x0 ics
+          | none =>
+            if rest2.isEmpty then
+              throw "dsolve: expected y(x0)=y0"
+            else
+              dsolveICs e y "x" b rest2
+        | [] => dsolve e y "x"
+      | none =>
+        match rest with
+        | [] => throw "dsolve: expected y(x0)=y0"
+        | _ => dsolveICs e "y" "x" a rest
 
 end Taschenrechner
