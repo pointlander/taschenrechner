@@ -791,7 +791,9 @@ partial def zeilbergerSum (F : Expr) (k : String) (lo hi : Expr) : Option Expr :
   else
     let bt : Option Expr :=
       if isZeroExpr (sub (simplify lo) zero) && simplify hi == var n then
-        binomTheorem? F n k
+        match binomTheorem? F n k with
+        | some s => some s
+        | none => centralBinomSum? F n k
       else none
     match bt with
     | some s => some (simplify s)

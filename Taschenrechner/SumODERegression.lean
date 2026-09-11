@@ -151,6 +151,14 @@ def suite : List Case := [
   { name := "binom(5,2) numeric"
     input := "binom(5,2)"
     check := fun e => e == ofInt 10 },
+  { name := "Zeilberger binom x^k"
+    input := "sum(binom(n,k)*x^k, k, 0, n)"
+    check := fun e =>
+      equivNF (simplify (subst (subst e "n" (ofInt 2)) "x" (ofInt 3))) (ofInt 16) },
+  { name := "Zeilberger binom(n,k)^2"
+    input := "sum(binom(n,k)^2, k, 0, n)"
+    check := fun e =>
+      equivNF (simplify (subst e "n" (ofInt 3))) (ofInt 20) },
   { name := "Gosper 1/(k(k+1))"
     input := "sum(1/(k*(k+1)), k, 1, n)"
     check := fun e => equivNF e (div (var "n") (add (var "n") one)) },

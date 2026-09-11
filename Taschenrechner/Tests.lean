@@ -1358,6 +1358,15 @@ def parseEq (s : String) (expected : Expr) : Bool :=
   match parse "sum(binom(n,k), k, 0, n)" with
   | .ok e => equivNF (simplify (subst e "n" (ofInt 5))) (ofInt 32)
   | _ => false
+#guard
+  match parse "sum(binom(n,k)*x^k, k, 0, n)" with
+  | .ok e =>
+      equivNF (simplify (subst (subst e "n" (ofInt 2)) "x" (ofInt 3))) (ofInt 16)
+  | _ => false
+#guard
+  match parse "sum(binom(n,k)^2, k, 0, n)" with
+  | .ok e => equivNF (simplify (subst e "n" (ofInt 3))) (ofInt 20)
+  | _ => false
 -- PR O: second-order ODE & linear systems
 #guard
   match parse "dsolve(y'' + y = 0)" with

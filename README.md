@@ -297,6 +297,8 @@ lake exe taschenrechner 'sum(1/(k*(k+1)), k, 1, n)'    # Gosper → n/(n+1)
 lake exe taschenrechner 'sum(k*2^k, k, 1, n)'          # Gosper → (n−1)2^{n+1}+2
 lake exe taschenrechner 'sum(binom(n,k), k, 0, n)'     # Zeilberger → 2^n
 lake exe taschenrechner 'sum(k*binom(n,k), k, 0, n)'   # → n·2^{n−1}
+lake exe taschenrechner 'sum(binom(n,k)*x^k, k, 0, n)' # → (1+x)^n
+lake exe taschenrechner 'sum(binom(n,k)^2, k, 0, n)'   # → C(2n,n)
 lake exe taschenrechner 'binom(5,2)'                   # → 10
 lake exe taschenrechner 'product(k, 1, n, k)'          # → n!
 lake exe taschenrechner 'product(k/(k+1), k, 1, n)'    # → 1/(n+1)

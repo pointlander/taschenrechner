@@ -15,6 +15,7 @@ import Taschenrechner.Normal
 import Taschenrechner.Solve
 import Taschenrechner.LinAlg
 import Taschenrechner.Eval
+import Taschenrechner.Gosper
 
 namespace Taschenrechner
 
@@ -177,19 +178,20 @@ def scale (s : Expr) (r : ERat) : ERat :=
 partial def ofExpr? (e : Expr) (k : String) : Option ERat :=
   go (simplify e)
 where
+  invertPoly (p : EPoly) : ERat := ⟨EPoly.ofConst Expr.one, p⟩
   go : Expr → Option ERat
   | Expr.mul a (Expr.pow b (Expr.const r)) =>
-    match CplxConst.toRat? r with
-    | some q =>
-      if q == RatConst.negOne then
-        match go a, EPoly.ofExpr? b k with
-        | some ra, some db => some ⟨ra.num, EPoly.mul ra.den db⟩
-        | _, _ => none
-      else
-        match EPoly.ofExpr? (Expr.mul a (Expr.pow b (Expr.const r))) k with
-        | some p => some (ofPoly p)
+    match CplxConst.toRat? r, go a with
+    | some q, some ra =>
+      if q.den == 1 && q.num < 0 then
+        match EPoly.ofExpr? (Expr.pow b (ofNat q.num.natAbs)) k with
+        | some db => some ⟨ra.num, EPoly.mul ra.den db⟩
         | none => none
-    | none =>
+      else
+        match go (Expr.pow b (Expr.const r)) with
+        | some rb => some (mul ra rb)
+        | none => none
+    | _, _ =>
       match EPoly.ofExpr? (Expr.mul a (Expr.pow b (Expr.const r))) k with
       | some p => some (ofPoly p)
       | none => none
@@ -204,13 +206,18 @@ where
   | Expr.pow base (Expr.const r) =>
     match CplxConst.toRat? r with
     | some q =>
-      if q == RatConst.negOne then
-        match EPoly.ofExpr? base k with
-        | some d => some ⟨EPoly.ofConst Expr.one, d⟩
-        | none => none
-      else
+      if q.den != 1 then
         match EPoly.ofExpr? (Expr.pow base (Expr.const r)) k with
         | some p => some (ofPoly p)
+        | none => none
+      else if q.num == 0 then some (ofPoly (EPoly.ofConst Expr.one))
+      else if q.num > 0 then
+        match EPoly.ofExpr? (Expr.pow base (Expr.const r)) k with
+        | some p => some (ofPoly p)
+        | none => none
+      else
+        match EPoly.ofExpr? (Expr.pow base (ofNat q.num.natAbs)) k with
+        | some p => some (invertPoly p)
         | none => none
     | none =>
       match EPoly.ofExpr? (Expr.pow base (Expr.const r)) k with
@@ -374,25 +381,38 @@ def reduceFactRatio (e : Expr) : Expr :=
       acc := mul acc (div one f)
     simplify acc
 
-/-- Expand arguments of factorials so `n−(k+1)` becomes `n−k−1`. -/
-partial def expandFactArgs : Expr → Expr
-  | factorial a => factorial (expand a)
-  | mul a b => mul (expandFactArgs a) (expandFactArgs b)
-  | add a b => add (expandFactArgs a) (expandFactArgs b)
-  | pow a b => pow (expandFactArgs a) (expandFactArgs b)
-  | e => e
+/--
+  Shift free variable `v` by `delta` using affine arithmetic on
+  factorial / gamma arguments, so `n−k` at `k+1` is `n−k−1` (not `n−k+1`).
+-/
+partial def shiftAffine (e : Expr) (v : String) (delta : Int) : Expr :=
+  if delta == 0 then e
+  else go e
+where
+  go : Expr → Expr
+  | factorial a =>
+    match splitAffine a v with
+    | some (coeff, _) =>
+      factorial (simplify (add a (mul coeff (ofInt delta))))
+    | none => factorial (go a)
+  | gamma a =>
+    match splitAffine a v with
+    | some (coeff, _) =>
+      gamma (simplify (add a (mul coeff (ofInt delta))))
+    | none => gamma (go a)
+  | mul a b => mul (go a) (go b)
+  | add a b => add (go a) (go b)
+  | pow a b => pow (go a) (go b)
+  | var name =>
+    if name == v then add (var v) (ofInt delta) else var name
+  | e =>
+    if dependsOn e v then subst e v (add (var v) (ofInt delta)) else e
 
 /-- `F(n+di, k+dj) / F(n, k)` reduced to a rational in `k`, if possible. -/
 def hypShiftRatio (F : Expr) (n k : String) (di dj : Int) : Option ERat :=
-  let Fn :=
-    if di == 0 then F
-    else subst F n (add (var n) (ofInt di))
-  let Fsh :=
-    if dj == 0 then Fn
-    else subst Fn k (add (var k) (ofInt dj))
-  let F0 := expandFactArgs (simplify F)
-  let F1 := expandFactArgs (simplify Fsh)
-  let ratio := reducePowRatio (reduceFactRatio (simplify (div F1 F0)))
+  let Fn := shiftAffine F n di
+  let Fsh := shiftAffine Fn k dj
+  let ratio := reducePowRatio (reduceFactRatio (simplify (div Fsh F)))
   let stillFact : Bool :=
     Id.run do
       let (ns, ds) := fracFactors ratio
@@ -403,6 +423,29 @@ def hypShiftRatio (F : Expr) (n k : String) (di dj : Int) : Option ERat :=
       false
   if stillFact then none
   else ERat.ofExpr? ratio k
+
+/-- Zero test that does not run `isZeroExpr` in the wrong variable. -/
+def exprVanishes? (e : Expr) : Bool :=
+  let e := simplify (expand e)
+  e == zero || match e with
+  | const q => q.isZero
+  | _ =>
+    let vs := freeVars e
+    let pts : List Int := [3, 4, 7]
+    Id.run do
+      for p in pts do
+        let e' :=
+          Id.run do
+            let mut acc := e
+            let mut i : Nat := 0
+            for v in vs do
+              acc := subst acc v (ofInt (p + Int.ofNat (2 * i)))
+              i := i + 1
+            acc
+        match eval? (simplify e') with
+        | some c => if !c.isZero then return false
+        | none => return false
+      true
 
 /-! ### Sister Celine -/
 
@@ -444,19 +487,17 @@ def celineRec? (F : Expr) (n k : String) (I J : Nat) : Option (Array Expr) :=
         let mut row : Array Expr := Array.empty
         let mut any := false
         for i in [:nU] do
-          let c := simplify (EPoly.coeff pieces[i]! m)
-          if !isZeroExpr c then any := true
+          let c := simplify (expand (EPoly.coeff pieces[i]! m))
+          if !exprVanishes? c then any := true
           row := row.push c
         if any then
           rowsA := rowsA.push row
           rowsB := rowsB.push #[zero]
       if rowsA.isEmpty then return none
-      for row in rowsA do
-        for c in row do
-          if dependsOn c k then return none
       match Mat.solve rowsA rowsB with
+      | .error _ => none
+      | .inconsistent _ => none
       | .general x _nf =>
-        -- set t1=1, other free params 0
         let mut sol := x
         for p in [:_nf] do
           let t := Mat.freeParamName p
@@ -494,7 +535,6 @@ def celineRec? (F : Expr) (n k : String) (I J : Nat) : Option (Array Expr) :=
               acc := add acc aij
             bs := bs.set! i (simplify acc)
           some bs
-      | _ => none
 
 /-- Search small (I,J) for a Celine recurrence. -/
 def zeilbergerOp? (F : Expr) (n k : String) : Option (Array Expr) :=
@@ -514,9 +554,7 @@ def zeilbergerOp? (F : Expr) (n k : String) : Option (Array Expr) :=
 -/
 def eratEq (a b : ERat) : Bool :=
   let d := EPoly.add (EPoly.mul a.num b.den) (EPoly.neg (EPoly.mul b.num a.den))
-  (EPoly.strip d).coeffs.all fun c =>
-    let c := simplify c
-    c == zero || match c with | const q => q.isZero | _ => false
+  (EPoly.strip d).coeffs.all fun c => exprVanishes? c
 
 /-- Constant `q` such that `num = q · den` as polynomials in `k`. -/
 def epolyRatioConst (num den : EPoly) : Option Expr :=
@@ -525,11 +563,10 @@ def epolyRatioConst (num den : EPoly) : Option Expr :=
   Id.run do
     for i in [:d] do
       for j in [:d] do
-        let c := simplify (expand (sub
+        let c := sub
           (mul (EPoly.coeff num i) (EPoly.coeff den j))
-          (mul (EPoly.coeff num j) (EPoly.coeff den i))))
-        let z := c == zero || match c with | const q => q.isZero | _ => false
-        if !z then return none
+          (mul (EPoly.coeff num j) (EPoly.coeff den i))
+        if !exprVanishes? c then return none
     for i in [:d] do
       let di := simplify (EPoly.coeff den i)
       if !(di == zero || match di with | const q => q.isZero | _ => false) then
@@ -551,6 +588,20 @@ def binomTheorem? (F : Expr) (n k : String) : Option Expr :=
         match epolyRatioConst qNum qDen with
         | some q => some (pow (add one q) (var n))
         | none => none
+    | _, _ => none
+  | _, _ => none
+
+/-- `∑_k C(n,k)² = C(2n,n)` when the n,k-shifts match the squared binomial. -/
+def centralBinomSum? (F : Expr) (n k : String) : Option Expr :=
+  match hypShiftRatio F n k 0 1, hypShiftRatio F n k 1 0 with
+  | some r01, some r10 =>
+    let u01 := (ERat.ofExpr? (div (sub (var n) (var k)) (add (var k) one)) k).map fun r => ERat.mul r r
+    let u10 := (ERat.ofExpr? (div (add (var n) one) (sub (add (var n) one) (var k))) k).map fun r => ERat.mul r r
+    match u01, u10 with
+    | some u01, some u10 =>
+      if eratEq r01 u01 && eratEq r10 u10 then
+        some (div (factorial (mul (ofInt 2) (var n))) (pow (factorial (var n)) (ofNat 2)))
+      else none
     | _, _ => none
   | _, _ => none
 
